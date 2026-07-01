@@ -1,0 +1,163 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+import { z } from 'zod';
+import { query } from '@/lib/db';
+import { requireRole } from '@/lib/auth';
+import { logAudit } from '@/lib/audit';
+const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
+const CustomerSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(255),
+  phone: z.string().max(20).optional(),
+  address: z.string().max(500).default(''),
+  gstin: z
+    .string()
+    .regex(GSTIN_RE, 'Invalid GSTIN (must be 15-char GST format)')
+    .optional()
+    .or(z.literal('')),
+  credit_limit: z.coerce.number().min(0, 'Credit limit cannot be negative').default(0),
+  whatsapp_opt_out: z.boolean().default(false),
+  date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+});
+
+export interface CustomerState { error?: string }
+
+function parseCustomerForm(formData: FormData, isAdmin: boolean) {
+  const dob  = (formData.get('date_of_birth') as string | null) || null;
+  return {
+    name: formData.get('name'),
+    phone: (formData.get('phone') as string | null) || undefined,
+    address: formData.get('address') ?? '',
+    gstin: (formData.get('gstin') as string | null) || '',
+    credit_limit: isAdmin ? (formData.get('credit_limit') ?? '0') : '0',
+    whatsapp_opt_out: formData.get('whatsapp_opt_out') === 'on',
+    date_of_birth: dob && /^\d{4}-\d{2}-\d{2}$/.test(dob) ? dob : null,
+  };
+}
+
+export async function createCustomerAction(
+  _prev: CustomerState | null,
+  formData: FormData
+): Promise<CustomerState> {
+  const session = await requireRole('admin');
+
+  const parsed = CustomerSchema.safeParse(parseCustomerForm(formData, session.role === 'admin'));
+  if (!parsed.success) return { error: parsed.error.errors[0].message };
+
+  const d = parsed.data;
+  try {
+    const res = await query<{ id: string }>(
+      `INSERT INTO customers (name, phone, address, gstin, credit_limit, whatsapp_opt_out, date_of_birth)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [d.name, d.phone || null, d.address, d.gstin || null, d.credit_limit, d.whatsapp_opt_out, d.date_of_birth ?? null]
+    );
+    const newId = res.rows[0].id;
+    logAudit({ userId: session.userId, action: 'create', entityType: 'customer', entityId: newId, entityLabel: d.name }).catch(() => {});
+    revalidatePath('/customers');
+  } catch {
+    return { error: 'Failed to create customer. Please try again.' };
+  }
+  redirect('/customers');
+}
+
+/**
+ * Lightweight create used by the invoice builder's inline "new customer" prompt (#5).
+ * Returns the new id instead of redirecting so the caller can auto-select it.
+ */
+export async function quickCreateCustomerAction(
+  name: string,
+  phone: string
+): Promise<{ success: boolean; id?: string; name?: string; phone?: string; error?: string }> {
+  await requireRole('admin', 'staff');
+  const cleanName = (name ?? '').trim();
+  const cleanPhone = (phone ?? '').trim();
+  if (!cleanName) return { success: false, error: 'Name is required' };
+  try {
+    const res = await query<{ id: string }>(
+      `INSERT INTO customers (name, phone, address) VALUES ($1,$2,'') RETURNING id`,
+      [cleanName, cleanPhone || null]
+    );
+    revalidatePath('/customers');
+    return { success: true, id: res.rows[0].id, name: cleanName, phone: cleanPhone || undefined };
+  } catch {
+    return { success: false, error: 'Failed to create customer. Please try again.' };
+  }
+}
+
+export async function updateCustomerAction(
+  id: string,
+  _prev: CustomerState | null,
+  formData: FormData
+): Promise<CustomerState> {
+  const session = await requireRole('admin');
+
+  const parsed = CustomerSchema.safeParse(parseCustomerForm(formData, session.role === 'admin'));
+  if (!parsed.success) return { error: parsed.error.errors[0].message };
+
+  const d = parsed.data;
+  try {
+    if (session.role === 'admin') {
+      await query(
+        `UPDATE customers SET name=$1,phone=$2,address=$3,gstin=$4,credit_limit=$5,
+         whatsapp_opt_out=$6,date_of_birth=$7 WHERE id=$8`,
+        [d.name, d.phone || null, d.address, d.gstin || null, d.credit_limit, d.whatsapp_opt_out, d.date_of_birth ?? null, id]
+      );
+    } else {
+      await query(
+        `UPDATE customers SET name=$1,phone=$2,address=$3,gstin=$4,
+         whatsapp_opt_out=$5,date_of_birth=$6 WHERE id=$7`,
+        [d.name, d.phone || null, d.address, d.gstin || null, d.whatsapp_opt_out, d.date_of_birth ?? null, id]
+      );
+    }
+    logAudit({ userId: session.userId, action: 'update', entityType: 'customer', entityId: id, entityLabel: d.name }).catch(() => {});
+    revalidatePath('/customers');
+    revalidatePath(`/customers/${id}`);
+  } catch {
+    return { error: 'Failed to update customer.' };
+  }
+  redirect(`/customers/${id}`);
+}
+
+export async function deleteCustomerAction(formData: FormData) {
+  await requireRole('admin');
+  const id = formData.get('id') as string;
+  try {
+    // Anonymise personal data but KEEP the row — invoices FK to this id.
+    await query(
+      `UPDATE customers SET
+         name = 'Deleted User',
+         phone = '0000000000',
+         address = '',
+         gstin = NULL,
+         whatsapp_opt_out = TRUE,
+         date_of_birth = NULL
+       WHERE id = $1`,
+      [id]
+    );
+    revalidatePath('/customers');
+    revalidatePath(`/customers/${id}`);
+  } catch (e) {
+    console.error('[deleteCustomerAction]', e);
+  }
+  redirect('/customers');
+}
+
+export async function softDeleteCustomerAction(formData: FormData) {
+  const session = await requireRole('admin');
+  const id = formData.get('id') as string;
+  const nameRes = await query<{ name: string }>('SELECT name FROM customers WHERE id=$1', [id]);
+  await query(`UPDATE customers SET deleted_at = NOW() WHERE id = $1`, [id]);
+  logAudit({ userId: session.userId, action: 'delete', entityType: 'customer', entityId: id, entityLabel: nameRes.rows[0]?.name }).catch(() => {});
+  revalidatePath('/customers');
+}
+
+export async function restoreCustomerAction(formData: FormData) {
+  const session = await requireRole('admin');
+  const id = formData.get('id') as string;
+  const nameRes = await query<{ name: string }>('SELECT name FROM customers WHERE id=$1', [id]);
+  await query(`UPDATE customers SET deleted_at = NULL WHERE id = $1`, [id]);
+  logAudit({ userId: session.userId, action: 'update', entityType: 'customer', entityId: id, entityLabel: nameRes.rows[0]?.name, newValue: { restored: true } }).catch(() => {});
+  revalidatePath('/customers');
+}

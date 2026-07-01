@@ -1,0 +1,368 @@
+/**
+ * PDF generation utility — builds PDFs from DB data and writes to /tmp/.
+ * Returns the absolute file path or null on failure (non-fatal).
+ */
+import fs from 'fs';
+import path from 'path';
+import QRCode from 'qrcode';
+import { query } from '@/lib/db';
+import { renderInvoicePdf } from '@/lib/pdf/invoice-template';
+import { renderTailoringPdf } from '@/lib/pdf/tailoring-template';
+import type { PdfCompany } from '@/lib/pdf/invoice-template';
+
+const fmtDate = (d: string | Date | null): string =>
+  d ? new Date(d).toLocaleDateString('en-IN') : '';
+
+async function getCompany(): Promise<PdfCompany & { upiVpa: string }> {
+  const { rows } = await query<{ key: string; value: string }>('SELECT key, value FROM settings');
+  const s = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+
+  const rawLogo = s.company_logo_path ?? '';
+  const logoAbsPath = rawLogo
+    ? (() => {
+        const p = path.join(process.cwd(), 'public', rawLogo);
+        return fs.existsSync(p) ? p : undefined;
+      })()
+    : undefined;
+
+  return {
+    name: s.company_name ?? 'Sutra Collections',
+    gstin: s.company_gstin ?? '',
+    address: s.company_address ?? '',
+    state: s.company_state ?? 'Karnataka',
+    phone: s.company_phone || undefined,
+    email: s.company_email || undefined,
+    logoAbsPath,
+    upiVpa: s.upi_vpa ?? '',
+  };
+}
+
+// ─── Invoice ─────────────────────────────────────────────────────────────────
+
+export async function generateInvoicePdf(invoiceId: string): Promise<string | null> {
+  try {
+    const [invRes, lineRes] = await Promise.all([
+      query(
+        `SELECT i.*, c.name AS customer_name, c.address AS customer_address,
+                c.gstin AS customer_gstin, c.phone AS customer_phone
+         FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE i.id=$1`,
+        [invoiceId]
+      ),
+      query(
+        `SELECT ii.*, it.name AS item_name, it.unit,
+                isz.size_name, ic.color_name
+         FROM invoice_items ii
+         JOIN items it ON it.id=ii.item_id
+         LEFT JOIN item_sizes isz ON isz.id=ii.size_id
+         LEFT JOIN item_colors ic ON ic.id=ii.color_id
+         WHERE ii.invoice_id=$1 ORDER BY ii.sort_order`,
+        [invoiceId]
+      ),
+    ]);
+
+    if (!invRes.rows[0]) return null;
+    const inv = invRes.rows[0];
+    const co = await getCompany();
+
+    let upiQrDataUrl: string | undefined;
+    const balance = Math.max(0, Number(inv.grand_total) - Number(inv.amount_paid));
+    if (co.upiVpa && balance > 0) {
+      const uri = `upi://pay?pa=${encodeURIComponent(co.upiVpa)}&am=${balance.toFixed(2)}&tn=${encodeURIComponent(inv.invoice_number)}&cu=INR`;
+      upiQrDataUrl = await QRCode.toDataURL(uri, { width: 128, margin: 1 });
+    }
+
+    const buffer = await renderInvoicePdf({
+      docType: 'INVOICE',
+      invoiceNumber: inv.invoice_number,
+      invoiceDate: fmtDate(inv.invoice_date),
+      dueDate: inv.due_date ? fmtDate(inv.due_date) : undefined,
+      company: {
+        name: co.name, gstin: co.gstin, address: co.address,
+        state: co.state, phone: co.phone, email: co.email, logoAbsPath: co.logoAbsPath,
+      },
+      customer: {
+        name: inv.customer_name ?? 'Walk-in Customer',
+        address: inv.customer_address ?? '',
+        gstin: inv.customer_gstin,
+        phone: inv.customer_phone || undefined,
+      },
+      items: lineRes.rows.map((l) => {
+        const variant = [l.color_name, l.size_name]
+          .filter((v: string | null) => v && v !== 'None' && v !== 'Regular').join(' / ');
+        return {
+          description: l.item_name, variant: variant || undefined,
+          hsn: l.hsn_code ?? '', qty: Number(l.quantity), unit: l.unit,
+          rate: Number(l.rate), discountAmount: Number(l.discount_amount),
+          gstRate: Number(l.gst_rate), taxableValue: Number(l.taxable_value),
+          cgst: Number(l.cgst_amount), sgst: Number(l.sgst_amount), total: Number(l.total_amount),
+        };
+      }),
+      invoiceDiscountAmount: Number(inv.invoice_discount_amount),
+      subtotal: Number(inv.subtotal),
+      totalCgst: Number(inv.total_cgst),
+      totalSgst: Number(inv.total_sgst),
+      grandTotal: Number(inv.grand_total),
+      amountPaid: Number(inv.amount_paid),
+      paymentMode: inv.payment_mode || undefined,
+      notes: inv.notes || undefined,
+      isScheme: inv.is_scheme_invoice,
+      upiVpa: co.upiVpa || undefined,
+      upiQrDataUrl,
+      schemeDiscount: Number(inv.scheme_discount_amount ?? 0),
+      loyaltyDiscount: Number(inv.loyalty_discount_amount ?? 0),
+      loyaltyPoints: Number(inv.loyalty_points_redeemed ?? 0),
+    });
+
+    const safe = inv.invoice_number.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/invoice_${safe}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateInvoicePdf failed:', err);
+    return null;
+  }
+}
+
+// Receipt reuses invoice PDF (same data, payment is already recorded)
+export const generateReceiptPdf = generateInvoicePdf;
+
+// ─── Credit Note ─────────────────────────────────────────────────────────────
+
+export async function generateCreditNotePdf(cnId: string): Promise<string | null> {
+  try {
+    const [cnRes, lineRes] = await Promise.all([
+      query(
+        `SELECT cn.*, c.name AS customer_name, c.address AS customer_address,
+                c.gstin AS customer_gstin, c.phone AS customer_phone,
+                i.invoice_number AS orig_invoice_number
+         FROM credit_notes cn
+         LEFT JOIN customers c ON c.id=cn.customer_id
+         LEFT JOIN invoices i ON i.id=cn.invoice_id
+         WHERE cn.id=$1`,
+        [cnId]
+      ),
+      query(
+        `SELECT cni.*, it.name AS item_name, it.unit
+         FROM credit_note_items cni
+         JOIN items it ON it.id=cni.item_id
+         WHERE cni.credit_note_id=$1`,
+        [cnId]
+      ),
+    ]);
+
+    if (!cnRes.rows[0]) return null;
+    const cn = cnRes.rows[0];
+    const co = await getCompany();
+
+    const buffer = await renderInvoicePdf({
+      docType: 'CREDIT NOTE',
+      invoiceNumber: cn.credit_note_number,
+      invoiceDate: fmtDate(cn.created_at),
+      originalInvoiceNumber: cn.orig_invoice_number || undefined,
+      refundMode: cn.resolution || undefined,
+      company: {
+        name: co.name, gstin: co.gstin, address: co.address,
+        state: co.state, phone: co.phone, email: co.email, logoAbsPath: co.logoAbsPath,
+      },
+      customer: {
+        name: cn.customer_name ?? 'Customer',
+        address: cn.customer_address ?? '',
+        gstin: cn.customer_gstin,
+        phone: cn.customer_phone || undefined,
+      },
+      items: lineRes.rows.map((l) => ({
+        description: l.item_name, hsn: l.hsn_code ?? '',
+        qty: Number(l.quantity), unit: l.unit, rate: Number(l.rate),
+        discountAmount: 0, gstRate: Number(l.gst_rate),
+        taxableValue: Number(l.taxable_value), cgst: Number(l.cgst_amount),
+        sgst: Number(l.sgst_amount), total: Number(l.total_amount),
+      })),
+      invoiceDiscountAmount: 0,
+      subtotal: Number(cn.subtotal),
+      totalCgst: Number(cn.total_cgst),
+      totalSgst: Number(cn.total_sgst),
+      grandTotal: Number(cn.grand_total),
+    });
+
+    const safe = cn.credit_note_number.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/credit_note_${safe}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateCreditNotePdf failed:', err);
+    return null;
+  }
+}
+
+// ─── Debit Note ──────────────────────────────────────────────────────────────
+
+export async function generateDebitNotePdf(dnId: string): Promise<string | null> {
+  try {
+    const [dnRes, lineRes] = await Promise.all([
+      query(
+        `SELECT dn.*, s.name AS supplier_name, s.address AS supplier_address,
+                s.gstin AS supplier_gstin, s.phone AS supplier_phone,
+                pi.purchase_number AS orig_purchase_number
+         FROM debit_notes dn
+         LEFT JOIN suppliers s ON s.id=dn.supplier_id
+         LEFT JOIN purchase_invoices pi ON pi.id=dn.purchase_invoice_id
+         WHERE dn.id=$1`,
+        [dnId]
+      ),
+      query(
+        `SELECT dni.*, it.name AS item_name, it.unit
+         FROM debit_note_items dni
+         JOIN items it ON it.id=dni.item_id
+         WHERE dni.debit_note_id=$1`,
+        [dnId]
+      ),
+    ]);
+
+    if (!dnRes.rows[0]) return null;
+    const dn = dnRes.rows[0];
+    const co = await getCompany();
+
+    const buffer = await renderInvoicePdf({
+      docType: 'DEBIT NOTE',
+      invoiceNumber: dn.debit_note_number,
+      invoiceDate: fmtDate(dn.created_at),
+      originalInvoiceNumber: dn.orig_purchase_number || undefined,
+      company: {
+        name: co.name, gstin: co.gstin, address: co.address,
+        state: co.state, phone: co.phone, email: co.email, logoAbsPath: co.logoAbsPath,
+      },
+      customer: {
+        name: dn.supplier_name ?? 'Supplier',
+        address: dn.supplier_address ?? '',
+        gstin: dn.supplier_gstin,
+        phone: dn.supplier_phone || undefined,
+      },
+      items: lineRes.rows.map((l) => ({
+        description: l.item_name, hsn: l.hsn_code ?? '',
+        qty: Number(l.quantity), unit: l.unit, rate: Number(l.rate),
+        discountAmount: 0, gstRate: Number(l.gst_rate),
+        taxableValue: Number(l.taxable_value), cgst: Number(l.cgst_amount),
+        sgst: Number(l.sgst_amount), total: Number(l.total_amount),
+      })),
+      invoiceDiscountAmount: 0,
+      subtotal: Number(dn.subtotal),
+      totalCgst: Number(dn.total_cgst),
+      totalSgst: Number(dn.total_sgst),
+      grandTotal: Number(dn.grand_total),
+    });
+
+    const safe = dn.debit_note_number.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/debit_note_${safe}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateDebitNotePdf failed:', err);
+    return null;
+  }
+}
+
+// ─── Tailoring Order PDFs ─────────────────────────────────────────────────────
+
+async function getTailoringOrderData(orderId: string) {
+  const [orderRes, measRes] = await Promise.all([
+    query<{
+      id: string; order_number: string; price: string; due_date: string | null;
+      notes: string | null; color_fabric: string | null; created_at: string;
+      customer_name: string; customer_phone: string | null;
+      design_name: string; design_category: string | null; design_photo: string | null;
+    }>(
+      `SELECT o.id, o.order_number, o.price::text, o.due_date::text, o.notes, o.color_fabric, o.created_at::text,
+              c.name AS customer_name, c.phone AS customer_phone,
+              d.name AS design_name, d.category AS design_category, d.photo_path AS design_photo
+       FROM tailoring_orders o
+       JOIN customers c ON c.id = o.customer_id
+       JOIN designs   d ON d.id = o.design_id
+       WHERE o.id = $1`,
+      [orderId]
+    ),
+    query<{ field_name: string; value: string; unit: string | null }>(
+      `SELECT f.field_name, mv.value, f.unit
+       FROM tailoring_orders o
+       JOIN measurement_versions v  ON v.id = o.measurement_version_id
+       JOIN measurement_values  mv ON mv.version_id = v.id
+       JOIN design_measurement_fields f ON f.id = mv.field_id
+       WHERE o.id = $1
+       ORDER BY f.sort_order, f.field_name`,
+      [orderId]
+    ),
+  ]);
+  return { order: orderRes.rows[0] ?? null, measurements: measRes.rows };
+}
+
+/** Customer copy: includes branding, customer info, design photo, measurements, price. */
+export async function generateTailoringCustomerPdf(orderId: string): Promise<string | null> {
+  try {
+    const { order, measurements } = await getTailoringOrderData(orderId);
+    if (!order) return null;
+    const co = await getCompany();
+
+    let designPhotoAbsPath: string | undefined;
+    if (order.design_photo) {
+      const p = path.join(process.cwd(), 'public', order.design_photo);
+      if (fs.existsSync(p)) designPhotoAbsPath = p;
+    }
+
+    const buffer = await renderTailoringPdf({
+      docType:     'TAILORING ORDER',
+      orderNumber: order.order_number,
+      orderDate:   fmtDate(order.created_at),
+      dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
+      company:     { name: co.name, gstin: co.gstin, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
+      customer:    { name: order.customer_name, phone: order.customer_phone ?? undefined },
+      design:      { name: order.design_name, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
+      colorFabric: order.color_fabric ?? undefined,
+      measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
+      notes:  order.notes ?? undefined,
+      price:  Number(order.price),
+    });
+
+    const safe = order.order_number.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/tailoring_customer_${safe}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateTailoringCustomerPdf failed:', err);
+    return null;
+  }
+}
+
+/** Tailor copy: NO customer name/phone/price — only design, measurements, instructions. */
+export async function generateTailoringTailorPdf(orderId: string): Promise<string | null> {
+  try {
+    const { order, measurements } = await getTailoringOrderData(orderId);
+    if (!order) return null;
+    const co = await getCompany();
+
+    let designPhotoAbsPath: string | undefined;
+    if (order.design_photo) {
+      const p = path.join(process.cwd(), 'public', order.design_photo);
+      if (fs.existsSync(p)) designPhotoAbsPath = p;
+    }
+
+    const buffer = await renderTailoringPdf({
+      docType:     'PRODUCTION ORDER',
+      orderNumber: order.order_number,
+      orderDate:   fmtDate(order.created_at),
+      dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
+      company:     { name: co.name, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
+      // no customer, no price
+      design:      { name: order.design_name, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
+      colorFabric: order.color_fabric ?? undefined,
+      measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
+      notes:  order.notes ?? undefined,
+    });
+
+    const safe = order.order_number.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/tailoring_tailor_${safe}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateTailoringTailorPdf failed:', err);
+    return null;
+  }
+}
