@@ -60,7 +60,6 @@ export default function SizeColorManager({
   const [addingColor, setAddingColor] = useState(false);
   const [sizeError, setSizeError] = useState('');
   const [colorError, setColorError] = useState('');
-  const [savingStock, setSavingStock] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'size' | 'color'; id: string; name: string } | null>(null);
 
   async function addSize() {
@@ -115,23 +114,6 @@ export default function SizeColorManager({
     const data = await res.json();
     if (!res.ok) { setColorError(data.error ?? 'Cannot delete colour'); return; }
     setColors((prev) => prev.filter((c) => c.id !== id));
-  }
-
-  async function saveStock(sizeId: string, colorId: string, warehouseId: string, qty: number) {
-    const key = `${sizeId}:${colorId}:${warehouseId}`;
-    setSavingStock(key);
-    try {
-      const res = await fetch(`/api/items/${itemId}/stock-adjust`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ size_id: sizeId, color_id: colorId, warehouse_id: warehouseId, quantity: qty }),
-      });
-      if (res.ok) {
-        setStock((prev) => ({ ...prev, [key]: qty }));
-      }
-    } finally {
-      setSavingStock(null);
-    }
   }
 
   return (
@@ -242,7 +224,7 @@ export default function SizeColorManager({
         </div>
       </div>
 
-      {/* Stock grid */}
+      {/* Stock grid — read-only */}
       {sizes.length > 0 && colors.length > 0 && warehouses.length > 0 && (
         <div>
           <h3 className="mb-3 text-sm font-semibold text-gray-700">Stock</h3>
@@ -268,22 +250,9 @@ export default function SizeColorManager({
                         {colors.map((c) => {
                           const key = `${s.id}:${c.id}:${wh.id}`;
                           const val = stock[key] ?? 0;
-                          const saving = savingStock === key;
                           return (
-                            <td key={c.id} className="py-1 px-1 text-center">
-                              <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                value={val}
-                                onChange={(e) =>
-                                  setStock((prev) => ({ ...prev, [key]: Number(e.target.value) }))
-                                }
-                                onBlur={(e) => saveStock(s.id, c.id, wh.id, Number(e.target.value))}
-                                disabled={saving}
-                                className={`w-20 rounded border px-2 py-1 text-center text-sm
-                                  ${saving ? 'border-purple-300 bg-purple-50' : 'border-gray-200 bg-white hover:border-gray-400 focus:border-purple-500 focus:outline-none'}`}
-                              />
+                            <td key={c.id} className="py-1.5 px-3 text-center">
+                              <span className="text-sm font-medium text-gray-800">{val}</span>
                             </td>
                           );
                         })}
@@ -294,6 +263,9 @@ export default function SizeColorManager({
               </div>
             </div>
           ))}
+          <p className="mt-1 text-xs text-gray-400">
+            To update stock, use <strong className="font-medium text-gray-500">Billing → Purchases</strong> or <strong className="font-medium text-gray-500">Inventory → Stock Adjustments</strong>.
+          </p>
         </div>
       )}
     </div>

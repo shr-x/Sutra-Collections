@@ -40,7 +40,10 @@ COPY --from=builder /app/.git-commit ./.git-commit
 COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x entrypoint.sh
 
-RUN mkdir -p /app/backups
+RUN mkdir -p /app/backups \
+             /app/public/uploads/designs \
+             /app/public/uploads/items \
+             /app/public/uploads/logo
 
 EXPOSE 3000
 CMD ["./entrypoint.sh"]
