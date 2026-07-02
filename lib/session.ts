@@ -30,7 +30,9 @@ export async function verifySession(token: string): Promise<SessionPayload | nul
 
 export const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
+  // Set COOKIE_SECURE=true in .env only after SSL/HTTPS is fully configured.
+  // Leaving it false on plain HTTP prevents browsers from silently dropping the cookie.
+  secure: process.env.COOKIE_SECURE === 'true',
   sameSite: 'lax' as const,
   path: '/',
 };

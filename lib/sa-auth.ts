@@ -67,7 +67,7 @@ export async function saLogin(
 
   cookies().set(SA_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: process.env.COOKIE_SECURE === 'true',
     sameSite: 'lax',
     path: '/',
     maxAge: SA_EXPIRY_SECONDS,
