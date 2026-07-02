@@ -103,7 +103,11 @@ INSERT INTO settings (key, value)
 VALUES ('shop_anniversary_date', '')
 ON CONFLICT (key) DO NOTHING;
 
--- ── 8. suppliers.deleted_at ───────────────────────────────────────────────────
+-- ── 8a. item_sizes / item_colors: sort_order column ─────────────────────────
+ALTER TABLE item_sizes  ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+ALTER TABLE item_colors ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+
+-- ── 8b. suppliers.deleted_at ──────────────────────────────────────────────────
 -- Soft-delete support for suppliers (mirrors customers.deleted_at pattern).
 ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
