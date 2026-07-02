@@ -41,9 +41,9 @@ COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x entrypoint.sh
 
 RUN mkdir -p /app/backups \
+             /app/public/uploads \
              /app/public/uploads/designs \
-             /app/public/uploads/items \
-             /app/public/uploads/logo
+             /app/public/uploads/items
 
 EXPOSE 3000
 CMD ["./entrypoint.sh"]

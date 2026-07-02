@@ -4,11 +4,14 @@ set -e
 echo "=== Sutra Collections ==="
 
 # Ensure upload directories exist inside the app_uploads Docker volume.
-# This runs after the volume is mounted, so subdirs are created in the volume
-# (not in the container layer) and survive container rebuilds.
-mkdir -p /app/public/uploads/designs \
-         /app/public/uploads/items \
-         /app/public/uploads/logo
+# Runs after the volume is mounted so dirs are created in the volume
+# (not the container layer) and survive container rebuilds.
+#   uploads/           ← logo.ext saved here directly
+#   uploads/designs/   ← design photos
+#   uploads/items/     ← item photos
+mkdir -p /app/public/uploads \
+         /app/public/uploads/designs \
+         /app/public/uploads/items
 
 echo "Running database migrations..."
 npx tsx db/migrate.ts
