@@ -7,7 +7,7 @@ import path from 'path';
 import QRCode from 'qrcode';
 import { query } from '@/lib/db';
 import { renderInvoicePdf } from '@/lib/pdf/invoice-template';
-import { renderTailoringPdf } from '@/lib/pdf/tailoring-template';
+import { renderTailoringPdf, renderBatchTailoringPdf } from '@/lib/pdf/tailoring-template';
 import type { PdfCompany } from '@/lib/pdf/invoice-template';
 
 const fmtDate = (d: string | Date | null): string =>
@@ -363,6 +363,56 @@ export async function generateTailoringTailorPdf(orderId: string): Promise<strin
     return filePath;
   } catch (err) {
     console.error('[pdf-generator] generateTailoringTailorPdf failed:', err);
+    return null;
+  }
+}
+
+/** Batch confirmation PDF: one page per order in the batch, sent to the customer as a single document. */
+export async function generateBatchTailoringPdf(batchId: string): Promise<string | null> {
+  try {
+    const ordersRes = await query<{ id: string }>(
+      `SELECT id FROM tailoring_orders WHERE batch_id=$1 ORDER BY created_at ASC`,
+      [batchId]
+    );
+    if (!ordersRes.rows.length) return null;
+
+    const co = await getCompany();
+    const pages = await Promise.all(
+      ordersRes.rows.map(async ({ id }) => {
+        const { order, measurements } = await getTailoringOrderData(id);
+        if (!order) return null;
+
+        let designPhotoAbsPath: string | undefined;
+        if (order.design_photo) {
+          const p = path.join(process.cwd(), 'public', order.design_photo);
+          if (fs.existsSync(p)) designPhotoAbsPath = p;
+        }
+
+        return {
+          docType:     'TAILORING ORDER' as const,
+          orderNumber: order.order_number,
+          orderDate:   fmtDate(order.created_at),
+          dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
+          company:     { name: co.name, gstin: co.gstin, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
+          customer:    { name: order.customer_name, phone: order.customer_phone ?? undefined },
+          design:      { name: order.design_name, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
+          colorFabric: order.color_fabric ?? undefined,
+          measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
+          notes:  order.notes ?? undefined,
+          price:  Number(order.price),
+        };
+      })
+    );
+
+    const validPages = pages.filter((p): p is NonNullable<typeof p> => p !== null);
+    if (!validPages.length) return null;
+
+    const buffer = await renderBatchTailoringPdf(validPages);
+    const filePath = `/tmp/tailoring_batch_${batchId.slice(0, 8)}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateBatchTailoringPdf failed:', err);
     return null;
   }
 }

@@ -338,17 +338,27 @@ export default function Sidebar({ role, userName, companyName, logoPath, staffMo
       </nav>
 
       {/* User info + logout — always pinned to the bottom */}
-      <div className="shrink-0 border-t border-gray-100 px-3 py-3">
-        <div className="mb-2 px-1">
-          <p className="truncate text-sm font-medium text-gray-800">{userName}</p>
-          <p className="text-xs capitalize text-gray-400">{role}</p>
+      <div className="shrink-0 border-t border-gray-200 px-3 py-3">
+        <div className="flex items-center gap-2.5 px-1 py-1.5">
+          {/* Avatar circle with initials */}
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-700 text-xs font-bold text-white uppercase">
+            {userName.charAt(0)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-gray-800">{userName}</p>
+            <p className="text-xs capitalize text-gray-400">{role}</p>
+          </div>
         </div>
-        <form action={logoutAction}>
+        <form action={logoutAction} className="mt-1">
           <button
             type="submit"
             onClick={onNavClick}
-            className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
           >
+            {/* Logout icon */}
+            <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
             Sign out
           </button>
         </form>

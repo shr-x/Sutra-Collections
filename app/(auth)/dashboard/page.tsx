@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
+import TourTrigger from '@/components/tour/tour-trigger';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -121,7 +122,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+      <div data-tour="dashboard-stats" className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
         {kpis.map((k) => (
           <div
             key={k.label}
@@ -235,6 +236,9 @@ export default async function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Tour floating trigger — only visible to admin, hides when tour is active */}
+      <TourTrigger />
     </div>
   );
 }

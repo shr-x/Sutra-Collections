@@ -18,6 +18,12 @@ build/
 # Backups (keep dir, not dumps)
 backups/*.sql
 
+# Docker volumes
+docker-volumes/
+
+# Logs
+*.log
+
 # OS
 .DS_Store
 *.pem

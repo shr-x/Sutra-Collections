@@ -11,6 +11,7 @@ import {
 import StoreSection from './store-section';
 import ModuleToggle from './module-toggle';
 import SettingsFormSection from '@/components/settings-form-section';
+import TourSettingsSection from '@/components/tour/tour-settings-section';
 
 export const metadata: Metadata = { title: 'Settings' };
 
@@ -49,7 +50,7 @@ export default async function SettingsPage() {
       </div>
 
       {/* ── Section 1: Store (full width) ────────────────────────────────────── */}
-      <div className="rounded-xl bg-white shadow-sm p-6 mb-6">
+      <div data-tour="settings-store" className="rounded-xl bg-white shadow-sm p-6 mb-6">
         <div className="flex items-center gap-3 mb-5">
           <span className="text-2xl">🏪</span>
           <div>
@@ -93,7 +94,7 @@ export default async function SettingsPage() {
         </div>
 
         {/* WhatsApp & Notifications */}
-        <div className="rounded-xl bg-white shadow-sm p-6">
+        <div data-tour="settings-whatsapp" className="rounded-xl bg-white shadow-sm p-6">
           <div className="flex items-center gap-3 mb-5">
             <span className="text-2xl">💬</span>
             <div>
@@ -134,7 +135,7 @@ export default async function SettingsPage() {
       {/* ── Row 3: Modules + Purchase Orders (two columns) ───────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Modules */}
-        <div className="rounded-xl bg-white shadow-sm p-6">
+        <div data-tour="settings-modules" className="rounded-xl bg-white shadow-sm p-6">
           <div className="flex items-center gap-3 mb-5">
             <span className="text-2xl">🔔</span>
             <div>
@@ -228,6 +229,9 @@ export default async function SettingsPage() {
           </Link>
         </div>
       </div>
+
+      {/* ── Help & Onboarding ───────────────────────────────────────────────── */}
+      <TourSettingsSection />
     </div>
   );
 }

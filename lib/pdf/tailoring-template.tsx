@@ -228,117 +228,130 @@ function MeasurementsTable({
   );
 }
 
-export async function renderTailoringPdf(data: TailoringPdfInput): Promise<Buffer> {
+/** Single page for one tailoring order — reused for both single and batch renders */
+function TailoringPage({ data }: { data: TailoringPdfInput }) {
   const isCustomer = data.docType === 'TAILORING ORDER';
-
   const coLine = [data.company.address, data.company.phone ? `Ph: ${data.company.phone}` : null]
     .filter(Boolean).join('  |  ');
 
+  return (
+    <Page size="A4" style={S.page}>
+      {/* ── Header ── */}
+      <View style={S.header}>
+        <View style={S.headerLeft}>
+          {data.company.logoAbsPath ? (
+            <Image src={data.company.logoAbsPath} style={S.logoImg} />
+          ) : (
+            <View style={S.logoBox}>
+              <Text style={S.logoInit}>{data.company.name.charAt(0)}</Text>
+            </View>
+          )}
+          <View style={S.coInfo}>
+            <Text style={S.coName}>{data.company.name}</Text>
+            {coLine ? <Text style={S.coSub}>{coLine}</Text> : null}
+            {data.company.gstin ? <Text style={S.coSub}>GSTIN: {data.company.gstin}</Text> : null}
+          </View>
+        </View>
+        <View style={S.headerRight}>
+          <Text style={S.docTitle}>{data.docType}</Text>
+          <Text style={S.docNum}>#{data.orderNumber}</Text>
+          <Text style={S.docDate}>Date: {data.orderDate}</Text>
+          {data.dueDate ? <Text style={S.docDelivery}>Delivery: {data.dueDate}</Text> : null}
+        </View>
+      </View>
+
+      <View style={S.rulePurple} />
+
+      {/* ── Info grid ── */}
+      <View style={S.infoGrid}>
+        {isCustomer && data.customer && (
+          <View style={S.infoColLeft}>
+            <Text style={S.infoLabel}>Customer</Text>
+            <Text style={S.infoName}>{data.customer.name}</Text>
+            {data.customer.phone ? <Text style={S.infoSub}>{data.customer.phone}</Text> : null}
+          </View>
+        )}
+        <View style={S.infoColRight}>
+          <View style={S.infoColDesignText}>
+            <Text style={S.infoLabel}>Design</Text>
+            <Text style={S.infoName}>{data.design.name}</Text>
+            {data.design.category ? <Text style={S.infoSub}>{data.design.category}</Text> : null}
+            {data.colorFabric ? <Text style={S.infoSub}>{data.colorFabric}</Text> : null}
+          </View>
+          <DesignThumb photoAbsPath={data.design.photoAbsPath} name={data.design.name} />
+        </View>
+      </View>
+
+      <View style={S.ruleGrey} />
+
+      {/* ── Measurements ── */}
+      <View style={S.measSection}>
+        <Text style={S.sectionLabel}>Measurements</Text>
+        <MeasurementsTable measurements={data.measurements} large={!isCustomer} />
+      </View>
+
+      <View style={S.ruleGrey} />
+
+      {/* ── Notes / Special Instructions ── */}
+      {data.notes ? (
+        <View style={S.notesSection}>
+          <Text style={S.sectionLabel}>
+            {isCustomer ? 'Notes' : 'Special Instructions'}
+          </Text>
+          <Text style={S.notesText}>{data.notes}</Text>
+        </View>
+      ) : null}
+
+      {/* ── Order Total (customer copy only) ── */}
+      {isCustomer && data.price !== undefined ? (
+        <View style={S.totalRow}>
+          <Text style={S.totalLabel}>Order Total</Text>
+          <Text style={S.totalAmt}>{fmtMoney(data.price)}</Text>
+        </View>
+      ) : null}
+
+      {/* ── Footer ── */}
+      <View style={S.footer}>
+        <View style={S.footerRule} />
+        {isCustomer ? (
+          <Text style={S.footerText}>
+            {`Thank you for choosing ${data.company.name}`}
+            {data.company.phone ? `  |  Phone: ${data.company.phone}` : ''}
+            {data.company.gstin ? `  |  GSTIN: ${data.company.gstin}` : ''}
+          </Text>
+        ) : (
+          <View>
+            <Text style={S.footerText}>
+              {data.company.name}
+              {data.company.phone ? `  |  Phone: ${data.company.phone}` : ''}
+            </Text>
+            <Text style={S.footerText2}>This is a production document — confidential</Text>
+          </View>
+        )}
+      </View>
+    </Page>
+  );
+}
+
+export async function renderTailoringPdf(data: TailoringPdfInput): Promise<Buffer> {
   const doc = (
     <Document>
-      <Page size="A4" style={S.page}>
-
-        {/* ── Header ── */}
-        <View style={S.header}>
-          <View style={S.headerLeft}>
-            {data.company.logoAbsPath ? (
-              <Image src={data.company.logoAbsPath} style={S.logoImg} />
-            ) : (
-              <View style={S.logoBox}>
-                <Text style={S.logoInit}>{data.company.name.charAt(0)}</Text>
-              </View>
-            )}
-            <View style={S.coInfo}>
-              <Text style={S.coName}>{data.company.name}</Text>
-              {coLine ? <Text style={S.coSub}>{coLine}</Text> : null}
-              {data.company.gstin ? <Text style={S.coSub}>GSTIN: {data.company.gstin}</Text> : null}
-            </View>
-          </View>
-          <View style={S.headerRight}>
-            <Text style={S.docTitle}>{data.docType}</Text>
-            <Text style={S.docNum}>#{data.orderNumber}</Text>
-            <Text style={S.docDate}>Date: {data.orderDate}</Text>
-            {data.dueDate ? <Text style={S.docDelivery}>Delivery: {data.dueDate}</Text> : null}
-          </View>
-        </View>
-
-        {/* ── Purple rule ── */}
-        <View style={S.rulePurple} />
-
-        {/* ── Info grid ── */}
-        <View style={S.infoGrid}>
-          {isCustomer && data.customer && (
-            <View style={S.infoColLeft}>
-              <Text style={S.infoLabel}>Customer</Text>
-              <Text style={S.infoName}>{data.customer.name}</Text>
-              {data.customer.phone ? <Text style={S.infoSub}>{data.customer.phone}</Text> : null}
-            </View>
-          )}
-          <View style={S.infoColRight}>
-            <View style={S.infoColDesignText}>
-              <Text style={S.infoLabel}>Design</Text>
-              <Text style={S.infoName}>{data.design.name}</Text>
-              {data.design.category ? <Text style={S.infoSub}>{data.design.category}</Text> : null}
-              {data.colorFabric ? <Text style={S.infoSub}>{data.colorFabric}</Text> : null}
-            </View>
-            <DesignThumb photoAbsPath={data.design.photoAbsPath} name={data.design.name} />
-          </View>
-        </View>
-
-        {/* ── Grey rule ── */}
-        <View style={S.ruleGrey} />
-
-        {/* ── Measurements ── */}
-        <View style={S.measSection}>
-          <Text style={S.sectionLabel}>Measurements</Text>
-          <MeasurementsTable measurements={data.measurements} large={!isCustomer} />
-        </View>
-
-        {/* ── Grey rule ── */}
-        <View style={S.ruleGrey} />
-
-        {/* ── Notes / Special Instructions ── */}
-        {data.notes ? (
-          <View style={S.notesSection}>
-            <Text style={S.sectionLabel}>
-              {isCustomer ? 'Notes' : 'Special Instructions'}
-            </Text>
-            <Text style={S.notesText}>{data.notes}</Text>
-          </View>
-        ) : null}
-
-        {/* ── Order Total (customer copy only) ── */}
-        {isCustomer && data.price !== undefined ? (
-          <View style={S.totalRow}>
-            <Text style={S.totalLabel}>Order Total</Text>
-            <Text style={S.totalAmt}>{fmtMoney(data.price)}</Text>
-          </View>
-        ) : null}
-
-        {/* ── Footer ── */}
-        <View style={S.footer}>
-          <View style={S.footerRule} />
-          {isCustomer ? (
-            <Text style={S.footerText}>
-              {`Thank you for choosing ${data.company.name}`}
-              {data.company.phone ? `  |  Phone: ${data.company.phone}` : ''}
-              {data.company.gstin ? `  |  GSTIN: ${data.company.gstin}` : ''}
-            </Text>
-          ) : (
-            <View>
-              <Text style={S.footerText}>
-                {data.company.name}
-                {data.company.phone ? `  |  Phone: ${data.company.phone}` : ''}
-              </Text>
-              <Text style={S.footerText2}>This is a production document — confidential</Text>
-            </View>
-          )}
-        </View>
-
-      </Page>
+      <TailoringPage data={data} />
     </Document>
   );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (renderToBuffer as any)(doc) as Promise<Buffer>;
+}
 
+/** Batch PDF: one page per order, all in a single document. */
+export async function renderBatchTailoringPdf(pages: TailoringPdfInput[]): Promise<Buffer> {
+  const doc = (
+    <Document>
+      {pages.map((data, i) => (
+        <TailoringPage key={i} data={data} />
+      ))}
+    </Document>
+  );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (renderToBuffer as any)(doc) as Promise<Buffer>;
 }

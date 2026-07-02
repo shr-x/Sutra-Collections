@@ -8,7 +8,7 @@ import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
-import { generateTailoringCustomerPdf, generateTailoringTailorPdf } from '@/lib/pdf-generator';
+import { generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf } from '@/lib/pdf-generator';
 import { logAudit } from '@/lib/audit';
 import type { ActionResult } from '@/types';
 import type { TailoringStage } from '@/types';
@@ -151,10 +151,13 @@ export async function createTailoringOrder(raw: unknown): Promise<{
 
 export async function sendBatchConfirmationAction(batchId: string): Promise<void> {
   try {
+    // Fetch the first order for WA template params, count for the message
     const res = await query<{
-      id: string; phone: string | null; name: string; order_number: string; due_date: string | null;
+      id: string; phone: string | null; name: string; order_number: string;
+      due_date: string | null; total: string;
     }>(
-      `SELECT o.id, c.phone, c.name, o.order_number, o.due_date::text
+      `SELECT o.id, c.phone, c.name, o.order_number, o.due_date::text,
+              COUNT(*) OVER () ::text AS total
        FROM tailoring_orders o
        JOIN customers c ON c.id = o.customer_id
        WHERE o.batch_id = $1
@@ -169,7 +172,8 @@ export async function sendBatchConfirmationAction(batchId: string): Promise<void
       ? `${first.due_date.slice(8, 10)}/${first.due_date.slice(5, 7)}/${first.due_date.slice(0, 4)}`
       : 'TBD';
 
-    const pdfPath = await generateTailoringCustomerPdf(first.id).catch(() => null);
+    // Use grouped PDF (all orders in one document) instead of a single-order PDF
+    const pdfPath = await generateBatchTailoringPdf(batchId).catch(() => null);
     await sendWhatsAppTemplate(first.phone, 'sutra_order_confirmation', [
       first.name, first.order_number, dueDateFormatted,
     ], pdfPath);
@@ -299,11 +303,11 @@ export async function assignTailorAction(
     query<{
       order_number: string; due_date: string | null;
       customer_name: string; customer_phone: string | null;
-      design_name: string;
+      design_name: string; batch_id: string | null;
     }>(
       `SELECT o.order_number, o.due_date::text,
               c.name AS customer_name, c.phone AS customer_phone,
-              d.name AS design_name
+              d.name AS design_name, o.batch_id
        FROM tailoring_orders o
        JOIN customers c ON c.id = o.customer_id
        JOIN designs d ON d.id = o.design_id
@@ -344,7 +348,9 @@ export async function assignTailorAction(
           })
         : 'TBD';
 
-      if (order.customer_phone) {
+      // For batch orders, skip the per-order "order updated" customer WA — the customer
+      // already received ONE batch confirmation at creation time.
+      if (order.customer_phone && !order.batch_id) {
         sendWhatsAppTemplate(
           order.customer_phone,
           'sutra_order_updated',
