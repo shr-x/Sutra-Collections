@@ -660,10 +660,23 @@ CREATE INDEX IF NOT EXISTS idx_design_fields_design      ON design_measurement_f
 
 -- Item categorisation and extended attributes
 CREATE TABLE IF NOT EXISTS item_categories (
-  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   name       VARCHAR(100) NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  item_type  VARCHAR(20)  NOT NULL DEFAULT 'finished' CHECK (item_type IN ('finished','raw_material')),
+  created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+-- Idempotent: add column for DBs created before item_type was in the schema
+ALTER TABLE item_categories ADD COLUMN IF NOT EXISTS item_type VARCHAR(20) NOT NULL DEFAULT 'finished';
+
+-- Managed unit dropdown
+CREATE TABLE IF NOT EXISTS item_units (
+  id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       VARCHAR(100) NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+INSERT INTO item_units (name) VALUES
+  ('pcs'), ('meters'), ('kg'), ('grams'), ('liters'), ('pairs'), ('sets'), ('yards')
+ON CONFLICT (name) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS item_sizes (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -869,10 +882,11 @@ CREATE TABLE IF NOT EXISTS sa_stock_adjustments (
   adjusted_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Customers: CRM / birthday-anniversary / soft-delete
+-- Soft-delete for customers and suppliers
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS date_of_birth    DATE;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS anniversary_date DATE;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS deleted_at       TIMESTAMPTZ;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS deleted_at       TIMESTAMPTZ;
 
 -- Invoice customer snapshots (captured at creation, survives customer edits)
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_name_snapshot  TEXT;

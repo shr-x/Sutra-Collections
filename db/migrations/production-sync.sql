@@ -6,6 +6,33 @@
 -- Safe to re-run as many times as needed.
 -- ─────────────────────────────────────────────────────────────────────────────
 
+-- ── 0. item_categories: item_type column ─────────────────────────────────────
+-- item_categories was created without item_type; the API and item form both need it.
+ALTER TABLE item_categories ADD COLUMN IF NOT EXISTS item_type VARCHAR(20) NOT NULL DEFAULT 'finished';
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'item_categories'::regclass AND contype = 'c'
+      AND pg_get_constraintdef(oid) LIKE '%item_type%'
+  ) THEN
+    ALTER TABLE item_categories ADD CONSTRAINT item_categories_item_type_check
+      CHECK (item_type IN ('finished', 'raw_material'));
+  END IF;
+END $$;
+
+-- ── 0b. item_units table ──────────────────────────────────────────────────────
+-- Managed dropdown for item units (pcs, meters, kg, etc.).
+CREATE TABLE IF NOT EXISTS item_units (
+  id         UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       VARCHAR(100) NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+-- Seed common units (idempotent)
+INSERT INTO item_units (name) VALUES
+  ('pcs'), ('meters'), ('kg'), ('grams'), ('liters'), ('pairs'), ('sets'), ('yards')
+ON CONFLICT (name) DO NOTHING;
+
 -- ── 1. Customer snapshot columns on invoices ──────────────────────────────────
 -- Captured at invoice creation so reports survive customer edits / deletions.
 ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_name_snapshot  TEXT;
@@ -76,7 +103,11 @@ INSERT INTO settings (key, value)
 VALUES ('shop_anniversary_date', '')
 ON CONFLICT (key) DO NOTHING;
 
--- ── 8. Guard: columns already added in schema.sql — kept here for reference ──
+-- ── 8. suppliers.deleted_at ───────────────────────────────────────────────────
+-- Soft-delete support for suppliers (mirrors customers.deleted_at pattern).
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+-- ── 9. Guard: columns already added in schema.sql — kept here for reference ──
 -- (These are already idempotent in schema.sql; listed here so this file is a
 --  complete single source of truth for what production needed.)
 ALTER TABLE customers         ADD COLUMN IF NOT EXISTS date_of_birth      DATE;
