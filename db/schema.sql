@@ -874,6 +874,68 @@ ALTER TABLE customers ADD COLUMN IF NOT EXISTS date_of_birth    DATE;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS anniversary_date DATE;
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS deleted_at       TIMESTAMPTZ;
 
+-- Invoice customer snapshots (captured at creation, survives customer edits)
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_name_snapshot  TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_phone_snapshot TEXT;
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS customer_gstin_snapshot TEXT;
+
+-- Tailoring order customer snapshots
+ALTER TABLE tailoring_orders ADD COLUMN IF NOT EXISTS customer_name_snapshot  TEXT;
+ALTER TABLE tailoring_orders ADD COLUMN IF NOT EXISTS customer_phone_snapshot TEXT;
+
+-- Items: low-stock alert dedup (prevents repeat alerts within 24h)
+ALTER TABLE items ADD COLUMN IF NOT EXISTS last_low_stock_alert TIMESTAMPTZ;
+
+-- Settings: shop anniversary date for daily WA greeting cron
+INSERT INTO settings (key, value) VALUES ('shop_anniversary_date', '') ON CONFLICT (key) DO NOTHING;
+
+-- ─── Audit Log ────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS audit_log (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID        REFERENCES users(id) ON DELETE SET NULL,
+  action       VARCHAR(30) NOT NULL,
+  entity_type  VARCHAR(50) NOT NULL,
+  entity_id    UUID        NOT NULL,
+  entity_label TEXT,
+  old_value    TEXT,
+  new_value    TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity  ON audit_log(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_user    ON audit_log(user_id);
+
+-- ─── Attendance ───────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS attendance (
+  id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date       DATE        NOT NULL,
+  status     VARCHAR(20) NOT NULL CHECK (status IN ('present','absent','half_day','leave')),
+  marked_by  UUID        REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, date)
+);
+CREATE INDEX IF NOT EXISTS idx_attendance_user ON attendance(user_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(date);
+
+-- ─── Payroll Runs ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS payroll_runs (
+  id               UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          UUID          NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  month            INT           NOT NULL CHECK (month BETWEEN 1 AND 12),
+  year             INT           NOT NULL,
+  base_salary      NUMERIC(12,2) NOT NULL DEFAULT 0,
+  days_present     NUMERIC(5,1)  NOT NULL DEFAULT 0,
+  half_days        NUMERIC(5,1)  NOT NULL DEFAULT 0,
+  total_days       INT           NOT NULL DEFAULT 0,
+  amount_paid      NUMERIC(12,2) NOT NULL DEFAULT 0,
+  expense_entry_id UUID          REFERENCES journal_entries(id) ON DELETE SET NULL,
+  created_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, month, year)
+);
+CREATE INDEX IF NOT EXISTS idx_payroll_runs_user  ON payroll_runs(user_id);
+CREATE INDEX IF NOT EXISTS idx_payroll_runs_month ON payroll_runs(year, month);
+
 -- WhatsApp: incoming message log (webhook receiver)
 CREATE TABLE IF NOT EXISTS whatsapp_incoming_messages (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
