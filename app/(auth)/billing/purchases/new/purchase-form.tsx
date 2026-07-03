@@ -36,6 +36,21 @@ interface Line {
   quantity: number; rate: number; gst_rate: number; hsn_code: string | null;
 }
 
+// One size/colour/qty/rate row inside the product creation or add-variant modal
+interface VariantRow { key: string; size: string; color: string; qty: string; rate: string }
+
+// An AI-extracted size/colour that didn't match any existing variant on a matched product
+interface VariantMismatch {
+  lineKey: string;   // key of the purchase line this mismatch belongs to
+  itemId: string;    // the matched product's ID
+  itemName: string;
+  extractedSize: string | null;
+  extractedColor: string | null;
+}
+
+const SIZE_PRESETS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', '3XL', 'Free Size'];
+type ProductModalMode = 'new-product' | 'add-variant';
+
 export default function PurchaseForm({ action, items, suppliers: initialSuppliers, warehouses, defaultWarehouseId }: Props) {
   const [state, formAction] = useFormState<ActionResult, FormData>(action, { success: false });
   const [pending, startTransition] = useTransition();
@@ -59,18 +74,15 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
 
   const saveNewSupplier = async () => {
     if (!newSupName.trim()) { setSupplierError('Name required'); return; }
-    setSavingSupplier(true);
-    setSupplierError('');
+    setSavingSupplier(true); setSupplierError('');
     try {
       const res = await fetch('/api/suppliers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newSupName.trim(), phone: newSupPhone || null, gstin: newSupGstin || null }),
       });
       const data = await res.json();
       if (!res.ok || !data.id) { setSupplierError(data.error ?? 'Failed to save'); return; }
-      const newSup: SupplierOpt = { id: data.id, name: newSupName.trim() };
-      setSuppliers((prev) => [...prev, newSup].sort((a, b) => a.name.localeCompare(b.name)));
+      setSuppliers((prev) => [...prev, { id: data.id, name: newSupName.trim() }].sort((a, b) => a.name.localeCompare(b.name)));
       setSupplierId(data.id);
       setShowNewSupplier(false);
       setNewSupName(''); setNewSupPhone(''); setNewSupGstin('');
@@ -78,36 +90,25 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
     finally { setSavingSupplier(false); }
   };
 
-  // ── Other header state ─────────────────────────────────────────────────────
+  // ── Header fields ──────────────────────────────────────────────────────────
   const [warehouseId, setWarehouseId] = useState(defaultWarehouseId ?? '');
   const [purchaseDate, setPurchaseDate] = useState(today);
   const [supplierInvNum, setSupplierInvNum] = useState('');
   const [includeInGst, setIncludeInGst] = useState(true);
   const [notes, setNotes] = useState('');
-  // Mutable local copy of items — updated in-place when user adds a new size/color
-  // so the selects refresh without a page reload that would erase form state.
+
+  // Mutable local copy of items — updated in-place when sizes/colours are added
+  // so selects refresh without a page reload that would erase all form state.
   const [localItems, setLocalItems] = useState<ItemOpt[]>(items);
   const [lines, setLines] = useState<Line[]>([]);
   const [importBanner, setImportBanner] = useState('');
 
-  // ── Unmatched AI items → "add new product" suggestions (#3) ─────────────────
+  // ── AI Import suggestion state ─────────────────────────────────────────────
   const [unmatchedItems, setUnmatchedItems] = useState<AiImportItem[]>([]);
-  // AI extracted a size/color that doesn't exist yet for the matched product
-  const [variantMismatches, setVariantMismatches] = useState<Array<{
-    itemName: string; extractedSize: string | null; extractedColor: string | null;
-  }>>([]);
-  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
-  // The unmatched item currently being added as a product (null = modal closed)
-  const [productDraft, setProductDraft] = useState<AiImportItem | null>(null);
-  const [pName, setPName] = useState('');
-  const [pCategory, setPCategory] = useState('');
-  const [pGst, setPGst] = useState('0');
-  const [pHsn, setPHsn] = useState('');
-  const [pUnit, setPUnit] = useState('pcs');
-  const [pSalePrice, setPSalePrice] = useState('');
-  const [savingProduct, setSavingProduct] = useState(false);
-  const [productError, setProductError] = useState('');
+  const [variantMismatches, setVariantMismatches] = useState<VariantMismatch[]>([]);
 
+  // ── Categories (lazy-loaded for the product modal) ─────────────────────────
+  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   useEffect(() => {
     fetch('/api/item-categories')
       .then((r) => r.json())
@@ -115,8 +116,28 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
       .catch(() => setCategories([]));
   }, []);
 
+  // ── Product / add-variant modal ────────────────────────────────────────────
+  const [productModalMode, setProductModalMode] = useState<ProductModalMode>('new-product');
+  const [productDraft, setProductDraft] = useState<AiImportItem | null>(null);
+  // For 'add-variant' mode: which existing product and which purchase line to update
+  const [variantTargetItemId, setVariantTargetItemId] = useState<string | null>(null);
+  const [variantTargetLineKey, setVariantTargetLineKey] = useState<string | null>(null);
+  const [pName, setPName] = useState('');
+  const [pCategory, setPCategory] = useState('');
+  const [pGst, setPGst] = useState('0');
+  const [pHsn, setPHsn] = useState('');
+  const [pUnit, setPUnit] = useState('pcs');
+  const [pSalePrice, setPSalePrice] = useState('');
+  const [pVariants, setPVariants] = useState<VariantRow[]>([]);
+  const [savingProduct, setSavingProduct] = useState(false);
+  const [productError, setProductError] = useState('');
+
+  // Open modal to create a new product (called from unmatched-item suggestion card)
   const openProductModal = (it: AiImportItem) => {
+    setProductModalMode('new-product');
     setProductDraft(it);
+    setVariantTargetItemId(null);
+    setVariantTargetLineKey(null);
     setPName(it.name);
     setPGst(String([0, 5, 12, 18, 28].includes(it.gst_rate) ? it.gst_rate : 0));
     setPHsn(it.hsn_code ?? '');
@@ -124,46 +145,178 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
     setPSalePrice(it.rate ? String(it.rate) : '');
     setPCategory('');
     setProductError('');
+    // Pre-fill the first variant row from AI-extracted size/colour
+    setPVariants([{ key: nk(), size: it.size ?? '', color: it.color ?? '', qty: String(it.quantity || 1), rate: String(it.rate || '') }]);
+  };
+
+  // Open modal to add a missing variant to an existing product
+  const openVariantModal = (m: VariantMismatch) => {
+    setProductModalMode('add-variant');
+    // productDraft drives the modal open; name is used in the modal title
+    setProductDraft({ name: m.itemName, item_id: m.itemId, matched: true, quantity: 1, rate: 0, gst_rate: 0, hsn_code: null, size: m.extractedSize, color: m.extractedColor });
+    setVariantTargetItemId(m.itemId);
+    setVariantTargetLineKey(m.lineKey);
+    setPName(m.itemName);
+    setProductError('');
+    setPVariants([{ key: nk(), size: m.extractedSize ?? '', color: m.extractedColor ?? '', qty: '1', rate: '' }]);
   };
 
   const skipUnmatched = (it: AiImportItem) =>
     setUnmatchedItems((prev) => prev.filter((u) => u !== it));
 
+  const dismissMismatch = (lineKey: string) =>
+    setVariantMismatches((prev) => prev.filter((m) => m.lineKey !== lineKey));
+
+  // Helper: create sizes and colours via API, return id maps
+  const createVariantsForItem = async (
+    itemId: string, variants: VariantRow[]
+  ): Promise<{ sizeMap: Map<string, { id: string; name: string }>; colorMap: Map<string, { id: string; name: string }>; error?: string }> => {
+    const sizeMap = new Map<string, { id: string; name: string }>();
+    const colorMap = new Map<string, { id: string; name: string }>();
+    const uniqueSizes = Array.from(new Set(variants.map((v) => v.size.trim()).filter(Boolean)));
+    const uniqueColors = Array.from(new Set(variants.map((v) => v.color.trim()).filter(Boolean)));
+
+    for (const sizeName of uniqueSizes) {
+      const sr = await fetch(`/api/items/${itemId}/sizes`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ size_name: sizeName }),
+      });
+      const sd = await sr.json() as { id?: string; error?: string };
+      if (sr.ok && sd.id) sizeMap.set(sizeName.toLowerCase(), { id: sd.id, name: sizeName });
+      else if (!sr.ok) return { sizeMap, colorMap, error: sd.error ?? `Failed to add size "${sizeName}"` };
+    }
+    for (const colorName of uniqueColors) {
+      const cr = await fetch(`/api/items/${itemId}/colors`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ color_name: colorName }),
+      });
+      const cd = await cr.json() as { id?: string; error?: string };
+      if (cr.ok && cd.id) colorMap.set(colorName.toLowerCase(), { id: cd.id, name: colorName });
+      else if (!cr.ok) return { sizeMap, colorMap, error: cd.error ?? `Failed to add colour "${colorName}"` };
+    }
+    return { sizeMap, colorMap };
+  };
+
   const saveNewProduct = async () => {
     if (!productDraft) return;
-    if (!pName.trim()) { setProductError('Name required'); return; }
     setSavingProduct(true);
     setProductError('');
+
     try {
+      if (productModalMode === 'add-variant') {
+        // ── Add variant(s) to an existing product ─────────────────────────
+        const existingItemId = variantTargetItemId!;
+        const existingItem = localItems.find((i) => i.id === existingItemId);
+        const { sizeMap, colorMap, error } = await createVariantsForItem(existingItemId, pVariants);
+        if (error) { setProductError(error); return; }
+
+        // Merge new sizes/colours into localItems
+        setLocalItems((prev) => prev.map((item) => {
+          if (item.id !== existingItemId) return item;
+          const addedSizes: ItemSize[] = Array.from(sizeMap.values()).map((s) => ({ id: s.id, size_name: s.name, is_default: false }));
+          const addedColors: ItemColor[] = Array.from(colorMap.values()).map((c) => ({ id: c.id, color_name: c.name, is_default: false }));
+          return { ...item, sizes: [...item.sizes, ...addedSizes], colors: [...item.colors, ...addedColors] };
+        }));
+
+        // Patch the target line with the first variant row; add extra lines for the rest
+        const targetKey = variantTargetLineKey;
+        setLines((prev) => {
+          const updated = prev.map((l) => {
+            if (l.key !== targetKey || pVariants.length === 0) return l;
+            const v = pVariants[0];
+            const sEntry = sizeMap.get(v.size.trim().toLowerCase());
+            const cEntry = colorMap.get(v.color.trim().toLowerCase());
+            return {
+              ...l,
+              size_id: sEntry?.id ?? l.size_id,
+              size_name: sEntry?.name ?? l.size_name,
+              color_id: cEntry?.id ?? l.color_id,
+              color_name: cEntry?.name ?? l.color_name,
+              quantity: parseFloat(v.qty) || l.quantity,
+              rate: parseFloat(v.rate) || l.rate,
+            };
+          });
+          const extraLines: Line[] = pVariants.slice(1).map((v) => {
+            const sEntry = sizeMap.get(v.size.trim().toLowerCase());
+            const cEntry = colorMap.get(v.color.trim().toLowerCase());
+            return {
+              key: nk(),
+              item_id: existingItemId,
+              item_name: productDraft.name,
+              size_id: sEntry?.id ?? null,
+              size_name: sEntry?.name ?? v.size.trim(),
+              color_id: cEntry?.id ?? null,
+              color_name: cEntry?.name ?? v.color.trim(),
+              quantity: parseFloat(v.qty) || 1,
+              rate: parseFloat(v.rate) || existingItem?.sale_price || 0,
+              gst_rate: existingItem?.gst_rate ?? 0,
+              hsn_code: existingItem?.hsn_code ?? null,
+            };
+          });
+          return [...updated, ...extraLines];
+        });
+
+        setVariantMismatches((prev) => prev.filter((m) => m.lineKey !== variantTargetLineKey));
+        setProductDraft(null);
+        return;
+      }
+
+      // ── Create a new product ───────────────────────────────────────────
+      if (!pName.trim()) { setProductError('Name required'); return; }
       const res = await fetch('/api/items/quick-create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: pName.trim(),
-          gst_rate: Number(pGst),
-          hsn_code: pHsn || null,
-          unit: pUnit,
-          sale_price: pSalePrice || null,
-          category_id: pCategory || null,
+          name: pName.trim(), gst_rate: Number(pGst),
+          hsn_code: pHsn || null, unit: pUnit,
+          sale_price: pSalePrice || null, category_id: pCategory || null,
         }),
       });
-      const data = await res.json();
+      const data = await res.json() as { id?: string; name?: string; error?: string };
       if (!res.ok || !data.id) { setProductError(data.error ?? 'Failed to save product'); return; }
-      // Add the new product as a purchase line using the AI qty + rate
-      setLines((prev) => [
-        ...prev,
-        {
-          key: nk(),
-          item_id: data.id,
-          item_name: data.name ?? pName.trim(),
-          size_id: null, size_name: '',
-          color_id: null, color_name: '',
-          quantity: productDraft.quantity || 1,
-          rate: productDraft.rate || Number(pSalePrice) || 0,
-          gst_rate: Number(pGst),
-          hsn_code: pHsn || null,
-        },
-      ]);
+
+      const productId = data.id;
+      const { sizeMap, colorMap, error } = await createVariantsForItem(productId, pVariants);
+      if (error) { setProductError(error); return; }
+
+      // One purchase line per variant row; fall back to a bare line if no rows had data
+      const newLines: Line[] = pVariants
+        .map((v) => {
+          const sEntry = sizeMap.get(v.size.trim().toLowerCase());
+          const cEntry = colorMap.get(v.color.trim().toLowerCase());
+          return {
+            key: nk(),
+            item_id: productId,
+            item_name: data.name ?? pName.trim(),
+            size_id: sEntry?.id ?? null,
+            size_name: sEntry?.name ?? v.size.trim(),
+            color_id: cEntry?.id ?? null,
+            color_name: cEntry?.name ?? v.color.trim(),
+            quantity: parseFloat(v.qty) || productDraft.quantity || 1,
+            rate: parseFloat(v.rate) || productDraft.rate || Number(pSalePrice) || 0,
+            gst_rate: Number(pGst),
+            hsn_code: pHsn || null,
+          };
+        });
+      if (newLines.length === 0) {
+        newLines.push({
+          key: nk(), item_id: productId, item_name: data.name ?? pName.trim(),
+          size_id: null, size_name: '', color_id: null, color_name: '',
+          quantity: productDraft.quantity || 1, rate: productDraft.rate || Number(pSalePrice) || 0,
+          gst_rate: Number(pGst), hsn_code: pHsn || null,
+        });
+      }
+      setLines((prev) => [...prev, ...newLines]);
+
+      // Add the new product to localItems so it can be selected in the add-item row
+      const newSizes: ItemSize[] = Array.from(sizeMap.values()).map((s) => ({ id: s.id, size_name: s.name, is_default: false }));
+      const newColors: ItemColor[] = Array.from(colorMap.values()).map((c) => ({ id: c.id, color_name: c.name, is_default: false }));
+      setLocalItems((prev) => [...prev, {
+        id: productId, name: data.name ?? pName.trim(),
+        unit: pUnit, gst_rate: Number(pGst), hsn_code: pHsn || null,
+        sale_price: pSalePrice ? Number(pSalePrice) : null,
+        sizes: newSizes, colors: newColors,
+      }]);
+
       setUnmatchedItems((prev) => prev.filter((u) => u !== productDraft));
       setProductDraft(null);
     } catch {
@@ -173,9 +326,9 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
     }
   };
 
-  // ── AI Import prefill (#4) ──────────────────────────────────────────────────
-  // The /billing/purchases AI Import modal stashes extracted data in
-  // sessionStorage and navigates here; consume it once on mount.
+  // ── AI Import prefill ──────────────────────────────────────────────────────
+  // The AI Import modal stashes extracted data in sessionStorage and navigates
+  // here; consume it once on mount.
   useEffect(() => {
     const raw = sessionStorage.getItem(AI_PREFILL_KEY);
     if (!raw) return;
@@ -193,13 +346,13 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
       if (r.notes) setNotes(r.notes);
 
       const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const mismatches: Array<{ itemName: string; extractedSize: string | null; extractedColor: string | null }> = [];
+      const mismatches: VariantMismatch[] = [];
 
       const newLines: Line[] = (r.items ?? [])
         .filter((it) => it.item_id)
         .map((it) => {
+          const lineKey = nk();
           const item = localItems.find((i) => i.id === it.item_id);
-          // Match extracted size/color to existing variants (case/punctuation-insensitive)
           const matchSize = it.size
             ? item?.sizes.find((s) => norm(s.size_name) === norm(it.size as string))
             : undefined;
@@ -207,24 +360,26 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
             ? item?.colors.find((c) => norm(c.color_name) === norm(it.color as string))
             : undefined;
 
-          // If AI extracted a value but it doesn't match any variant, warn the user
+          // If AI extracted a size/colour that doesn't exist yet → suggest "Add this variant?"
           // instead of silently falling back to the default.
           const sizeMismatch = it.size && !matchSize;
           const colorMismatch = it.color && !matchColor;
           if (sizeMismatch || colorMismatch) {
             mismatches.push({
+              lineKey,
+              itemId: it.item_id as string,
               itemName: item?.name ?? it.name,
               extractedSize: sizeMismatch ? it.size : null,
               extractedColor: colorMismatch ? it.color : null,
             });
           }
 
-          // Only fall back to default when AI didn't extract a value at all
+          // Only fall back to default when AI didn't extract a size/colour at all
           const size = matchSize ?? (!it.size ? (item?.sizes.find((s) => s.is_default) ?? item?.sizes[0]) : undefined);
           const color = matchColor ?? (!it.color ? (item?.colors.find((c) => c.is_default) ?? item?.colors[0]) : undefined);
 
           return {
-            key: nk(),
+            key: lineKey,
             item_id: it.item_id as string,
             item_name: item?.name ?? it.name,
             size_id: size?.id ?? null,
@@ -247,9 +402,7 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
           ? `AI import: ${newLines.length} item(s) added. ${unmatched.length} not found in your products — add them below.`
           : `AI import: ${newLines.length} item(s) added from your pasted invoice.`
       );
-    } catch {
-      /* ignore malformed prefill */
-    }
+    } catch { /* ignore malformed prefill */ }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Item add row ───────────────────────────────────────────────────────────
@@ -259,19 +412,17 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
   const [addQty, setAddQty] = useState('1');
   const [addRate, setAddRate] = useState('');
 
-  // Inline size add
   const [showAddSize, setShowAddSize] = useState(false);
   const [newSizeName, setNewSizeName] = useState('');
   const [sizeError, setSizeError] = useState('');
 
-  // Inline color add
   const [showAddColor, setShowAddColor] = useState(false);
   const [newColorName, setNewColorName] = useState('');
   const [colorError, setColorError] = useState('');
 
   const selItem = localItems.find((i) => i.id === addItemId);
 
-  // Auto-fill size, color, and rate when item selected
+  // Auto-fill size, colour, and rate when a different item is selected
   useEffect(() => {
     if (!selItem) { setAddSizeId(''); setAddColorId(''); setAddRate(''); return; }
     setAddSizeId(selItem.sizes.find((s) => s.is_default)?.id ?? selItem.sizes[0]?.id ?? '');
@@ -281,7 +432,6 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
     setShowAddColor(false);
   }, [addItemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Totals
   const lineResults = lines.map((l) => calcLine({ quantity: l.quantity, rate: l.rate, gstRate: l.gst_rate }));
   const totals = calcInvoiceTotals(lineResults);
 
@@ -308,13 +458,11 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
     if (!newSizeName.trim() || !addItemId) { setSizeError('Name required'); return; }
     try {
       const res = await fetch(`/api/items/${addItemId}/sizes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ size_name: newSizeName.trim() }),
       });
       const data = await res.json() as { id: string; size_name: string; is_default: boolean; error?: string };
       if (!res.ok) { setSizeError(data.error ?? 'Failed'); return; }
-      // Update localItems in-place — no reload needed, existing form state is preserved
       setLocalItems((prev) => prev.map((it) =>
         it.id === addItemId ? { ...it, sizes: [...it.sizes, { id: data.id, size_name: data.size_name, is_default: false }] } : it
       ));
@@ -327,13 +475,11 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
     if (!newColorName.trim() || !addItemId) { setColorError('Name required'); return; }
     try {
       const res = await fetch(`/api/items/${addItemId}/colors`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ color_name: newColorName.trim() }),
       });
       const data = await res.json() as { id: string; color_name: string; is_default: boolean; error?: string };
       if (!res.ok) { setColorError(data.error ?? 'Failed'); return; }
-      // Update localItems in-place — no reload needed, existing form state is preserved
       setLocalItems((prev) => prev.map((it) =>
         it.id === addItemId ? { ...it, colors: [...it.colors, { id: data.id, color_name: data.color_name, is_default: false }] } : it
       ));
@@ -351,10 +497,8 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
       purchase_date: purchaseDate, include_in_gst: includeInGst,
       notes: notes || null,
       items: lines.map((l) => ({
-        item_id: l.item_id,
-        size_id: l.size_id, color_id: l.color_id,
-        quantity: l.quantity, rate: l.rate,
-        gst_rate: l.gst_rate, hsn_code: l.hsn_code,
+        item_id: l.item_id, size_id: l.size_id, color_id: l.color_id,
+        quantity: l.quantity, rate: l.rate, gst_rate: l.gst_rate, hsn_code: l.hsn_code,
       })),
     }));
     startTransition(() => formAction(fd));
@@ -372,25 +516,10 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
         </div>
       )}
 
-      {variantMismatches.length > 0 && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-1">
-          <p className="font-semibold">⚠️ Some AI-extracted sizes/colours weren&apos;t found in your product list:</p>
-          {variantMismatches.map((m, i) => (
-            <p key={i} className="text-xs">
-              <span className="font-medium">{m.itemName}</span>
-              {m.extractedSize && <> · Size: <span className="font-medium">{m.extractedSize}</span></>}
-              {m.extractedColor && <> · Colour: <span className="font-medium">{m.extractedColor}</span></>}
-              {' '}— please select the correct variant in the item line, or add the missing size/colour first.
-            </p>
-          ))}
-          <button type="button" onClick={() => setVariantMismatches([])} className="mt-1 text-xs text-amber-600 hover:underline">Dismiss</button>
-        </div>
-      )}
-
+      {/* Purchase Details */}
       <div className="card">
         <h2 className="mb-4 font-semibold text-gray-900">Purchase Details</h2>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Supplier with inline add */}
           <div>
             <label className="label">Supplier *</label>
             <select className="input" value={showNewSupplier ? '__new__' : supplierId} onChange={(e) => handleSupplierChange(e.target.value)} required={!showNewSupplier}>
@@ -412,7 +541,6 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
               </div>
             )}
           </div>
-
           <div>
             <label className="label">Warehouse *</label>
             <select className="input" value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} required>
@@ -439,6 +567,7 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
         </div>
       </div>
 
+      {/* Items */}
       <div className="card">
         <h2 className="mb-4 font-semibold text-gray-900">Items</h2>
 
@@ -457,79 +586,45 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
             )}
           </div>
 
-          {/* Size — always shown when item has sizes */}
-          {selItem && (
+          {/* Size — only shown when the selected product already has sizes defined */}
+          {selItem && selItem.sizes.length > 0 && (
             <div className="min-w-[100px] flex-1">
               <label className="label text-xs">Size</label>
-              {selItem.sizes.length > 0 ? (
-                <>
-                  <select className="input text-sm" value={addSizeId} onChange={(e) => setAddSizeId(e.target.value)}>
-                    {selItem.sizes.map((s) => <option key={s.id} value={s.id}>{s.size_name}</option>)}
-                  </select>
-                  {!showAddSize && (
-                    <button type="button" onClick={() => setShowAddSize(true)} className="mt-0.5 text-xs text-purple-600 hover:underline">+ Add size</button>
-                  )}
-                  {showAddSize && (
-                    <div className="mt-1 flex gap-1 items-center">
-                      <input className="input text-xs py-1 w-20" placeholder="Name" value={newSizeName} onChange={(e) => setNewSizeName(e.target.value)} />
-                      <button type="button" onClick={saveNewSize} className="text-xs text-purple-600 font-medium hover:underline">Save</button>
-                      <button type="button" onClick={() => { setShowAddSize(false); setSizeError(''); }} className="text-xs text-gray-400 hover:underline">✕</button>
-                    </div>
-                  )}
-                  {sizeError && <p className="text-xs text-red-500">{sizeError}</p>}
-                </>
-              ) : (
-                <div className="text-xs text-gray-400 pt-1">
-                  {showAddSize ? (
-                    <div className="flex gap-1 items-center">
-                      <input className="input text-xs py-1 w-20" placeholder="New size" value={newSizeName} onChange={(e) => setNewSizeName(e.target.value)} />
-                      <button type="button" onClick={saveNewSize} className="text-xs text-purple-600 font-medium">Save</button>
-                      <button type="button" onClick={() => setShowAddSize(false)} className="text-xs text-gray-400">✕</button>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => setShowAddSize(true)} className="text-xs text-purple-600 hover:underline">+ Add size</button>
-                  )}
-                  {sizeError && <p className="text-red-500">{sizeError}</p>}
+              <select className="input text-sm" value={addSizeId} onChange={(e) => setAddSizeId(e.target.value)}>
+                {selItem.sizes.map((s) => <option key={s.id} value={s.id}>{s.size_name}</option>)}
+              </select>
+              {!showAddSize && (
+                <button type="button" onClick={() => setShowAddSize(true)} className="mt-0.5 text-xs text-purple-600 hover:underline">+ Add size</button>
+              )}
+              {showAddSize && (
+                <div className="mt-1 flex gap-1 items-center">
+                  <input className="input text-xs py-1 w-20" placeholder="Name" value={newSizeName} onChange={(e) => setNewSizeName(e.target.value)} />
+                  <button type="button" onClick={saveNewSize} className="text-xs text-purple-600 font-medium hover:underline">Save</button>
+                  <button type="button" onClick={() => { setShowAddSize(false); setSizeError(''); }} className="text-xs text-gray-400 hover:underline">✕</button>
                 </div>
               )}
+              {sizeError && <p className="text-xs text-red-500">{sizeError}</p>}
             </div>
           )}
 
-          {/* Colour — always shown when item has colors */}
-          {selItem && (
+          {/* Colour — only shown when the selected product already has colours defined */}
+          {selItem && selItem.colors.length > 0 && (
             <div className="min-w-[100px] flex-1">
               <label className="label text-xs">Colour</label>
-              {selItem.colors.length > 0 ? (
-                <>
-                  <select className="input text-sm" value={addColorId} onChange={(e) => setAddColorId(e.target.value)}>
-                    {selItem.colors.map((c) => <option key={c.id} value={c.id}>{c.color_name}</option>)}
-                  </select>
-                  {!showAddColor && (
-                    <button type="button" onClick={() => setShowAddColor(true)} className="mt-0.5 text-xs text-purple-600 hover:underline">+ Add colour</button>
-                  )}
-                  {showAddColor && (
-                    <div className="mt-1 flex gap-1 items-center">
-                      <input className="input text-xs py-1 w-20" placeholder="Name" value={newColorName} onChange={(e) => setNewColorName(e.target.value)} />
-                      <button type="button" onClick={saveNewColor} className="text-xs text-purple-600 font-medium hover:underline">Save</button>
-                      <button type="button" onClick={() => { setShowAddColor(false); setColorError(''); }} className="text-xs text-gray-400 hover:underline">✕</button>
-                    </div>
-                  )}
-                  {colorError && <p className="text-xs text-red-500">{colorError}</p>}
-                </>
-              ) : (
-                <div className="text-xs text-gray-400 pt-1">
-                  {showAddColor ? (
-                    <div className="flex gap-1 items-center">
-                      <input className="input text-xs py-1 w-20" placeholder="New colour" value={newColorName} onChange={(e) => setNewColorName(e.target.value)} />
-                      <button type="button" onClick={saveNewColor} className="text-xs text-purple-600 font-medium">Save</button>
-                      <button type="button" onClick={() => setShowAddColor(false)} className="text-xs text-gray-400">✕</button>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => setShowAddColor(true)} className="text-xs text-purple-600 hover:underline">+ Add colour</button>
-                  )}
-                  {colorError && <p className="text-red-500">{colorError}</p>}
+              <select className="input text-sm" value={addColorId} onChange={(e) => setAddColorId(e.target.value)}>
+                {selItem.colors.map((c) => <option key={c.id} value={c.id}>{c.color_name}</option>)}
+              </select>
+              {!showAddColor && (
+                <button type="button" onClick={() => setShowAddColor(true)} className="mt-0.5 text-xs text-purple-600 hover:underline">+ Add colour</button>
+              )}
+              {showAddColor && (
+                <div className="mt-1 flex gap-1 items-center">
+                  <input className="input text-xs py-1 w-20" placeholder="Name" value={newColorName} onChange={(e) => setNewColorName(e.target.value)} />
+                  <button type="button" onClick={saveNewColor} className="text-xs text-purple-600 font-medium hover:underline">Save</button>
+                  <button type="button" onClick={() => { setShowAddColor(false); setColorError(''); }} className="text-xs text-gray-400 hover:underline">✕</button>
                 </div>
               )}
+              {colorError && <p className="text-xs text-red-500">{colorError}</p>}
             </div>
           )}
 
@@ -546,6 +641,7 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
           </div>
         </div>
 
+        {/* Line items table */}
         {lines.length > 0 && (
           <table className="w-full text-sm mb-4">
             <thead className="bg-gray-50 text-xs text-gray-500 font-semibold uppercase">
@@ -561,9 +657,10 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
             <tbody className="divide-y divide-gray-100">
               {lines.map((line, i) => {
                 const lr = lineResults[i];
-                const varLabel = [line.color_name, line.size_name]
-                  .filter((v) => v && v !== 'None' && v !== 'Regular')
-                  .join(' / ');
+                const varParts: string[] = [];
+                if (line.size_name) varParts.push(`Size: ${line.size_name}`);
+                if (line.color_name) varParts.push(`Color: ${line.color_name}`);
+                const varLabel = varParts.join(' · ');
                 return (
                   <tr key={line.key}>
                     <td className="px-3 py-2">
@@ -590,13 +687,18 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
           </table>
         )}
 
-        {/* Unmatched AI items — suggest adding as new products (#3) */}
+        {/* Unmatched AI items — suggest creating a new product */}
         {unmatchedItems.length > 0 && (
           <div className="mb-4 space-y-2">
             {unmatchedItems.map((it, i) => (
               <div key={`${it.name}-${i}`} className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
                 <p className="text-sm text-amber-800">
                   ⚠️ <span className="font-semibold">&ldquo;{it.name}&rdquo;</span> not found in your products
+                  {(it.size || it.color) && (
+                    <span className="ml-1 text-xs text-amber-600">
+                      ({[it.size && `Size: ${it.size}`, it.color && `Color: ${it.color}`].filter(Boolean).join(', ')})
+                    </span>
+                  )}
                   <span className="text-xs text-amber-600"> · {it.quantity} × ₹{it.rate}</span>
                 </p>
                 <div className="flex shrink-0 gap-2">
@@ -612,6 +714,34 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
           </div>
         )}
 
+        {/* Variant mismatches — AI matched the product but size/colour variant is missing */}
+        {variantMismatches.length > 0 && (
+          <div className="mb-4 space-y-2">
+            {variantMismatches.map((m) => (
+              <div key={m.lineKey} className="flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+                <p className="text-sm text-amber-800">
+                  ⚠️ <span className="font-semibold">{m.itemName}</span>
+                  {(m.extractedSize || m.extractedColor) && (
+                    <span className="ml-1 text-xs">
+                      ({[m.extractedSize && `Size: ${m.extractedSize}`, m.extractedColor && `Color: ${m.extractedColor}`].filter(Boolean).join(', ')})
+                    </span>
+                  )}
+                  {' '}— variant not found. Add this variant?
+                </p>
+                <div className="flex shrink-0 gap-2">
+                  <button type="button" onClick={() => openVariantModal(m)} className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700">
+                    Yes, Add Variant
+                  </button>
+                  <button type="button" onClick={() => dismissMismatch(m.lineKey)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100">
+                    Skip
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Totals */}
         <div className="flex justify-end">
           <div className="w-60 space-y-1 text-sm">
             <div className="flex justify-between text-gray-500"><span>CGST</span><span>{formatInr(totals.totalCgst)}</span></div>
@@ -621,53 +751,128 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
         </div>
       </div>
 
-      {/* Add-new-product modal (#3) */}
+      {/* Product creation / add-variant modal */}
       {productDraft && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-0 sm:p-4">
-          <div className="bg-white rounded-none sm:rounded-xl w-full sm:max-w-md h-full sm:h-auto sm:max-h-[85vh] overflow-y-auto shadow-xl">
+          <div className="bg-white rounded-none sm:rounded-xl w-full sm:max-w-lg h-full sm:h-auto sm:max-h-[90vh] overflow-y-auto shadow-xl">
             <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3">
-              <h3 className="font-semibold text-gray-900">Add New Product</h3>
+              <h3 className="font-semibold text-gray-900">
+                {productModalMode === 'add-variant' ? `Add Variant — ${pName}` : 'Add New Product'}
+              </h3>
               <button type="button" onClick={() => setProductDraft(null)} className="text-gray-400 hover:text-gray-700 text-xl leading-none">×</button>
             </div>
-            <div className="p-5 space-y-3">
+            <div className="p-5 space-y-4">
+              {/* Product fields — only in new-product mode */}
+              {productModalMode === 'new-product' && (
+                <>
+                  <div>
+                    <label className="label text-xs">Name *</label>
+                    <input className="input text-sm" value={pName} onChange={(e) => setPName(e.target.value)} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label text-xs">Category</label>
+                      <select className="input text-sm" value={pCategory} onChange={(e) => setPCategory(e.target.value)}>
+                        <option value="">— None —</option>
+                        {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label text-xs">GST Rate</label>
+                      <select className="input text-sm" value={pGst} onChange={(e) => setPGst(e.target.value)}>
+                        {[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label text-xs">HSN Code</label>
+                      <input className="input text-sm" value={pHsn} onChange={(e) => setPHsn(e.target.value)} maxLength={10} />
+                    </div>
+                    <div>
+                      <label className="label text-xs">Unit</label>
+                      <select className="input text-sm" value={pUnit} onChange={(e) => setPUnit(e.target.value)}>
+                        {['pcs', 'meter', 'kg', 'roll', 'box', 'set', 'pair'].map((u) => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label text-xs">Sale Price (₹)</label>
+                      <input type="number" className="input text-sm" value={pSalePrice} onChange={(e) => setPSalePrice(e.target.value)} min="0" step="0.01" />
+                    </div>
+                  </div>
+                  <hr className="border-gray-100" />
+                </>
+              )}
+
+              {/* Variant rows — size / colour / qty / rate per row */}
               <div>
-                <label className="label text-xs">Name *</label>
-                <input className="input text-sm" value={pName} onChange={(e) => setPName(e.target.value)} />
+                <p className="text-xs font-semibold text-gray-600 mb-2">
+                  {productModalMode === 'add-variant' ? 'Variant(s) to add' : 'Sizes / Colours (optional)'}
+                </p>
+                {/* HTML5 datalist for size presets — lets user pick or type freely */}
+                <datalist id="size-presets-modal">
+                  {SIZE_PRESETS.map((s) => <option key={s} value={s} />)}
+                </datalist>
+                <div className="space-y-2">
+                  {pVariants.map((v) => (
+                    <div key={v.key} className="flex gap-2 items-center">
+                      <input
+                        list="size-presets-modal"
+                        className="input text-sm flex-1 min-w-0"
+                        placeholder="Size (S/M/L…)"
+                        value={v.size}
+                        onChange={(e) => setPVariants((prev) => prev.map((r) => r.key === v.key ? { ...r, size: e.target.value } : r))}
+                      />
+                      <input
+                        className="input text-sm flex-1 min-w-0"
+                        placeholder="Colour"
+                        value={v.color}
+                        onChange={(e) => setPVariants((prev) => prev.map((r) => r.key === v.key ? { ...r, color: e.target.value } : r))}
+                      />
+                      <input
+                        type="number"
+                        className="input text-sm w-16"
+                        placeholder="Qty"
+                        value={v.qty}
+                        min="0.001"
+                        onChange={(e) => setPVariants((prev) => prev.map((r) => r.key === v.key ? { ...r, qty: e.target.value } : r))}
+                      />
+                      <input
+                        type="number"
+                        className="input text-sm w-24"
+                        placeholder="Rate ₹"
+                        value={v.rate}
+                        min="0"
+                        step="0.01"
+                        onChange={(e) => setPVariants((prev) => prev.map((r) => r.key === v.key ? { ...r, rate: e.target.value } : r))}
+                      />
+                      {pVariants.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setPVariants((prev) => prev.filter((r) => r.key !== v.key))}
+                          className="flex-shrink-0 text-red-400 hover:text-red-600 text-sm"
+                        >✕</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPVariants((prev) => [...prev, { key: nk(), size: '', color: '', qty: '1', rate: '' }])}
+                  className="mt-2 text-xs text-purple-600 hover:underline"
+                >
+                  + Add another size
+                </button>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label text-xs">Category</label>
-                  <select className="input text-sm" value={pCategory} onChange={(e) => setPCategory(e.target.value)}>
-                    <option value="">— None —</option>
-                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label text-xs">GST Rate</label>
-                  <select className="input text-sm" value={pGst} onChange={(e) => setPGst(e.target.value)}>
-                    {[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label text-xs">HSN Code</label>
-                  <input className="input text-sm" value={pHsn} onChange={(e) => setPHsn(e.target.value)} maxLength={10} />
-                </div>
-                <div>
-                  <label className="label text-xs">Unit</label>
-                  <select className="input text-sm" value={pUnit} onChange={(e) => setPUnit(e.target.value)}>
-                    {['pcs', 'meter', 'kg', 'roll', 'box', 'set', 'pair'].map((u) => <option key={u} value={u}>{u}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label text-xs">Sale Price (₹)</label>
-                  <input type="number" className="input text-sm" value={pSalePrice} onChange={(e) => setPSalePrice(e.target.value)} min="0" step="0.01" />
-                </div>
-              </div>
+
               {productError && <p className="text-xs text-red-600">{productError}</p>}
               <div className="flex justify-end gap-2 pt-1">
                 <button type="button" onClick={() => setProductDraft(null)} className="btn-secondary text-sm">Cancel</button>
-                <button type="button" onClick={saveNewProduct} disabled={savingProduct || !pName.trim()} className="btn-primary text-sm">
-                  {savingProduct ? 'Saving…' : 'Save Product'}
+                <button
+                  type="button"
+                  onClick={saveNewProduct}
+                  disabled={savingProduct || (productModalMode === 'new-product' && !pName.trim())}
+                  className="btn-primary text-sm"
+                >
+                  {savingProduct ? 'Saving…' : productModalMode === 'add-variant' ? 'Add Variant' : 'Save Product'}
                 </button>
               </div>
             </div>
