@@ -84,11 +84,18 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
   const [supplierInvNum, setSupplierInvNum] = useState('');
   const [includeInGst, setIncludeInGst] = useState(true);
   const [notes, setNotes] = useState('');
+  // Mutable local copy of items — updated in-place when user adds a new size/color
+  // so the selects refresh without a page reload that would erase form state.
+  const [localItems, setLocalItems] = useState<ItemOpt[]>(items);
   const [lines, setLines] = useState<Line[]>([]);
   const [importBanner, setImportBanner] = useState('');
 
   // ── Unmatched AI items → "add new product" suggestions (#3) ─────────────────
   const [unmatchedItems, setUnmatchedItems] = useState<AiImportItem[]>([]);
+  // AI extracted a size/color that doesn't exist yet for the matched product
+  const [variantMismatches, setVariantMismatches] = useState<Array<{
+    itemName: string; extractedSize: string | null; extractedColor: string | null;
+  }>>([]);
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   // The unmatched item currently being added as a product (null = modal closed)
   const [productDraft, setProductDraft] = useState<AiImportItem | null>(null);
@@ -185,21 +192,37 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
       if (r.date && /^\d{4}-\d{2}-\d{2}$/.test(r.date)) setPurchaseDate(r.date);
       if (r.notes) setNotes(r.notes);
 
+      const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const mismatches: Array<{ itemName: string; extractedSize: string | null; extractedColor: string | null }> = [];
+
       const newLines: Line[] = (r.items ?? [])
         .filter((it) => it.item_id)
         .map((it) => {
-          const item = items.find((i) => i.id === it.item_id);
-          // Auto-select the extracted size/color variant if it matches (#3),
-          // otherwise fall back to the item's default.
-          const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const item = localItems.find((i) => i.id === it.item_id);
+          // Match extracted size/color to existing variants (case/punctuation-insensitive)
           const matchSize = it.size
             ? item?.sizes.find((s) => norm(s.size_name) === norm(it.size as string))
             : undefined;
           const matchColor = it.color
             ? item?.colors.find((c) => norm(c.color_name) === norm(it.color as string))
             : undefined;
-          const size = matchSize ?? item?.sizes.find((s) => s.is_default) ?? item?.sizes[0];
-          const color = matchColor ?? item?.colors.find((c) => c.is_default) ?? item?.colors[0];
+
+          // If AI extracted a value but it doesn't match any variant, warn the user
+          // instead of silently falling back to the default.
+          const sizeMismatch = it.size && !matchSize;
+          const colorMismatch = it.color && !matchColor;
+          if (sizeMismatch || colorMismatch) {
+            mismatches.push({
+              itemName: item?.name ?? it.name,
+              extractedSize: sizeMismatch ? it.size : null,
+              extractedColor: colorMismatch ? it.color : null,
+            });
+          }
+
+          // Only fall back to default when AI didn't extract a value at all
+          const size = matchSize ?? (!it.size ? (item?.sizes.find((s) => s.is_default) ?? item?.sizes[0]) : undefined);
+          const color = matchColor ?? (!it.color ? (item?.colors.find((c) => c.is_default) ?? item?.colors[0]) : undefined);
+
           return {
             key: nk(),
             item_id: it.item_id as string,
@@ -215,6 +238,7 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
           };
         });
       if (newLines.length) setLines(newLines);
+      if (mismatches.length) setVariantMismatches(mismatches);
 
       const unmatched = (r.items ?? []).filter((it) => !it.item_id);
       setUnmatchedItems(unmatched);
@@ -245,7 +269,7 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
   const [newColorName, setNewColorName] = useState('');
   const [colorError, setColorError] = useState('');
 
-  const selItem = items.find((i) => i.id === addItemId);
+  const selItem = localItems.find((i) => i.id === addItemId);
 
   // Auto-fill size, color, and rate when item selected
   useEffect(() => {
@@ -262,7 +286,7 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
   const totals = calcInvoiceTotals(lineResults);
 
   const addLine = () => {
-    const item = items.find((i) => i.id === addItemId);
+    const item = localItems.find((i) => i.id === addItemId);
     if (!item || !addRate) return;
     const size = item.sizes.find((s) => s.id === addSizeId);
     const color = item.colors.find((c) => c.id === addColorId);
@@ -288,11 +312,14 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ size_name: newSizeName.trim() }),
       });
-      const data = await res.json();
+      const data = await res.json() as { id: string; size_name: string; is_default: boolean; error?: string };
       if (!res.ok) { setSizeError(data.error ?? 'Failed'); return; }
-      // Re-fetch item sizes by refreshing (simplest approach — reload)
+      // Update localItems in-place — no reload needed, existing form state is preserved
+      setLocalItems((prev) => prev.map((it) =>
+        it.id === addItemId ? { ...it, sizes: [...it.sizes, { id: data.id, size_name: data.size_name, is_default: false }] } : it
+      ));
+      setAddSizeId(data.id);
       setNewSizeName(''); setShowAddSize(false); setSizeError('');
-      window.location.reload();
     } catch { setSizeError('Network error'); }
   };
 
@@ -304,10 +331,14 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ color_name: newColorName.trim() }),
       });
-      const data = await res.json();
+      const data = await res.json() as { id: string; color_name: string; is_default: boolean; error?: string };
       if (!res.ok) { setColorError(data.error ?? 'Failed'); return; }
+      // Update localItems in-place — no reload needed, existing form state is preserved
+      setLocalItems((prev) => prev.map((it) =>
+        it.id === addItemId ? { ...it, colors: [...it.colors, { id: data.id, color_name: data.color_name, is_default: false }] } : it
+      ));
+      setAddColorId(data.id);
       setNewColorName(''); setShowAddColor(false); setColorError('');
-      window.location.reload();
     } catch { setColorError('Network error'); }
   };
 
@@ -338,6 +369,21 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
         <div className="flex items-start justify-between gap-3 rounded-md border border-purple-200 bg-purple-50 px-4 py-3 text-sm text-purple-800">
           <span>✨ {importBanner}</span>
           <button type="button" onClick={() => setImportBanner('')} className="text-purple-400 hover:text-purple-700 leading-none">×</button>
+        </div>
+      )}
+
+      {variantMismatches.length > 0 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 space-y-1">
+          <p className="font-semibold">⚠️ Some AI-extracted sizes/colours weren&apos;t found in your product list:</p>
+          {variantMismatches.map((m, i) => (
+            <p key={i} className="text-xs">
+              <span className="font-medium">{m.itemName}</span>
+              {m.extractedSize && <> · Size: <span className="font-medium">{m.extractedSize}</span></>}
+              {m.extractedColor && <> · Colour: <span className="font-medium">{m.extractedColor}</span></>}
+              {' '}— please select the correct variant in the item line, or add the missing size/colour first.
+            </p>
+          ))}
+          <button type="button" onClick={() => setVariantMismatches([])} className="mt-1 text-xs text-amber-600 hover:underline">Dismiss</button>
         </div>
       )}
 
@@ -402,7 +448,7 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
             <label className="label text-xs">Item</label>
             <select className="input text-sm" value={addItemId} onChange={(e) => setAddItemId(e.target.value)}>
               <option value="">Select item</option>
-              {items.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+              {localItems.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
             </select>
             {selItem && (
               <p className="mt-1 text-xs text-gray-400">
