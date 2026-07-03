@@ -167,33 +167,71 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
   const dismissMismatch = (lineKey: string) =>
     setVariantMismatches((prev) => prev.filter((m) => m.lineKey !== lineKey));
 
-  // Helper: create sizes and colours via API, return id maps
+  // Helper: resolve sizes and colours for a given item, creating missing ones via API.
+  // Checks knownSizes/knownColors first so the same name is never POSTed twice — not
+  // within a single save (two rows sharing "Maroon") nor across repeated "Add Variant"
+  // calls for the same product. The API is also idempotent as a second line of defence.
   const createVariantsForItem = async (
-    itemId: string, variants: VariantRow[]
+    itemId: string,
+    variants: VariantRow[],
+    knownSizes: ItemSize[],   // existing sizes for this item (from localItems)
+    knownColors: ItemColor[], // existing colours for this item (from localItems)
   ): Promise<{ sizeMap: Map<string, { id: string; name: string }>; colorMap: Map<string, { id: string; name: string }>; error?: string }> => {
+    const norm = (s: string) => s.toLowerCase().trim();
     const sizeMap = new Map<string, { id: string; name: string }>();
     const colorMap = new Map<string, { id: string; name: string }>();
-    const uniqueSizes = Array.from(new Set(variants.map((v) => v.size.trim()).filter(Boolean)));
-    const uniqueColors = Array.from(new Set(variants.map((v) => v.color.trim()).filter(Boolean)));
 
-    for (const sizeName of uniqueSizes) {
+    // Working copies so newly-created entries are visible within the same save
+    const seenSizes: ItemSize[] = [...knownSizes];
+    const seenColors: ItemColor[] = [...knownColors];
+
+    // Dedup variant rows by normalised name before touching the API
+    const uniqueSizeNames = Array.from(new Set(variants.map((v) => norm(v.size)).filter(Boolean)));
+    const uniqueColorNames = Array.from(new Set(variants.map((v) => norm(v.color)).filter(Boolean)));
+
+    for (const sNorm of uniqueSizeNames) {
+      // Prefer original casing from the first variant row that uses this name
+      const originalName = variants.find((v) => norm(v.size) === sNorm)?.size.trim() ?? sNorm;
+      const found = seenSizes.find((s) => norm(s.size_name) === sNorm);
+      if (found) {
+        sizeMap.set(sNorm, { id: found.id, name: found.size_name });
+        continue;
+      }
       const sr = await fetch(`/api/items/${itemId}/sizes`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ size_name: sizeName }),
+        body: JSON.stringify({ size_name: originalName }),
       });
-      const sd = await sr.json() as { id?: string; error?: string };
-      if (sr.ok && sd.id) sizeMap.set(sizeName.toLowerCase(), { id: sd.id, name: sizeName });
-      else if (!sr.ok) return { sizeMap, colorMap, error: sd.error ?? `Failed to add size "${sizeName}"` };
+      const sd = await sr.json() as { id?: string; size_name?: string; error?: string };
+      if (sd.id) {
+        const entry = { id: sd.id, name: sd.size_name ?? originalName };
+        sizeMap.set(sNorm, entry);
+        seenSizes.push({ id: sd.id, size_name: entry.name, is_default: false });
+      } else if (!sr.ok) {
+        return { sizeMap, colorMap, error: sd.error ?? `Failed to add size "${originalName}"` };
+      }
     }
-    for (const colorName of uniqueColors) {
+
+    for (const cNorm of uniqueColorNames) {
+      const originalName = variants.find((v) => norm(v.color) === cNorm)?.color.trim() ?? cNorm;
+      const found = seenColors.find((c) => norm(c.color_name) === cNorm);
+      if (found) {
+        colorMap.set(cNorm, { id: found.id, name: found.color_name });
+        continue;
+      }
       const cr = await fetch(`/api/items/${itemId}/colors`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ color_name: colorName }),
+        body: JSON.stringify({ color_name: originalName }),
       });
-      const cd = await cr.json() as { id?: string; error?: string };
-      if (cr.ok && cd.id) colorMap.set(colorName.toLowerCase(), { id: cd.id, name: colorName });
-      else if (!cr.ok) return { sizeMap, colorMap, error: cd.error ?? `Failed to add colour "${colorName}"` };
+      const cd = await cr.json() as { id?: string; color_name?: string; error?: string };
+      if (cd.id) {
+        const entry = { id: cd.id, name: cd.color_name ?? originalName };
+        colorMap.set(cNorm, entry);
+        seenColors.push({ id: cd.id, color_name: entry.name, is_default: false });
+      } else if (!cr.ok) {
+        return { sizeMap, colorMap, error: cd.error ?? `Failed to add colour "${originalName}"` };
+      }
     }
+
     return { sizeMap, colorMap };
   };
 
@@ -207,7 +245,9 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
         // ── Add variant(s) to an existing product ─────────────────────────
         const existingItemId = variantTargetItemId!;
         const existingItem = localItems.find((i) => i.id === existingItemId);
-        const { sizeMap, colorMap, error } = await createVariantsForItem(existingItemId, pVariants);
+        const { sizeMap, colorMap, error } = await createVariantsForItem(
+          existingItemId, pVariants, existingItem?.sizes ?? [], existingItem?.colors ?? []
+        );
         if (error) { setProductError(error); return; }
 
         // Merge new sizes/colours into localItems
@@ -275,7 +315,8 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
       if (!res.ok || !data.id) { setProductError(data.error ?? 'Failed to save product'); return; }
 
       const productId = data.id;
-      const { sizeMap, colorMap, error } = await createVariantsForItem(productId, pVariants);
+      // New product — no pre-existing sizes/colors
+      const { sizeMap, colorMap, error } = await createVariantsForItem(productId, pVariants, [], []);
       if (error) { setProductError(error); return; }
 
       // One purchase line per variant row; fall back to a bare line if no rows had data
