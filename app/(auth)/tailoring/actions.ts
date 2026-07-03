@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { pool } from '@/lib/db';
 import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
-import { nextInvoiceNumber } from '@/lib/invoice-number';
+import { nextInvoiceNumber, nextTailoringGroupNumber } from '@/lib/invoice-number';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import { generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf } from '@/lib/pdf-generator';
 import { logAudit } from '@/lib/audit';
@@ -28,9 +28,9 @@ async function isBatchFullyAt(batchId: string, requiredStage: TailoringStage, pa
 }
 
 // Fetches the first order in the batch (by creation time) — used as the reference for WA.
-async function batchFirstOrder(batchId: string): Promise<{ id: string; order_number: string; due_date: string | null } | null> {
-  const res = await query<{ id: string; order_number: string; due_date: string | null }>(
-    `SELECT id, order_number, due_date::text FROM tailoring_orders WHERE batch_id=$1 ORDER BY created_at ASC LIMIT 1`,
+async function batchFirstOrder(batchId: string): Promise<{ id: string; order_number: string; group_number: string | null; due_date: string | null } | null> {
+  const res = await query<{ id: string; order_number: string; group_number: string | null; due_date: string | null }>(
+    `SELECT id, order_number, group_number, due_date::text FROM tailoring_orders WHERE batch_id=$1 ORDER BY created_at ASC LIMIT 1`,
     [batchId]
   );
   return res.rows[0] ?? null;
@@ -103,20 +103,44 @@ export async function createTailoringOrder(raw: unknown): Promise<{
 
     const orderNumber = await nextInvoiceNumber('TO', client);
 
+    // Determine group_number and suffix for human-readable display ("Order #27A")
+    let groupNumber: string;
+    let suffix: string;
+    if (batchId) {
+      const sibRes = await client.query<{ group_number: string; batch_count: string }>(
+        `SELECT group_number, COUNT(*)::text AS batch_count
+         FROM tailoring_orders WHERE batch_id=$1 AND group_number IS NOT NULL
+         GROUP BY group_number LIMIT 1`,
+        [batchId]
+      );
+      if (sibRes.rows[0]) {
+        // Reuse existing group number; suffix is A=0, B=1, C=2...
+        groupNumber = sibRes.rows[0].group_number;
+        suffix = String.fromCharCode(65 + parseInt(sibRes.rows[0].batch_count, 10));
+      } else {
+        groupNumber = await nextTailoringGroupNumber(client);
+        suffix = 'A';
+      }
+    } else {
+      groupNumber = await nextTailoringGroupNumber(client);
+      suffix = 'A';
+    }
+
     const ordRes = await client.query(
       `INSERT INTO tailoring_orders
          (order_number, customer_id, design_id, measurement_version_id,
           color_fabric, price, due_date, notes, created_by, invoice_id,
-          customer_name_snapshot, customer_phone_snapshot, batch_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+          customer_name_snapshot, customer_phone_snapshot, batch_id,
+          group_number, suffix)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
       [
         orderNumber, customerId, designId, versionId,
         colorFabric || null, price,
         dueDate || null, notes || null, session.userId,
         invoiceId || null,
-        customerName,
-        customerPhone,
+        customerName, customerPhone,
         batchId || null,
+        groupNumber, suffix,
       ]
     );
 
@@ -129,10 +153,11 @@ export async function createTailoringOrder(raw: unknown): Promise<{
       const dueDateFormatted = dueDate
         ? `${dueDate.slice(8, 10)}/${dueDate.slice(5, 7)}/${dueDate.slice(0, 4)}`
         : 'TBD';
+      const _groupNumber = groupNumber;
       Promise.resolve().then(async () => {
         const pdfPath = await generateTailoringCustomerPdf(newOrderId).catch(() => null);
         sendWhatsAppTemplate(customerPhone, 'sutra_order_confirmation', [
-          customerName, orderNumber, dueDateFormatted,
+          customerName, `#${_groupNumber}`, dueDateFormatted,
         ], pdfPath).catch((e) => console.error('[createTailoringOrder] WhatsApp failed:', e));
       });
     }
@@ -151,13 +176,11 @@ export async function createTailoringOrder(raw: unknown): Promise<{
 
 export async function sendBatchConfirmationAction(batchId: string): Promise<void> {
   try {
-    // Fetch the first order for WA template params, count for the message
     const res = await query<{
       id: string; phone: string | null; name: string; order_number: string;
-      due_date: string | null; total: string;
+      group_number: string | null; due_date: string | null;
     }>(
-      `SELECT o.id, c.phone, c.name, o.order_number, o.due_date::text,
-              COUNT(*) OVER () ::text AS total
+      `SELECT o.id, c.phone, c.name, o.order_number, o.group_number, o.due_date::text
        FROM tailoring_orders o
        JOIN customers c ON c.id = o.customer_id
        WHERE o.batch_id = $1
@@ -172,10 +195,11 @@ export async function sendBatchConfirmationAction(batchId: string): Promise<void
       ? `${first.due_date.slice(8, 10)}/${first.due_date.slice(5, 7)}/${first.due_date.slice(0, 4)}`
       : 'TBD';
 
-    // Use grouped PDF (all orders in one document) instead of a single-order PDF
-    const pdfPath = await generateBatchTailoringPdf(batchId).catch(() => null);
+    // grouped PDF — generateTailoringCustomerPdf auto-collects all group siblings
+    const pdfPath = await generateTailoringCustomerPdf(first.id).catch(() => null);
+    const displayRef = first.group_number ? `#${first.group_number}` : first.order_number;
     await sendWhatsAppTemplate(first.phone, 'sutra_order_confirmation', [
-      first.name, first.order_number, dueDateFormatted,
+      first.name, displayRef, dueDateFormatted,
     ], pdfPath);
   } catch (e) {
     console.error('[sendBatchConfirmationAction] failed:', e);
@@ -229,9 +253,9 @@ export async function updateStageAction(formData: FormData) {
     Promise.resolve().then(async () => {
       try {
         const { rows } = await query<{
-          phone: string | null; name: string; order_number: string; batch_id: string | null;
+          phone: string | null; name: string; order_number: string; group_number: string | null; batch_id: string | null;
         }>(
-          `SELECT c.phone, c.name, o.order_number, o.batch_id
+          `SELECT c.phone, c.name, o.order_number, o.group_number, o.batch_id
            FROM tailoring_orders o
            JOIN customers c ON c.id = o.customer_id
            WHERE o.id=$1`,
@@ -240,14 +264,16 @@ export async function updateStageAction(formData: FormData) {
         const r = rows[0];
         if (!r?.phone) return;
 
+        const displayRef = r.group_number ? `#${r.group_number}` : r.order_number;
+
         if (!r.batch_id) {
           // Single order — send immediately
           if (newStage === 'ready') {
             const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
-            sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, r.order_number], pdfPath)
+            sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, displayRef], pdfPath)
               .catch((e) => console.error('[updateStageAction] sutra_order_ready WA failed:', e));
           } else {
-            sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, r.order_number])
+            sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, displayRef])
               .catch((e) => console.error('[updateStageAction] sutra_order_delivered WA failed:', e));
           }
           return;
@@ -266,16 +292,16 @@ export async function updateStageAction(formData: FormData) {
           return;
         }
 
-        // All batch orders are at threshold — send ONE message using first order as reference
+        // All batch orders at threshold — send ONE message using group_number as reference
         const first = await batchFirstOrder(r.batch_id);
-        const refOrderNum = first?.order_number ?? r.order_number;
+        const batchDisplayRef = first?.group_number ? `#${first.group_number}` : (first?.order_number ?? displayRef);
 
         if (newStage === 'ready') {
           const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
-          sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, refOrderNum], pdfPath)
+          sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, batchDisplayRef], pdfPath)
             .catch((e) => console.error('[updateStageAction] batch sutra_order_ready WA failed:', e));
         } else {
-          sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, refOrderNum])
+          sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, batchDisplayRef])
             .catch((e) => console.error('[updateStageAction] batch sutra_order_delivered WA failed:', e));
         }
       } catch (e) {
@@ -301,11 +327,12 @@ export async function assignTailorAction(
 
   const [orderRes, tailorRes] = await Promise.all([
     query<{
-      order_number: string; due_date: string | null;
+      order_number: string; group_number: string | null; suffix: string | null;
+      due_date: string | null;
       customer_name: string; customer_phone: string | null;
       design_name: string; batch_id: string | null;
     }>(
-      `SELECT o.order_number, o.due_date::text,
+      `SELECT o.order_number, o.group_number, o.suffix, o.due_date::text,
               c.name AS customer_name, c.phone AS customer_phone,
               d.name AS design_name, o.batch_id
        FROM tailoring_orders o
@@ -348,13 +375,17 @@ export async function assignTailorAction(
           })
         : 'TBD';
 
+      const custDisplayRef   = order.group_number ? `#${order.group_number}` : order.order_number;
+      const tailorDisplayRef = order.group_number && order.suffix
+        ? `${order.group_number}${order.suffix}` : order.order_number;
+
       // For batch orders, skip the per-order "order updated" customer WA — the customer
       // already received ONE batch confirmation at creation time.
       if (order.customer_phone && !order.batch_id) {
         sendWhatsAppTemplate(
           order.customer_phone,
           'sutra_order_updated',
-          [order.customer_name, order.order_number, dueDateStr],
+          [order.customer_name, custDisplayRef, dueDateStr],
           customerPdf ?? null
         ).catch((e: unknown) => console.error('[assignTailor] customer WA:', e));
       }
@@ -363,7 +394,7 @@ export async function assignTailorAction(
         sendWhatsAppTemplate(
           tailor.phone,
           'sutra_tailor_assignment',
-          [order.order_number, order.design_name, dueDateStr],
+          [tailorDisplayRef, order.design_name, dueDateStr],
           tailorPdf ?? null
         ).catch((e: unknown) => console.error('[assignTailor] tailor WA:', e));
       }
@@ -400,10 +431,10 @@ export async function updateOrderAction(data: {
     stage: string; customer_id: string; design_id: string;
     old_due_date: string | null;
     customer_phone: string | null; customer_name: string;
-    order_number: string;
+    order_number: string; group_number: string | null;
   }>(
     `SELECT o.stage, o.customer_id, o.design_id, o.due_date::text AS old_due_date,
-            o.order_number,
+            o.order_number, o.group_number,
             c.phone AS customer_phone, c.name AS customer_name
      FROM tailoring_orders o
      JOIN customers c ON c.id = o.customer_id
@@ -460,8 +491,9 @@ export async function updateOrderAction(data: {
           ? `${newDueDate.slice(8, 10)}/${newDueDate.slice(5, 7)}/${newDueDate.slice(0, 4)}`
           : 'TBD';
         const pdfPath = await generateTailoringCustomerPdf(data.orderId).catch(() => null);
+        const displayRef = order.group_number ? `#${order.group_number}` : order.order_number;
         sendWhatsAppTemplate(phone, 'sutra_order_updated', [
-          order.customer_name, order.order_number, dateStr,
+          order.customer_name, displayRef, dateStr,
         ], pdfPath).catch((e) => console.error('[updateOrderAction] WA failed:', e));
       });
     }
@@ -500,9 +532,9 @@ export async function advanceStageAction(
 
   try {
     const { rows } = await query<{
-      phone: string | null; name: string; order_number: string; batch_id: string | null;
+      phone: string | null; name: string; order_number: string; group_number: string | null; batch_id: string | null;
     }>(
-      `SELECT c.phone, c.name, o.order_number, o.batch_id
+      `SELECT c.phone, c.name, o.order_number, o.group_number, o.batch_id
        FROM tailoring_orders o JOIN customers c ON c.id = o.customer_id WHERE o.id=$1`,
       [orderId]
     );
@@ -510,6 +542,8 @@ export async function advanceStageAction(
     if (!r?.phone) {
       return { success: true, waStatus: 'skipped', message: 'Stage updated. Customer has no phone.' };
     }
+
+    const displayRef = r.group_number ? `#${r.group_number}` : r.order_number;
 
     // Batch logic: hold until all siblings reach the same threshold
     if (r.batch_id) {
@@ -525,15 +559,15 @@ export async function advanceStageAction(
         };
       }
 
-      // All batch orders ready/delivered — send ONE message
+      // All batch orders ready/delivered — send ONE message using group_number
       const first = await batchFirstOrder(r.batch_id);
-      const refOrderNum = first?.order_number ?? r.order_number;
+      const batchDisplayRef = first?.group_number ? `#${first.group_number}` : (first?.order_number ?? displayRef);
       let waRes;
       if (newStage === 'ready') {
         const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
-        waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, refOrderNum], pdfPath);
+        waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, batchDisplayRef], pdfPath);
       } else {
-        waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, refOrderNum]);
+        waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, batchDisplayRef]);
       }
       if (waRes.success) {
         return { success: true, waStatus: 'sent', message: '✅ Stage updated. WhatsApp sent (all batch items complete).' };
@@ -545,9 +579,9 @@ export async function advanceStageAction(
     let waRes;
     if (newStage === 'ready') {
       const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
-      waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, r.order_number], pdfPath);
+      waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, displayRef], pdfPath);
     } else {
-      waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, r.order_number]);
+      waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, displayRef]);
     }
 
     if (waRes.success) {
@@ -573,8 +607,8 @@ export async function changeTailorAction(
 
   const [newTailorRes, currentOrderRes] = await Promise.all([
     query<{ name: string; phone: string | null }>(`SELECT name, phone FROM tailors WHERE id=$1`, [tailorId]),
-    query<{ order_number: string; tailor_id: string | null }>(
-      `SELECT order_number, tailor_id FROM tailoring_orders WHERE id=$1`, [orderId]
+    query<{ order_number: string; group_number: string | null; suffix: string | null; tailor_id: string | null }>(
+      `SELECT order_number, group_number, suffix, tailor_id FROM tailoring_orders WHERE id=$1`, [orderId]
     ),
   ]);
   if (!newTailorRes.rows[0]) return { success: false, error: 'Tailor not found' };
@@ -600,17 +634,20 @@ export async function changeTailorAction(
 
   Promise.resolve().then(async () => {
     try {
-      if (oldTailorPhone && oldTailorName && currentOrder?.order_number) {
+      const oldTailorDisplayRef = currentOrder?.group_number && currentOrder?.suffix
+        ? `${currentOrder.group_number}${currentOrder.suffix}` : currentOrder?.order_number;
+
+      if (oldTailorPhone && oldTailorName && oldTailorDisplayRef) {
         sendWhatsAppTemplate(oldTailorPhone, 'sutra_tailor_removed', [
-          oldTailorName, currentOrder.order_number,
+          oldTailorName, oldTailorDisplayRef,
         ]).catch((e: unknown) => console.error('[changeTailor] old tailor WA:', e));
       }
 
       if (newTailor.phone) {
         const [tailorPdf, detailRes] = await Promise.all([
           generateTailoringTailorPdf(orderId).catch(() => null),
-          query<{ order_number: string; due_date: string | null; design_name: string }>(
-            `SELECT o.order_number, o.due_date::text, d.name AS design_name
+          query<{ order_number: string; group_number: string | null; suffix: string | null; due_date: string | null; design_name: string }>(
+            `SELECT o.order_number, o.group_number, o.suffix, o.due_date::text, d.name AS design_name
              FROM tailoring_orders o
              JOIN designs d ON d.id = o.design_id
              WHERE o.id=$1`, [orderId]
@@ -621,8 +658,10 @@ export async function changeTailorAction(
           const dueDateStr = detail.due_date
             ? new Date(detail.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
             : 'TBD';
+          const tailorDisplayRef = detail.group_number && detail.suffix
+            ? `${detail.group_number}${detail.suffix}` : detail.order_number;
           sendWhatsAppTemplate(newTailor.phone, 'sutra_tailor_assignment', [
-            detail.order_number, detail.design_name, dueDateStr,
+            tailorDisplayRef, detail.design_name, dueDateStr,
           ], tailorPdf ?? null).catch((e: unknown) => console.error('[changeTailor] new tailor WA:', e));
         }
       }

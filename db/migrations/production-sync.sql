@@ -126,3 +126,10 @@ ALTER TABLE invoices          ADD COLUMN IF NOT EXISTS loyalty_points_redeemed I
 ALTER TABLE invoices          ADD COLUMN IF NOT EXISTS scheme_discount_amount  NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE invoices          ADD COLUMN IF NOT EXISTS loyalty_discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0;
 ALTER TABLE items             ADD COLUMN IF NOT EXISTS last_low_stock_alert    TIMESTAMPTZ;
+
+-- ── 10. tailoring_orders: group_number + suffix (grouped order display) ───────
+-- group_number: human-readable sequential counter per FY (e.g. "27"), shared across a booking session
+-- suffix: "A", "B", "C"... to distinguish individual items within the group
+ALTER TABLE tailoring_orders ADD COLUMN IF NOT EXISTS group_number TEXT;
+ALTER TABLE tailoring_orders ADD COLUMN IF NOT EXISTS suffix TEXT;
+CREATE INDEX IF NOT EXISTS idx_tailoring_orders_group ON tailoring_orders(group_number);

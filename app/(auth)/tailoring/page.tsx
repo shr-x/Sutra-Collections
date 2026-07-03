@@ -46,7 +46,7 @@ export default async function TailoringOrdersPage({
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const res = await query(
-    `SELECT o.id, o.order_number, o.stage, o.price, o.due_date, o.created_at,
+    `SELECT o.id, o.order_number, o.group_number, o.suffix, o.stage, o.price, o.due_date, o.created_at,
             c.name AS customer_name, c.phone AS customer_phone,
             d.name AS design_name, d.category AS design_category,
             o.color_fabric, o.batch_id,
@@ -125,7 +125,7 @@ export default async function TailoringOrdersPage({
                       href={`/tailoring/${row.id}`}
                       className="font-mono text-xs font-semibold text-purple-700 hover:underline"
                     >
-                      {row.order_number}
+                      {row.group_number ? `#${row.group_number}${row.suffix}` : row.order_number}
                     </Link>
                     {row.batch_size && (
                       <Link

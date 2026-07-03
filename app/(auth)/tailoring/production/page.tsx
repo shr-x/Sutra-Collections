@@ -12,6 +12,8 @@ export const metadata: Metadata = { title: 'Production Board' };
 interface OrderRow {
   id: string;
   order_number: string;
+  group_number: string | null;
+  suffix: string | null;
   stage: string;
   price: string;
   due_date: string | null;
@@ -45,7 +47,7 @@ export default async function ProductionBoardPage() {
   await requireRole('admin');
 
   const orderQuery = `
-    SELECT o.id, o.order_number, o.stage, o.price::text, o.due_date::text,
+    SELECT o.id, o.order_number, o.group_number, o.suffix, o.stage, o.price::text, o.due_date::text,
            COALESCE(o.customer_name_snapshot, c.name, 'Unknown') AS customer_name,
            d.name AS design_name,
            o.color_fabric,
@@ -123,7 +125,7 @@ export default async function ProductionBoardPage() {
                               href={`/tailoring/${o.id}`}
                               className="font-mono text-xs font-bold leading-tight text-purple-700 hover:underline"
                             >
-                              {o.order_number}
+                              {o.group_number ? `#${o.group_number}${o.suffix}` : o.order_number}
                             </Link>
                             {o.batch_size && (
                               <Link

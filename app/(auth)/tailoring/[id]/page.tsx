@@ -31,7 +31,7 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
   const session = await requireRole('admin', 'staff');
 
   const res = await query(
-    `SELECT o.id, o.order_number, o.stage, o.price::numeric, o.due_date::text, o.notes,
+    `SELECT o.id, o.order_number, o.group_number, o.suffix, o.stage, o.price::numeric, o.due_date::text, o.notes,
             o.color_fabric, o.created_at, o.updated_at, o.tailor_id, o.batch_id,
             c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone,
             d.id AS design_id, d.name AS design_name, d.category AS design_category,
@@ -79,6 +79,8 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
   interface SiblingRow {
     id: string;
     order_number: string;
+    group_number: string | null;
+    suffix: string | null;
     stage: TailoringStage;
     design_name: string;
     color_fabric: string | null;
@@ -86,11 +88,11 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
   const siblings: SiblingRow[] = [];
   if (order.batch_id) {
     const sibRes = await query<SiblingRow>(
-      `SELECT o.id, o.order_number, o.stage, d.name AS design_name, o.color_fabric
+      `SELECT o.id, o.order_number, o.group_number, o.suffix, o.stage, d.name AS design_name, o.color_fabric
        FROM tailoring_orders o
        JOIN designs d ON d.id = o.design_id
        WHERE o.batch_id = $1 AND o.id != $2
-       ORDER BY o.created_at ASC`,
+       ORDER BY o.suffix ASC, o.created_at ASC`,
       [order.batch_id, order.id]
     );
     siblings.push(...sibRes.rows);
@@ -108,13 +110,20 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
             ← Tailoring Orders
           </Link>
           <h1 className="page-title mt-1 flex items-center gap-2">
-            {order.order_number}
+            {order.group_number
+              ? `Order #${order.group_number}${order.suffix}`
+              : order.order_number}
             {order.batch_id && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-sm font-medium text-amber-700">
-                🔗 Batch ×{siblings.length + 1}
+                🔗 {siblings.length + 1} items
               </span>
             )}
           </h1>
+          {order.batch_id && order.group_number && (
+            <p className="mt-0.5 text-xs text-gray-500">
+              Part of Order #{order.group_number}, item {order.suffix} of {siblings.length + 1}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STAGE_BADGE[stage]}`}>
@@ -262,13 +271,19 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
             <div className="card">
               <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-gray-700">
                 <span>🔗</span>
-                <span>Part of a batch ({siblings.length + 1} items)</span>
+                <span>
+                  {order.group_number
+                    ? `Order #${order.group_number} — ${siblings.length + 1} items`
+                    : `Batch (${siblings.length + 1} items)`}
+                </span>
               </h2>
               <ul className="space-y-2">
                 {/* This order */}
                 <li className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-3 py-2">
                   <div>
-                    <span className="font-mono text-xs font-bold text-purple-700">{order.order_number}</span>
+                    <span className="font-mono text-xs font-bold text-purple-700">
+                      {order.group_number ? `#${order.group_number}${order.suffix}` : order.order_number}
+                    </span>
                     <span className="ml-1.5 text-xs text-gray-500">{order.design_name}</span>
                     {order.color_fabric && <span className="ml-1 text-xs italic text-gray-400">{order.color_fabric}</span>}
                   </div>
@@ -284,7 +299,7 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
                         href={`/tailoring/${sib.id}`}
                         className="font-mono text-xs font-bold text-purple-700 hover:underline"
                       >
-                        {sib.order_number}
+                        {sib.group_number ? `#${sib.group_number}${sib.suffix}` : sib.order_number}
                       </Link>
                       <span className="ml-1.5 text-xs text-gray-500">{sib.design_name}</span>
                       {sib.color_fabric && <span className="ml-1 text-xs italic text-gray-400">{sib.color_fabric}</span>}

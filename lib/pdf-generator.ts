@@ -266,12 +266,14 @@ export async function generateDebitNotePdf(dnId: string): Promise<string | null>
 async function getTailoringOrderData(orderId: string) {
   const [orderRes, measRes] = await Promise.all([
     query<{
-      id: string; order_number: string; price: string; due_date: string | null;
+      id: string; order_number: string; group_number: string | null; suffix: string | null;
+      price: string; due_date: string | null;
       notes: string | null; color_fabric: string | null; created_at: string;
       customer_name: string; customer_phone: string | null;
       design_name: string; design_category: string | null; design_photo: string | null;
     }>(
-      `SELECT o.id, o.order_number, o.price::text, o.due_date::text, o.notes, o.color_fabric, o.created_at::text,
+      `SELECT o.id, o.order_number, o.group_number, o.suffix,
+              o.price::text, o.due_date::text, o.notes, o.color_fabric, o.created_at::text,
               c.name AS customer_name, c.phone AS customer_phone,
               d.name AS design_name, d.category AS design_category, d.photo_path AS design_photo
        FROM tailoring_orders o
@@ -294,34 +296,66 @@ async function getTailoringOrderData(orderId: string) {
   return { order: orderRes.rows[0] ?? null, measurements: measRes.rows };
 }
 
-/** Customer copy: includes branding, customer info, design photo, measurements, price. */
+/**
+ * Customer copy: grouped PDF — all orders sharing the same group_number in one document.
+ * Each page shows the group number (e.g. "27") without suffix so the customer sees one order.
+ * Falls back to a single-page PDF for legacy orders without group_number.
+ */
 export async function generateTailoringCustomerPdf(orderId: string): Promise<string | null> {
   try {
-    const { order, measurements } = await getTailoringOrderData(orderId);
-    if (!order) return null;
+    const { order: firstOrder } = await getTailoringOrderData(orderId);
+    if (!firstOrder) return null;
     const co = await getCompany();
 
-    let designPhotoAbsPath: string | undefined;
-    if (order.design_photo) {
-      const p = path.join(process.cwd(), 'public', order.design_photo);
-      if (fs.existsSync(p)) designPhotoAbsPath = p;
+    // Collect all orders in the same group (sorted by suffix A, B, C...)
+    let orderIds: string[] = [orderId];
+    if (firstOrder.group_number) {
+      const groupRes = await query<{ id: string }>(
+        `SELECT id FROM tailoring_orders WHERE group_number=$1 ORDER BY suffix ASC, created_at ASC`,
+        [firstOrder.group_number]
+      );
+      if (groupRes.rows.length > 0) orderIds = groupRes.rows.map((r) => r.id);
     }
 
-    const buffer = await renderTailoringPdf({
-      docType:     'TAILORING ORDER',
-      orderNumber: order.order_number,
-      orderDate:   fmtDate(order.created_at),
-      dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
-      company:     { name: co.name, gstin: co.gstin, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
-      customer:    { name: order.customer_name, phone: order.customer_phone ?? undefined },
-      design:      { name: order.design_name, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
-      colorFabric: order.color_fabric ?? undefined,
-      measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
-      notes:  order.notes ?? undefined,
-      price:  Number(order.price),
-    });
+    const pages = await Promise.all(
+      orderIds.map(async (id) => {
+        const { order, measurements } = await getTailoringOrderData(id);
+        if (!order) return null;
 
-    const safe = order.order_number.replace(/[^a-zA-Z0-9_-]/g, '_');
+        let designPhotoAbsPath: string | undefined;
+        if (order.design_photo) {
+          const p = path.join(process.cwd(), 'public', order.design_photo);
+          if (fs.existsSync(p)) designPhotoAbsPath = p;
+        }
+
+        // Customer sees the group number without suffix (e.g. "27" not "27A")
+        const displayNum = order.group_number ?? order.order_number;
+
+        return {
+          docType:     'TAILORING ORDER' as const,
+          orderNumber: displayNum,
+          orderDate:   fmtDate(order.created_at),
+          dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
+          company:     { name: co.name, gstin: co.gstin, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
+          customer:    { name: order.customer_name, phone: order.customer_phone ?? undefined },
+          design:      { name: order.design_name, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
+          colorFabric: order.color_fabric ?? undefined,
+          measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
+          notes:       order.notes ?? undefined,
+          price:       Number(order.price),
+        };
+      })
+    );
+
+    const validPages = pages.filter((p): p is NonNullable<typeof p> => p !== null);
+    if (!validPages.length) return null;
+
+    const buffer = validPages.length === 1
+      ? await renderTailoringPdf(validPages[0])
+      : await renderBatchTailoringPdf(validPages);
+
+    const displayNum = firstOrder.group_number ?? firstOrder.order_number;
+    const safe = displayNum.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filePath = `/tmp/tailoring_customer_${safe}.pdf`;
     fs.writeFileSync(filePath, buffer);
     return filePath;
@@ -331,7 +365,7 @@ export async function generateTailoringCustomerPdf(orderId: string): Promise<str
   }
 }
 
-/** Tailor copy: NO customer name/phone/price — only design, measurements, instructions. */
+/** Tailor copy: NO customer name/phone/price — header shows "#27A" (group + suffix) for easy identification. */
 export async function generateTailoringTailorPdf(orderId: string): Promise<string | null> {
   try {
     const { order, measurements } = await getTailoringOrderData(orderId);
@@ -344,9 +378,14 @@ export async function generateTailoringTailorPdf(orderId: string): Promise<strin
       if (fs.existsSync(p)) designPhotoAbsPath = p;
     }
 
+    // Tailor sees "#27A" — group_number + suffix identifies their specific item
+    const displayNum = order.group_number && order.suffix
+      ? `${order.group_number}${order.suffix}`
+      : order.order_number;
+
     const buffer = await renderTailoringPdf({
       docType:     'PRODUCTION ORDER',
-      orderNumber: order.order_number,
+      orderNumber: displayNum,
       orderDate:   fmtDate(order.created_at),
       dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
       company:     { name: co.name, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
@@ -354,7 +393,7 @@ export async function generateTailoringTailorPdf(orderId: string): Promise<strin
       design:      { name: order.design_name, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
       colorFabric: order.color_fabric ?? undefined,
       measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
-      notes:  order.notes ?? undefined,
+      notes:       order.notes ?? undefined,
     });
 
     const safe = order.order_number.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -367,50 +406,18 @@ export async function generateTailoringTailorPdf(orderId: string): Promise<strin
   }
 }
 
-/** Batch confirmation PDF: one page per order in the batch, sent to the customer as a single document. */
+/**
+ * Kept for backward compatibility — delegates to generateTailoringCustomerPdf on the first order.
+ * generateTailoringCustomerPdf now auto-collects all group siblings, so this is equivalent.
+ */
 export async function generateBatchTailoringPdf(batchId: string): Promise<string | null> {
   try {
-    const ordersRes = await query<{ id: string }>(
-      `SELECT id FROM tailoring_orders WHERE batch_id=$1 ORDER BY created_at ASC`,
+    const res = await query<{ id: string }>(
+      `SELECT id FROM tailoring_orders WHERE batch_id=$1 ORDER BY created_at ASC LIMIT 1`,
       [batchId]
     );
-    if (!ordersRes.rows.length) return null;
-
-    const co = await getCompany();
-    const pages = await Promise.all(
-      ordersRes.rows.map(async ({ id }) => {
-        const { order, measurements } = await getTailoringOrderData(id);
-        if (!order) return null;
-
-        let designPhotoAbsPath: string | undefined;
-        if (order.design_photo) {
-          const p = path.join(process.cwd(), 'public', order.design_photo);
-          if (fs.existsSync(p)) designPhotoAbsPath = p;
-        }
-
-        return {
-          docType:     'TAILORING ORDER' as const,
-          orderNumber: order.order_number,
-          orderDate:   fmtDate(order.created_at),
-          dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
-          company:     { name: co.name, gstin: co.gstin, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
-          customer:    { name: order.customer_name, phone: order.customer_phone ?? undefined },
-          design:      { name: order.design_name, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
-          colorFabric: order.color_fabric ?? undefined,
-          measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
-          notes:  order.notes ?? undefined,
-          price:  Number(order.price),
-        };
-      })
-    );
-
-    const validPages = pages.filter((p): p is NonNullable<typeof p> => p !== null);
-    if (!validPages.length) return null;
-
-    const buffer = await renderBatchTailoringPdf(validPages);
-    const filePath = `/tmp/tailoring_batch_${batchId.slice(0, 8)}.pdf`;
-    fs.writeFileSync(filePath, buffer);
-    return filePath;
+    if (!res.rows[0]) return null;
+    return generateTailoringCustomerPdf(res.rows[0].id);
   } catch (err) {
     console.error('[pdf-generator] generateBatchTailoringPdf failed:', err);
     return null;
