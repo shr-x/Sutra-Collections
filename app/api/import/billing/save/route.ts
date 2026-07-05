@@ -100,6 +100,14 @@ export async function POST(req: NextRequest) {
           [it.name.trim(), gstRate]
         );
         itemId = newItem.rows[0].id as string;
+        await client.query(
+          `INSERT INTO item_sizes (item_id, size_name, is_default, sort_order) VALUES ($1,'Regular',TRUE,0)`,
+          [itemId]
+        );
+        await client.query(
+          `INSERT INTO item_colors (item_id, color_name, is_default, sort_order) VALUES ($1,'Default',TRUE,0)`,
+          [itemId]
+        );
       }
 
       // Purchase invoices: rate is exclusive of GST

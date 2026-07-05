@@ -107,10 +107,10 @@ export default async function Gstr3bPage({ searchParams }: { searchParams: { mon
     <div>
       <div className="page-header">
         <h1 className="page-title">GSTR-3B — Tax Summary</h1>
-        <div className="flex gap-2">
-          <a href={csvUrl} className="btn-secondary">Export CSV</a>
-          <a href={`/api/accounting/gstr3b?${params.toString()}&format=json`} className="btn-secondary" download>Export JSON</a>
-          <a href={pdfUrl} className="btn-secondary" download>Export PDF</a>
+        <div className="flex flex-wrap gap-2">
+          <a href={csvUrl} className="btn-secondary btn-sm">Export CSV</a>
+          <a href={`/api/accounting/gstr3b?${params.toString()}&format=json`} className="btn-secondary btn-sm" download>Export JSON</a>
+          <a href={pdfUrl} className="btn-secondary btn-sm" download>Export PDF</a>
         </div>
       </div>
 

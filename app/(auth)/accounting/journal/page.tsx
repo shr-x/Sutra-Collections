@@ -53,27 +53,27 @@ export default async function JournalPage({
     <div>
       <div className="page-header">
         <h1 className="page-title">Journal</h1>
-        <div className="flex flex-col sm:flex-row gap-2">
+        <div className="flex flex-wrap gap-2">
           <a
             href={`/api/reports/export/journal?format=json${searchParams.from ? `&from=${searchParams.from}` : ''}${searchParams.to ? `&to=${searchParams.to}` : ''}`}
-            className="btn-secondary min-h-[44px]"
+            className="btn-secondary btn-sm"
             download
           >
             Export JSON
           </a>
           <a
             href={`/api/accounting/journal/pdf?${searchParams.from ? `from=${searchParams.from}&` : ''}${searchParams.to ? `to=${searchParams.to}` : ''}`}
-            className="btn-secondary min-h-[44px]"
+            className="btn-secondary btn-sm"
             download
           >
             Export PDF
           </a>
-          <Link href="/accounting/journal/new" className="btn-primary min-h-[44px]">+ New Entry</Link>
+          <Link href="/accounting/journal/new" className="btn-primary btn-sm">+ New Entry</Link>
         </div>
       </div>
 
       {/* Filters */}
-      <form method="GET" className="card mb-4 flex flex-wrap items-end gap-4">
+      <form method="GET" className="card mb-4 flex flex-wrap items-end gap-3">
         <div>
           <label className="mb-1 block text-xs font-semibold text-gray-500">📅 From</label>
           <DatePicker name="from" defaultValue={searchParams.from} />
@@ -82,11 +82,9 @@ export default async function JournalPage({
           <label className="mb-1 block text-xs font-semibold text-gray-500">📅 To</label>
           <DatePicker name="to" defaultValue={searchParams.to} />
         </div>
-        <button type="submit" className="rounded-full bg-purple-600 px-5 py-2 text-sm font-medium text-white shadow-sm hover:bg-purple-700">
-          Filter
-        </button>
+        <button type="submit" className="btn-primary btn-sm">Filter</button>
         {(searchParams.from || searchParams.to) && (
-          <a href="/accounting/journal" className="self-end pb-2 text-sm text-gray-500 hover:underline">Clear</a>
+          <a href="/accounting/journal" className="btn-ghost btn-sm">Clear</a>
         )}
       </form>
 

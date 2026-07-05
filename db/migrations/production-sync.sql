@@ -128,8 +128,167 @@ ALTER TABLE invoices          ADD COLUMN IF NOT EXISTS loyalty_discount_amount N
 ALTER TABLE items             ADD COLUMN IF NOT EXISTS last_low_stock_alert    TIMESTAMPTZ;
 
 -- ── 10. tailoring_orders: group_number + suffix (grouped order display) ───────
--- group_number: human-readable sequential counter per FY (e.g. "27"), shared across a booking session
--- suffix: "A", "B", "C"... to distinguish individual items within the group
+-- group_number = the base TO/YYYY-YY/NNNN number shared by all items in a booking session
+-- suffix = A, B, C... appended to form the full order_number (e.g. "TO/2026-27/0029-A")
 ALTER TABLE tailoring_orders ADD COLUMN IF NOT EXISTS group_number TEXT;
 ALTER TABLE tailoring_orders ADD COLUMN IF NOT EXISTS suffix TEXT;
 CREATE INDEX IF NOT EXISTS idx_tailoring_orders_group ON tailoring_orders(group_number);
+
+-- ── 10b. Fix bad records where group_number was stored as a plain integer ─────
+-- Earlier code used a separate TG counter (1, 2, 3...) instead of the TO number.
+-- Step 1: Set group_number = first order's TO number for each bad integer group
+UPDATE tailoring_orders AS t
+SET group_number = subq.canonical_gn
+FROM (
+  SELECT DISTINCT ON (group_number)
+    group_number AS bad_gn,
+    order_number AS canonical_gn
+  FROM tailoring_orders
+  WHERE group_number ~ '^\d+$' AND group_number IS NOT NULL
+  ORDER BY group_number, created_at ASC
+) AS subq
+WHERE t.group_number = subq.bad_gn
+  AND t.group_number ~ '^\d+$';
+
+-- Step 2: Append suffix to order_number for any order that doesn't already have it
+-- (safe to re-run: the NOT SIMILAR TO guard prevents double-suffixing)
+UPDATE tailoring_orders
+SET order_number = group_number || '-' || suffix
+WHERE group_number IS NOT NULL
+  AND suffix IS NOT NULL
+  AND group_number LIKE 'TO/%'
+  AND order_number NOT SIMILAR TO '%-[A-Z]';
+
+-- ── 11. Normalize absolute image URLs to root-relative paths ─────────────────
+-- Earlier uploads may have stored absolute URLs (e.g. http://34.180.49.56:3000/uploads/...)
+-- instead of root-relative paths (/uploads/...). Strip the scheme+host prefix so
+-- images load correctly regardless of domain (incl. Cloudflare Tunnel HTTPS).
+
+UPDATE items
+SET photo_url = REGEXP_REPLACE(photo_url, '^https?://[^/]+', '')
+WHERE photo_url LIKE 'http://%' OR photo_url LIKE 'https://%';
+
+UPDATE designs
+SET photo_path = REGEXP_REPLACE(
+    REGEXP_REPLACE(photo_path, '^https?://[^/]+/', ''),
+    '^/', ''
+)
+WHERE photo_path LIKE 'http://%' OR photo_path LIKE 'https://%';
+
+UPDATE settings
+SET value = REGEXP_REPLACE(value, '^https?://[^/]+', '')
+WHERE key = 'company_logo_path'
+  AND (value LIKE 'http://%' OR value LIKE 'https://%');
+
+-- ── 12. Backfill default size/color for items that have none ─────────────────
+-- Any item with 0 sizes gets "Regular"; any item with 0 colors gets "Default".
+-- These are the implicit defaults every non-variant product should show (1S / 1C).
+
+INSERT INTO item_sizes (item_id, size_name, is_default, sort_order)
+SELECT i.id, 'Regular', true, 0
+FROM items i
+WHERE NOT EXISTS (SELECT 1 FROM item_sizes s WHERE s.item_id = i.id);
+
+INSERT INTO item_colors (item_id, color_name, is_default, sort_order)
+SELECT i.id, 'Default', true, 0
+FROM items i
+WHERE NOT EXISTS (SELECT 1 FROM item_colors c WHERE c.item_id = i.id);
+
+-- ── 13. One-time cleanup: merge duplicate items (same name, case-insensitive) ──
+-- Keeps the earliest-created row per name, moves variants/stock/invoice refs onto
+-- it, then deletes the duplicates. RAISE NOTICE lines report what got merged.
+DO $$
+DECLARE
+  norm_name  TEXT;
+  canonical_id UUID;
+  dup_id     UUID;
+  next_sort  INT;
+BEGIN
+  FOR norm_name IN
+    SELECT LOWER(TRIM(name))
+    FROM items
+    GROUP BY LOWER(TRIM(name))
+    HAVING COUNT(*) > 1
+    ORDER BY 1
+  LOOP
+    SELECT id INTO canonical_id FROM items
+    WHERE LOWER(TRIM(name)) = norm_name
+    ORDER BY created_at ASC LIMIT 1;
+
+    FOR dup_id IN
+      SELECT id FROM items
+      WHERE LOWER(TRIM(name)) = norm_name AND id <> canonical_id
+    LOOP
+      RAISE NOTICE 'Merging duplicate "%" (id=%) into canonical (id=%)',
+        norm_name, dup_id, canonical_id;
+
+      -- item_variants (legacy system)
+      UPDATE item_variants SET item_id = canonical_id WHERE item_id = dup_id;
+
+      -- item_sizes: insert missing sizes onto canonical, then delete from dup
+      SELECT COALESCE(MAX(sort_order), -1) + 1 INTO next_sort
+      FROM item_sizes WHERE item_id = canonical_id;
+
+      INSERT INTO item_sizes (item_id, size_name, is_default, sort_order)
+      SELECT canonical_id, s.size_name, FALSE,
+             next_sort + (ROW_NUMBER() OVER (ORDER BY s.sort_order))::int - 1
+      FROM item_sizes s
+      WHERE s.item_id = dup_id
+        AND NOT EXISTS (
+          SELECT 1 FROM item_sizes e
+          WHERE e.item_id = canonical_id
+            AND LOWER(TRIM(e.size_name)) = LOWER(TRIM(s.size_name))
+        );
+
+      DELETE FROM item_sizes WHERE item_id = dup_id;
+
+      -- item_colors: same pattern
+      SELECT COALESCE(MAX(sort_order), -1) + 1 INTO next_sort
+      FROM item_colors WHERE item_id = canonical_id;
+
+      INSERT INTO item_colors (item_id, color_name, is_default, sort_order)
+      SELECT canonical_id, c.color_name, FALSE,
+             next_sort + (ROW_NUMBER() OVER (ORDER BY c.sort_order))::int - 1
+      FROM item_colors c
+      WHERE c.item_id = dup_id
+        AND NOT EXISTS (
+          SELECT 1 FROM item_colors e
+          WHERE e.item_id = canonical_id
+            AND LOWER(TRIM(e.color_name)) = LOWER(TRIM(c.color_name))
+        );
+
+      DELETE FROM item_colors WHERE item_id = dup_id;
+
+      -- stock rows are independent transactions — just reroute
+      UPDATE stock SET item_id = canonical_id WHERE item_id = dup_id;
+
+      -- invoice references
+      UPDATE invoice_items          SET item_id = canonical_id WHERE item_id = dup_id;
+      UPDATE purchase_invoice_items SET item_id = canonical_id WHERE item_id = dup_id;
+
+      DELETE FROM items WHERE id = dup_id;
+    END LOOP;
+  END LOOP;
+  RAISE NOTICE 'Duplicate item cleanup complete.';
+END $$;
+
+-- ── 14. Fix design records where name = company name (data bug) ───────────────
+-- If a design's name matches the company name setting and the category has the
+-- actual design name, use the category as the canonical name.
+DO $$
+DECLARE
+  co_name TEXT;
+  fixed_count INT;
+BEGIN
+  SELECT value INTO co_name FROM settings WHERE key = 'company_name';
+  IF co_name IS NOT NULL AND TRIM(co_name) != '' THEN
+    UPDATE designs
+    SET name = category
+    WHERE LOWER(TRIM(name)) = LOWER(TRIM(co_name))
+      AND category IS NOT NULL
+      AND TRIM(category) != ''
+      AND LOWER(TRIM(category)) <> LOWER(TRIM(co_name));
+    GET DIAGNOSTICS fixed_count = ROW_COUNT;
+    RAISE NOTICE 'Fixed % design record(s) whose name was mistakenly set to company name.', fixed_count;
+  END IF;
+END $$;

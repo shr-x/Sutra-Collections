@@ -23,13 +23,47 @@ export async function POST(req: NextRequest) {
       try {
         await client.query('BEGIN');
 
-        const dup = await client.query(
-          `SELECT id FROM items WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+        const dup = await client.query<{ id: string }>(
+          `SELECT id FROM items WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) LIMIT 1`,
           [row.name.trim()]
         );
         if (dup.rows.length > 0) {
-          skipped++;
-          await client.query('ROLLBACK');
+          // Item exists — add any new sizes/colors as variants; never create a duplicate product row.
+          const existId = dup.rows[0].id;
+          const sizeList = (row.sizes ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+          const colorList = (row.colors ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+          for (const sz of sizeList) {
+            const has = await client.query(
+              `SELECT 1 FROM item_sizes WHERE item_id=$1 AND LOWER(TRIM(size_name))=LOWER(TRIM($2)) LIMIT 1`,
+              [existId, sz]
+            );
+            if (!has.rows.length) {
+              const ord = await client.query<{ m: number }>(
+                `SELECT COALESCE(MAX(sort_order),-1)+1 AS m FROM item_sizes WHERE item_id=$1`, [existId]
+              );
+              await client.query(
+                `INSERT INTO item_sizes (item_id, size_name, is_default, sort_order) VALUES ($1,$2,FALSE,$3)`,
+                [existId, sz, ord.rows[0].m]
+              );
+            }
+          }
+          for (const col of colorList) {
+            const has = await client.query(
+              `SELECT 1 FROM item_colors WHERE item_id=$1 AND LOWER(TRIM(color_name))=LOWER(TRIM($2)) LIMIT 1`,
+              [existId, col]
+            );
+            if (!has.rows.length) {
+              const ord = await client.query<{ m: number }>(
+                `SELECT COALESCE(MAX(sort_order),-1)+1 AS m FROM item_colors WHERE item_id=$1`, [existId]
+              );
+              await client.query(
+                `INSERT INTO item_colors (item_id, color_name, is_default, sort_order) VALUES ($1,$2,FALSE,$3)`,
+                [existId, col, ord.rows[0].m]
+              );
+            }
+          }
+          await client.query('COMMIT');
+          saved++;
           continue;
         }
 

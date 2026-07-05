@@ -10,7 +10,7 @@ import { postSalesInvoice, postPaymentReceived, postJournalEntry } from '@/lib/a
 import { sendWhatsAppText, interpolateTemplate, sendWhatsAppTemplate } from '@/lib/whatsapp';
 import { getLoyaltyRates, earnPoints, redeemPointsInTransaction } from '@/lib/loyalty';
 import { logAudit } from '@/lib/audit';
-import { generateInvoicePdf, generateReceiptPdf } from '@/lib/pdf-generator';
+import { generateThermalInvoicePdf } from '@/lib/pdf-generator';
 import { checkLowStockForItems } from '@/lib/low-stock';
 import type { ActionResult } from '@/types';
 
@@ -364,8 +364,8 @@ export async function createInvoiceAction(
     return { success: false, error: 'Failed to save invoice. Please try again.' };
   }
 
-  // Generate invoice PDF (fire-and-forget, non-blocking)
-  const pdfPath = await generateInvoicePdf(invoiceId!).catch(() => null);
+  // Generate thermal PDF for WhatsApp (fire-and-forget, non-blocking)
+  const pdfPath = await generateThermalInvoicePdf(invoiceId!).catch(() => null);
 
   // Low-stock check after stock deductions (fire-and-forget)
   const soldItemIds = parsed.items.map((i) => i.item_id);
@@ -740,7 +740,7 @@ export async function recordPaymentAction(
 
   // Generate receipt PDF then send sutra_payment_received
   // {{1}}=name, {{2}}=amount, {{3}}=invoice#
-  const receiptPath = await generateReceiptPdf(id).catch(() => null);
+  const receiptPath = await generateThermalInvoicePdf(id).catch(() => null);
 
   let waResult: 'sent' | 'failed' | 'skip' = 'skip';
   let waError = '';
@@ -837,8 +837,8 @@ export async function sendReminderAction(
     days:           String(daysOverdue),
   });
 
-  // Regenerate invoice PDF and attach to reminder
-  const reminderPdfPath = await generateInvoicePdf(id).catch(() => null);
+  // Generate thermal PDF and attach to reminder
+  const reminderPdfPath = await generateThermalInvoicePdf(id).catch(() => null);
 
   // sutra_payment_reminder: {{1}}=name, {{2}}=amount due, {{3}}=invoice#
   const result = await sendWhatsAppTemplate(
@@ -960,7 +960,7 @@ export async function retryInvoiceWaAction(invoiceId: string): Promise<void> {
 
   if (inv?.phone) {
     try {
-      const retryPdf = await generateInvoicePdf(invoiceId).catch(() => null);
+      const retryPdf = await generateThermalInvoicePdf(invoiceId).catch(() => null);
       const r = await sendWhatsAppTemplate(
         inv.phone,
         'sutra_invoice_notification',

@@ -61,42 +61,73 @@ export default async function PurchaseDetailPage({ params }: { params: { id: str
       </div>
 
       <div className="card p-0 overflow-hidden mb-4">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            <tr>
-              <th className="px-4 py-3 text-left">Item</th>
-              <th className="px-4 py-3 text-right">Qty</th>
-              <th className="px-4 py-3 text-right">Rate</th>
-              <th className="px-4 py-3 text-right">GST%</th>
-              <th className="px-4 py-3 text-right">Taxable</th>
-              <th className="px-4 py-3 text-right">CGST</th>
-              <th className="px-4 py-3 text-right">SGST</th>
-              <th className="px-4 py-3 text-right">Total</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {lines.map((line) => (
-              <tr key={line.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3">
-                  <div className="font-medium">{line.item_name}</div>
-                  {(() => {
-                    const newV = [line.color_name, line.size_name].filter((v: string | null) => v && v !== 'None' && v !== 'Regular').join(' / ');
-                    const oldV = [line.iv_color, line.iv_size].filter(Boolean).join(' / ');
-                    const label = newV || oldV;
-                    return label ? <div className="text-xs text-gray-500">{label}</div> : null;
-                  })()}
-                </td>
-                <td className="px-4 py-3 text-right">{Number(line.quantity)}</td>
-                <td className="px-4 py-3 text-right">{formatInr(Number(line.rate))}</td>
-                <td className="px-4 py-3 text-right text-gray-500">{Number(line.gst_rate)}%</td>
-                <td className="px-4 py-3 text-right">{formatInr(Number(line.taxable_value))}</td>
-                <td className="px-4 py-3 text-right">{formatInr(Number(line.cgst_amount))}</td>
-                <td className="px-4 py-3 text-right">{formatInr(Number(line.sgst_amount))}</td>
-                <td className="px-4 py-3 text-right font-semibold">{formatInr(Number(line.total_amount))}</td>
+        {/* Mobile: stacked item cards */}
+        <div className="sm:hidden divide-y divide-gray-100">
+          {lines.map((line) => {
+            const variantLabel = (() => {
+              const newV = [line.color_name, line.size_name].filter((v: string | null) => v && v !== 'None' && v !== 'Regular').join(' / ');
+              const oldV = [line.iv_color, line.iv_size].filter(Boolean).join(' / ');
+              return newV || oldV;
+            })();
+            return (
+              <div key={line.id} className="p-4">
+                <div className="mb-3">
+                  <p className="font-medium text-gray-900">{line.item_name}</p>
+                  {variantLabel && <p className="text-xs text-gray-500 mt-0.5">{variantLabel}</p>}
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs mb-2">
+                  <div><p className="text-gray-400 mb-0.5">Qty</p><p className="font-medium">{Number(line.quantity)}</p></div>
+                  <div><p className="text-gray-400 mb-0.5">Rate</p><p className="font-medium tabular-nums">{formatInr(Number(line.rate))}</p></div>
+                  <div><p className="text-gray-400 mb-0.5">GST%</p><p className="font-medium text-gray-600">{Number(line.gst_rate)}%</p></div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div><p className="text-gray-400 mb-0.5">Taxable</p><p className="tabular-nums">{formatInr(Number(line.taxable_value))}</p></div>
+                  <div><p className="text-gray-400 mb-0.5">Tax</p><p className="tabular-nums">{formatInr(Number(line.cgst_amount) + Number(line.sgst_amount))}</p></div>
+                  <div><p className="text-gray-400 mb-0.5">Total</p><p className="tabular-nums font-semibold text-gray-900">{formatInr(Number(line.total_amount))}</p></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {/* Desktop: full table */}
+        <div className="hidden sm:block overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <tr>
+                <th className="px-4 py-3 text-left">Item</th>
+                <th className="px-4 py-3 text-right">Qty</th>
+                <th className="px-4 py-3 text-right">Rate</th>
+                <th className="px-4 py-3 text-right">GST%</th>
+                <th className="px-4 py-3 text-right">Taxable</th>
+                <th className="px-4 py-3 text-right">CGST</th>
+                <th className="px-4 py-3 text-right">SGST</th>
+                <th className="px-4 py-3 text-right">Total</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {lines.map((line) => (
+                <tr key={line.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{line.item_name}</div>
+                    {(() => {
+                      const newV = [line.color_name, line.size_name].filter((v: string | null) => v && v !== 'None' && v !== 'Regular').join(' / ');
+                      const oldV = [line.iv_color, line.iv_size].filter(Boolean).join(' / ');
+                      const label = newV || oldV;
+                      return label ? <div className="text-xs text-gray-500">{label}</div> : null;
+                    })()}
+                  </td>
+                  <td className="px-4 py-3 text-right">{Number(line.quantity)}</td>
+                  <td className="px-4 py-3 text-right">{formatInr(Number(line.rate))}</td>
+                  <td className="px-4 py-3 text-right text-gray-500">{Number(line.gst_rate)}%</td>
+                  <td className="px-4 py-3 text-right">{formatInr(Number(line.taxable_value))}</td>
+                  <td className="px-4 py-3 text-right">{formatInr(Number(line.cgst_amount))}</td>
+                  <td className="px-4 py-3 text-right">{formatInr(Number(line.sgst_amount))}</td>
+                  <td className="px-4 py-3 text-right font-semibold">{formatInr(Number(line.total_amount))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="flex justify-end">

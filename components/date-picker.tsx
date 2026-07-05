@@ -130,7 +130,11 @@ export default function DatePicker({
       <button
         type="button"
         onClick={openPicker}
-        className={`${className ?? 'form-input'} flex w-full items-center justify-between gap-2 text-left`}
+        className={
+          className
+            ? `${className} flex w-full items-center justify-between gap-2 text-left`
+            : 'flex w-full items-center justify-between gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 text-left'
+        }
       >
         <span className={current ? 'text-gray-900' : 'text-gray-400'}>
           {current ? fmtDisplay(current) : placeholder}

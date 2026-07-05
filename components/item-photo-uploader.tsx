@@ -67,7 +67,7 @@ export default function ItemPhotoUploader({ itemId, currentPhotoUrl }: Props) {
             type="button"
             onClick={() => inputRef.current?.click()}
             disabled={uploading}
-            className="btn-secondary text-sm"
+            className="btn-secondary btn-sm"
           >
             {uploading ? 'Uploading…' : photoUrl && !imgError ? 'Change Photo' : 'Upload Photo'}
           </button>

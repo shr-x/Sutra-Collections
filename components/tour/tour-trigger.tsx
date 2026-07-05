@@ -31,7 +31,7 @@ export default function TourTrigger() {
   if (!mounted || isActive) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div className="fixed bottom-6 right-6 z-50 hidden sm:flex">
       {mode === 'resume' ? (
         <button
           onClick={() => startTour(resumeStep)}

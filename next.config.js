@@ -1,9 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Logo uploads are served as plain <img> tags (no Next.js optimizer involved),
-  // so no remotePatterns / localPatterns config is required here.
-  // Files written to /app/public/uploads/ are served at /uploads/* by Next.js's
-  // built-in static file handler at runtime (not baked into the build).
+  // Allow next/image (if ever used) to serve images from the production domain and localhost.
+  // Plain <img> tags are unaffected; this only gates the <Image> optimizer.
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: 'sutra-pos.shr-x.in' },
+      { protocol: 'https', hostname: 'shr-x.in' },
+      { protocol: 'http',  hostname: 'localhost' },
+    ],
+  },
 };
 
 module.exports = nextConfig;

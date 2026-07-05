@@ -12,10 +12,10 @@ import type { TailoringStage } from '@/types';
 export const metadata: Metadata = { title: 'Tailoring Order' };
 
 const STAGE_BADGE: Record<TailoringStage, string> = {
-  placed:     'bg-blue-100 text-blue-700',
-  production: 'bg-yellow-100 text-yellow-700',
-  ready:      'bg-green-100 text-green-700',
-  delivered:  'bg-gray-100 text-gray-500',
+  placed:     'badge-blue',
+  production: 'badge-amber',
+  ready:      'badge-green',
+  delivered:  'badge-gray',
 };
 
 const STAGE_LABEL: Record<TailoringStage, string> = {
@@ -75,7 +75,6 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
     currentMeasurements[row.field_id] = row.value;
   }
 
-  // Fetch batch siblings if this order has a batch_id
   interface SiblingRow {
     id: string;
     order_number: string;
@@ -104,36 +103,38 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
 
   return (
     <div>
-      <div className="page-header">
-        <div>
-          <Link href="/tailoring" className="text-sm text-purple-600 hover:underline">
-            ← Tailoring Orders
-          </Link>
-          <h1 className="page-title mt-1 flex items-center gap-2">
-            {order.group_number
-              ? `Order #${order.group_number}${order.suffix}`
-              : order.order_number}
-            {order.batch_id && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-sm font-medium text-amber-700">
-                🔗 {siblings.length + 1} items
-              </span>
-            )}
-          </h1>
-          {order.batch_id && order.group_number && (
-            <p className="mt-0.5 text-xs text-gray-500">
-              Part of Order #{order.group_number}, item {order.suffix} of {siblings.length + 1}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STAGE_BADGE[stage]}`}>
+      {/* ── Page header ── */}
+      <div className="mb-4 sm:mb-6">
+        <Link href="/tailoring" className="text-sm text-purple-600 hover:underline">
+          ← Tailoring Orders
+        </Link>
+
+        {/* Title row: order number + status badge */}
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <h1 className="page-title">{order.order_number}</h1>
+          <span className={STAGE_BADGE[stage]}>
             {STAGE_LABEL[stage]}
           </span>
+          {order.batch_id && (
+            <span className="badge-amber">
+              🔗 {siblings.length + 1} items
+            </span>
+          )}
+        </div>
+
+        {order.batch_id && order.group_number && (
+          <p className="mt-0.5 text-xs text-gray-500">
+            Part of group {order.group_number}, item {order.suffix} of {siblings.length + 1}
+          </p>
+        )}
+
+        {/* Action buttons row — clearly rectangular, distinct from status badges */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <a
             href={`/api/tailoring/${order.id}/customer-pdf`}
             target="_blank"
             rel="noreferrer"
-            className="rounded-full border border-purple-200 bg-white px-3 py-1.5 text-xs font-semibold text-purple-600 transition-colors hover:bg-purple-50"
+            className="btn-secondary btn-sm"
           >
             📄 Customer PDF
           </a>
@@ -141,7 +142,7 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
             href={`/api/tailoring/${order.id}/tailor-pdf`}
             target="_blank"
             rel="noreferrer"
-            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-50"
+            className="btn-secondary btn-sm"
           >
             🔧 Tailor PDF
           </a>
@@ -151,10 +152,7 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
               message={`Delete order ${order.order_number}? This cannot be undone.`}
             >
               <input type="hidden" name="id" value={order.id} />
-              <button
-                type="submit"
-                className="rounded-full border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50"
-              >
+              <button type="submit" className="btn-destructive btn-sm">
                 🗑 Delete
               </button>
             </ConfirmForm>
@@ -237,29 +235,21 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
               />
             )}
 
-            {/* Stage advance: production → ready */}
             {stage === 'production' && (
               <form action={updateStageAction} className="mt-3">
                 <input type="hidden" name="order_id" value={order.id} />
                 <input type="hidden" name="stage" value="ready" />
-                <button
-                  type="submit"
-                  className="w-full rounded-full bg-purple-600 py-2 text-sm font-semibold text-white transition-colors hover:bg-purple-700"
-                >
+                <button type="submit" className="btn-primary w-full">
                   Mark Ready for Pickup
                 </button>
               </form>
             )}
 
-            {/* Stage advance: ready → delivered */}
             {stage === 'ready' && (
               <form action={updateStageAction} className="mt-3">
                 <input type="hidden" name="order_id" value={order.id} />
                 <input type="hidden" name="stage" value="delivered" />
-                <button
-                  type="submit"
-                  className="w-full rounded-full bg-purple-600 py-2 text-sm font-semibold text-white transition-colors hover:bg-purple-700"
-                >
+                <button type="submit" className="btn-primary w-full">
                   Mark Delivered
                 </button>
               </form>
@@ -273,25 +263,23 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
                 <span>🔗</span>
                 <span>
                   {order.group_number
-                    ? `Order #${order.group_number} — ${siblings.length + 1} items`
+                    ? `Group ${order.group_number} — ${siblings.length + 1} items`
                     : `Batch (${siblings.length + 1} items)`}
                 </span>
               </h2>
               <ul className="space-y-2">
-                {/* This order */}
                 <li className="flex items-center justify-between rounded-lg border border-purple-200 bg-purple-50 px-3 py-2">
                   <div>
                     <span className="font-mono text-xs font-bold text-purple-700">
-                      {order.group_number ? `#${order.group_number}${order.suffix}` : order.order_number}
+                      {order.order_number}
                     </span>
                     <span className="ml-1.5 text-xs text-gray-500">{order.design_name}</span>
                     {order.color_fabric && <span className="ml-1 text-xs italic text-gray-400">{order.color_fabric}</span>}
                   </div>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STAGE_BADGE[stage]}`}>
+                  <span className={STAGE_BADGE[stage]}>
                     {STAGE_LABEL[stage]}
                   </span>
                 </li>
-                {/* Siblings */}
                 {siblings.map((sib) => (
                   <li key={sib.id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                     <div>
@@ -299,12 +287,12 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
                         href={`/tailoring/${sib.id}`}
                         className="font-mono text-xs font-bold text-purple-700 hover:underline"
                       >
-                        {sib.group_number ? `#${sib.group_number}${sib.suffix}` : sib.order_number}
+                        {sib.order_number}
                       </Link>
                       <span className="ml-1.5 text-xs text-gray-500">{sib.design_name}</span>
                       {sib.color_fabric && <span className="ml-1 text-xs italic text-gray-400">{sib.color_fabric}</span>}
                     </div>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STAGE_BADGE[sib.stage]}`}>
+                    <span className={STAGE_BADGE[sib.stage]}>
                       {STAGE_LABEL[sib.stage]}
                     </span>
                   </li>

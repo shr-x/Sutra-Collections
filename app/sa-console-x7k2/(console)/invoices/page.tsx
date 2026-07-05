@@ -6,7 +6,7 @@ import { CancelInvoiceButton, DeleteInvoiceButton } from './_buttons';
 interface InvoiceRow {
   id: string;
   invoice_number: string;
-  invoice_date: string;
+  invoice_date: string | Date;
   status: 'draft' | 'paid' | 'unpaid' | 'cancelled';
   grand_total: string;
   amount_paid: string;
@@ -21,8 +21,9 @@ const STATUS_BADGE: Record<string, string> = {
   draft: 'bg-gray-700 text-gray-400',
 };
 
-function fmtDate(dateStr: string) {
-  const [y, m, d] = dateStr.split('T')[0].split('-');
+function fmtDate(dateStr: string | Date) {
+  const s = typeof dateStr === 'string' ? dateStr : (dateStr as Date).toISOString();
+  const [y, m, d] = s.split('T')[0].split('-');
   return `${d}/${m}/${y}`;
 }
 

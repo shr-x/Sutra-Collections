@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { pool } from '@/lib/db';
 import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
-import { nextInvoiceNumber, nextTailoringGroupNumber } from '@/lib/invoice-number';
+import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import { generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf } from '@/lib/pdf-generator';
 import { logAudit } from '@/lib/audit';
@@ -101,11 +101,12 @@ export async function createTailoringOrder(raw: unknown): Promise<{
       );
     }
 
-    const orderNumber = await nextInvoiceNumber('TO', client);
-
-    // Determine group_number and suffix for human-readable display ("Order #27A")
+    // group_number = the TO sequence number (shared by all items in a booking session).
+    // suffix = A, B, C... appended to group_number to form the full order_number.
+    // First order in a session draws a new TO number; subsequent orders reuse it.
     let groupNumber: string;
     let suffix: string;
+
     if (batchId) {
       const sibRes = await client.query<{ group_number: string; batch_count: string }>(
         `SELECT group_number, COUNT(*)::text AS batch_count
@@ -114,17 +115,22 @@ export async function createTailoringOrder(raw: unknown): Promise<{
         [batchId]
       );
       if (sibRes.rows[0]) {
-        // Reuse existing group number; suffix is A=0, B=1, C=2...
+        // Reuse the existing TO number — no new sequence draw for subsequent items
         groupNumber = sibRes.rows[0].group_number;
         suffix = String.fromCharCode(65 + parseInt(sibRes.rows[0].batch_count, 10));
       } else {
-        groupNumber = await nextTailoringGroupNumber(client);
+        // First item in this batch — draw a new TO number
+        groupNumber = await nextInvoiceNumber('TO', client);
         suffix = 'A';
       }
     } else {
-      groupNumber = await nextTailoringGroupNumber(client);
+      // Solo order — still draws its own TO number, gets suffix A
+      groupNumber = await nextInvoiceNumber('TO', client);
       suffix = 'A';
     }
+
+    // Full unique identifier stored in order_number: e.g. "TO/2026-27/0029-A"
+    const orderNumber = `${groupNumber}-${suffix}`;
 
     const ordRes = await client.query(
       `INSERT INTO tailoring_orders
@@ -157,7 +163,7 @@ export async function createTailoringOrder(raw: unknown): Promise<{
       Promise.resolve().then(async () => {
         const pdfPath = await generateTailoringCustomerPdf(newOrderId).catch(() => null);
         sendWhatsAppTemplate(customerPhone, 'sutra_order_confirmation', [
-          customerName, `#${_groupNumber}`, dueDateFormatted,
+          customerName, _groupNumber, dueDateFormatted,
         ], pdfPath).catch((e) => console.error('[createTailoringOrder] WhatsApp failed:', e));
       });
     }
@@ -197,7 +203,7 @@ export async function sendBatchConfirmationAction(batchId: string): Promise<void
 
     // grouped PDF — generateTailoringCustomerPdf auto-collects all group siblings
     const pdfPath = await generateTailoringCustomerPdf(first.id).catch(() => null);
-    const displayRef = first.group_number ? `#${first.group_number}` : first.order_number;
+    const displayRef = first.group_number ?? first.order_number;
     await sendWhatsAppTemplate(first.phone, 'sutra_order_confirmation', [
       first.name, displayRef, dueDateFormatted,
     ], pdfPath);
@@ -264,7 +270,7 @@ export async function updateStageAction(formData: FormData) {
         const r = rows[0];
         if (!r?.phone) return;
 
-        const displayRef = r.group_number ? `#${r.group_number}` : r.order_number;
+        const displayRef = r.group_number ?? r.order_number;
 
         if (!r.batch_id) {
           // Single order — send immediately
@@ -294,7 +300,7 @@ export async function updateStageAction(formData: FormData) {
 
         // All batch orders at threshold — send ONE message using group_number as reference
         const first = await batchFirstOrder(r.batch_id);
-        const batchDisplayRef = first?.group_number ? `#${first.group_number}` : (first?.order_number ?? displayRef);
+        const batchDisplayRef = first?.group_number ?? first?.order_number ?? displayRef;
 
         if (newStage === 'ready') {
           const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
@@ -375,7 +381,7 @@ export async function assignTailorAction(
           })
         : 'TBD';
 
-      const custDisplayRef   = order.group_number ? `#${order.group_number}` : order.order_number;
+      const custDisplayRef   = order.group_number ?? order.order_number;
       const tailorDisplayRef = order.group_number && order.suffix
         ? `${order.group_number}${order.suffix}` : order.order_number;
 
@@ -491,7 +497,7 @@ export async function updateOrderAction(data: {
           ? `${newDueDate.slice(8, 10)}/${newDueDate.slice(5, 7)}/${newDueDate.slice(0, 4)}`
           : 'TBD';
         const pdfPath = await generateTailoringCustomerPdf(data.orderId).catch(() => null);
-        const displayRef = order.group_number ? `#${order.group_number}` : order.order_number;
+        const displayRef = order.group_number ?? order.order_number;
         sendWhatsAppTemplate(phone, 'sutra_order_updated', [
           order.customer_name, displayRef, dateStr,
         ], pdfPath).catch((e) => console.error('[updateOrderAction] WA failed:', e));
@@ -543,7 +549,7 @@ export async function advanceStageAction(
       return { success: true, waStatus: 'skipped', message: 'Stage updated. Customer has no phone.' };
     }
 
-    const displayRef = r.group_number ? `#${r.group_number}` : r.order_number;
+    const displayRef = r.group_number ?? r.order_number;
 
     // Batch logic: hold until all siblings reach the same threshold
     if (r.batch_id) {
@@ -561,7 +567,7 @@ export async function advanceStageAction(
 
       // All batch orders ready/delivered — send ONE message using group_number
       const first = await batchFirstOrder(r.batch_id);
-      const batchDisplayRef = first?.group_number ? `#${first.group_number}` : (first?.order_number ?? displayRef);
+      const batchDisplayRef = first?.group_number ?? first?.order_number ?? displayRef;
       let waRes;
       if (newStage === 'ready') {
         const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);

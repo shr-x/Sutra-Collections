@@ -29,11 +29,25 @@ export async function createSAItemAction(
   const parsed = ItemSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.errors[0].message };
   const d = parsed.data;
-  await query(
+
+  const dupCheck = await query<{ id: string }>(
+    `SELECT id FROM items WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) LIMIT 1`,
+    [d.name]
+  );
+  if (dupCheck.rows.length > 0) {
+    return { error: `An item named "${d.name}" already exists.` };
+  }
+
+  const res = await query<{ id: string }>(
     `INSERT INTO items (name, category_id, item_type, unit, hsn_code, gst_rate, is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
     [d.name, d.category_id || null, d.item_type, d.unit || null, d.hsn_code || null, d.gst_rate, d.is_active]
   );
+  const newId = res.rows[0].id;
+  await Promise.all([
+    query('INSERT INTO item_sizes (item_id, size_name, is_default, sort_order) VALUES ($1,$2,true,0)', [newId, 'Regular']),
+    query('INSERT INTO item_colors (item_id, color_name, is_default, sort_order) VALUES ($1,$2,true,0)', [newId, 'Default']),
+  ]);
   redirect('/sa-console-x7k2/items');
 }
 

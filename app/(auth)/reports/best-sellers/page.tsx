@@ -99,16 +99,16 @@ export default async function BestSellersPage({
           </nav>
           <h1 className="page-title">Best Sellers</h1>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2">
+        <div className="flex flex-wrap gap-2">
           <a
             href={`/api/reports/best-sellers?from=${from}&to=${to}${searchParams.warehouse_id ? '&warehouse_id=' + searchParams.warehouse_id : ''}&sort=${sort}`}
-            className="btn-secondary text-sm min-h-[44px]"
+            className="btn-secondary btn-sm"
           >
             Export CSV
           </a>
           <a
             href={`/api/reports/best-sellers/pdf?from=${from}&to=${to}${searchParams.warehouse_id ? '&warehouse_id=' + searchParams.warehouse_id : ''}&sort=${sort}`}
-            className="btn-secondary text-sm min-h-[44px]"
+            className="btn-secondary btn-sm"
             download
           >
             Export PDF
@@ -143,8 +143,8 @@ export default async function BestSellersPage({
               <option value="revenue" selected={sort === 'revenue'}>Revenue</option>
             </select>
           </div>
-          <button type="submit" className="btn-primary text-sm">Apply</button>
-          <Link href="/reports/best-sellers" className="text-sm text-gray-500 hover:underline">Clear</Link>
+          <button type="submit" className="btn-primary btn-sm">Apply</button>
+          <Link href="/reports/best-sellers" className="btn-ghost btn-sm">Clear</Link>
         </div>
       </form>
 

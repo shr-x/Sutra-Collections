@@ -112,14 +112,14 @@ export default async function AuditLogPage({
         <div className="flex gap-2">
           <a
             href={`/api/reports/export/audit-log?format=json&from=${from}&to=${to}${searchParams.user_id ? '&user_id=' + searchParams.user_id : ''}${searchParams.action ? '&action=' + searchParams.action : ''}${searchParams.entity ? '&entity=' + searchParams.entity : ''}`}
-            className="btn-secondary text-sm"
+            className="btn-secondary btn-sm"
             download
           >
             Export JSON
           </a>
           <a
             href={`/api/reports/audit/pdf?from=${from}&to=${to}${searchParams.user_id ? '&user_id=' + searchParams.user_id : ''}${searchParams.action ? '&action=' + searchParams.action : ''}${searchParams.entity ? '&entity=' + searchParams.entity : ''}`}
-            className="btn-secondary text-sm"
+            className="btn-secondary btn-sm"
             download
           >
             Export PDF
@@ -165,7 +165,7 @@ export default async function AuditLogPage({
               ))}
             </select>
           </div>
-          <button type="submit" className="btn-primary text-sm">Apply</button>
+          <button type="submit" className="btn-primary btn-sm">Apply</button>
         </div>
       </form>
 
@@ -175,6 +175,7 @@ export default async function AuditLogPage({
         {logsRes.rows.length === 0 ? (
           <p className="px-6 py-12 text-center text-sm text-gray-400">No audit records found.</p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500 border-b">
               <tr>
@@ -232,6 +233,7 @@ export default async function AuditLogPage({
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -243,7 +245,7 @@ export default async function AuditLogPage({
             {pageN > 1 && (
               <Link
                 href={`/reports/audit?from=${from}&to=${to}&page=${pageN - 1}${searchParams.user_id ? '&user_id=' + searchParams.user_id : ''}${searchParams.action ? '&action=' + searchParams.action : ''}${searchParams.entity ? '&entity=' + searchParams.entity : ''}`}
-                className="btn-secondary text-xs"
+                className="btn-secondary btn-sm"
               >
                 ← Previous
               </Link>
@@ -251,7 +253,7 @@ export default async function AuditLogPage({
             {pageN < totalPages && (
               <Link
                 href={`/reports/audit?from=${from}&to=${to}&page=${pageN + 1}${searchParams.user_id ? '&user_id=' + searchParams.user_id : ''}${searchParams.action ? '&action=' + searchParams.action : ''}${searchParams.entity ? '&entity=' + searchParams.entity : ''}`}
-                className="btn-secondary text-xs"
+                className="btn-secondary btn-sm"
               >
                 Next →
               </Link>

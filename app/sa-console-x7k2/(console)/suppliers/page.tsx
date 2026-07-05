@@ -7,7 +7,6 @@ interface SupplierRow {
   id: string;
   name: string;
   phone: string | null;
-  email: string | null;
   gstin: string | null;
   created_at: string;
 }
@@ -16,7 +15,7 @@ export default async function SASuppliersPage() {
   await requireSA();
 
   const res = await query<SupplierRow>(
-    `SELECT id, name, phone, email, gstin, created_at
+    `SELECT id, name, phone, gstin, created_at
      FROM suppliers
      ORDER BY created_at DESC`
   );
@@ -40,7 +39,6 @@ export default async function SASuppliersPage() {
             <tr className="bg-gray-700/50">
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">Name</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">Phone</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">Email</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">GSTIN</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">Created</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">Actions</th>
@@ -49,7 +47,7 @@ export default async function SASuppliersPage() {
           <tbody>
             {suppliers.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
                   No suppliers found.
                 </td>
               </tr>
@@ -58,7 +56,6 @@ export default async function SASuppliersPage() {
               <tr key={s.id} className="border-t border-gray-700 hover:bg-gray-700/30">
                 <td className="px-4 py-3 text-gray-300 font-medium">{s.name}</td>
                 <td className="px-4 py-3 text-gray-300">{s.phone ?? '—'}</td>
-                <td className="px-4 py-3 text-gray-300">{s.email ?? '—'}</td>
                 <td className="px-4 py-3 text-gray-300">{s.gstin ?? '—'}</td>
                 <td className="px-4 py-3 text-gray-400">
                   {new Date(s.created_at).toLocaleDateString('en-IN')}

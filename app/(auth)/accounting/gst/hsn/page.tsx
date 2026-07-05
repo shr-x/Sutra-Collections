@@ -68,9 +68,9 @@ export default async function HsnPage({ searchParams }: { searchParams: { month?
     <div>
       <div className="page-header">
         <h1 className="page-title">HSN-wise Summary</h1>
-        <div className="flex gap-2">
-          <a href={csvUrl} className="btn-secondary">Export CSV</a>
-          <a href={pdfUrl} className="btn-secondary" download>Export PDF</a>
+        <div className="flex flex-wrap gap-2">
+          <a href={csvUrl} className="btn-secondary btn-sm">Export CSV</a>
+          <a href={pdfUrl} className="btn-secondary btn-sm" download>Export PDF</a>
         </div>
       </div>
 

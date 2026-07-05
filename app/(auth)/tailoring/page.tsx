@@ -125,7 +125,7 @@ export default async function TailoringOrdersPage({
                       href={`/tailoring/${row.id}`}
                       className="font-mono text-xs font-semibold text-purple-700 hover:underline"
                     >
-                      {row.group_number ? `#${row.group_number}${row.suffix}` : row.order_number}
+                      {row.order_number}
                     </Link>
                     {row.batch_size && (
                       <Link

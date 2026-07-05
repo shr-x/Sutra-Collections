@@ -76,7 +76,7 @@ export default async function ProductionBoardPage() {
   const byStage   = (s: TailoringStage) => allOrders.filter((o) => o.stage === s);
 
   return (
-    <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
+    <div className="md:flex md:flex-col md:h-[calc(100vh-120px)]">
       {/* Header */}
       <div className="page-header shrink-0">
         <div>
@@ -89,14 +89,14 @@ export default async function ProductionBoardPage() {
       </div>
 
       {/* Board — fixed height, 4 scrollable columns */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid min-h-0 md:flex-1 grid-cols-1 gap-3 md:overflow-hidden md:grid-cols-2 xl:grid-cols-4">
         {COLUMNS.map(({ stage, label, hdr, border }) => {
           const orders    = byStage(stage);
           const nextStage = NEXT_STAGE[stage];
           return (
             <div
               key={stage}
-              className={`flex flex-col overflow-hidden rounded-xl border ${border}`}
+              className={`flex flex-col md:overflow-hidden rounded-xl border ${border}`}
             >
               {/* Column header */}
               <div className={`flex shrink-0 items-center justify-between rounded-t-xl px-4 py-3 ${hdr}`}>
@@ -107,7 +107,7 @@ export default async function ProductionBoardPage() {
               </div>
 
               {/* Scrollable cards */}
-              <div className="flex-1 space-y-3 overflow-y-auto p-3">
+              <div className="flex-1 space-y-3 md:overflow-y-auto p-3">
                 {orders.length === 0 ? (
                   <p className="py-8 text-center text-xs text-gray-400">No orders</p>
                 ) : (
@@ -117,7 +117,7 @@ export default async function ProductionBoardPage() {
                     return (
                       <div
                         key={o.id}
-                        className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 shadow-sm"
+                        className="space-y-2 rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
                       >
                         <div className="flex items-start justify-between gap-1">
                           <div className="flex items-center gap-1.5 flex-wrap">
@@ -125,7 +125,7 @@ export default async function ProductionBoardPage() {
                               href={`/tailoring/${o.id}`}
                               className="font-mono text-xs font-bold leading-tight text-purple-700 hover:underline"
                             >
-                              {o.group_number ? `#${o.group_number}${o.suffix}` : o.order_number}
+                              {o.order_number}
                             </Link>
                             {o.batch_size && (
                               <Link

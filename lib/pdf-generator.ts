@@ -7,8 +7,14 @@ import path from 'path';
 import QRCode from 'qrcode';
 import { query } from '@/lib/db';
 import { renderInvoicePdf } from '@/lib/pdf/invoice-template';
-import { renderTailoringPdf, renderBatchTailoringPdf } from '@/lib/pdf/tailoring-template';
-import type { PdfCompany } from '@/lib/pdf/invoice-template';
+import type { PdfCompany, PdfInvoiceData } from '@/lib/pdf/invoice-template';
+import { renderThermalPdf } from '@/lib/pdf/thermal-template';
+import {
+  renderTailoringPdf,
+  renderBatchTailoringPdf,
+  renderGroupedTailoringPdf,
+  type GroupedTailoringPdfInput,
+} from '@/lib/pdf/tailoring-template';
 
 const fmtDate = (d: string | Date | null): string =>
   d ? new Date(d).toLocaleDateString('en-IN') : '';
@@ -125,6 +131,95 @@ export async function generateInvoicePdf(invoiceId: string): Promise<string | nu
 
 // Receipt reuses invoice PDF (same data, payment is already recorded)
 export const generateReceiptPdf = generateInvoicePdf;
+
+// ─── Thermal Invoice (for WhatsApp sends — narrow, single-page, B&W) ─────────
+
+export async function generateThermalInvoicePdf(invoiceId: string): Promise<string | null> {
+  try {
+    const [invRes, lineRes] = await Promise.all([
+      query(
+        `SELECT i.*, c.name AS customer_name, c.address AS customer_address,
+                c.gstin AS customer_gstin, c.phone AS customer_phone
+         FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE i.id=$1`,
+        [invoiceId]
+      ),
+      query(
+        `SELECT ii.*, it.name AS item_name, it.unit,
+                isz.size_name, ic.color_name
+         FROM invoice_items ii
+         JOIN items it ON it.id=ii.item_id
+         LEFT JOIN item_sizes isz ON isz.id=ii.size_id
+         LEFT JOIN item_colors ic ON ic.id=ii.color_id
+         WHERE ii.invoice_id=$1 ORDER BY ii.sort_order`,
+        [invoiceId]
+      ),
+    ]);
+
+    if (!invRes.rows[0]) return null;
+    const inv = invRes.rows[0];
+    const co = await getCompany();
+
+    // Thermal must use base64 data URL — file-path images cause a react-pdf page-split bug
+    const logoDataUrl = co.logoAbsPath
+      ? `data:image/${path.extname(co.logoAbsPath).slice(1).replace('jpg', 'jpeg')};base64,${fs.readFileSync(co.logoAbsPath).toString('base64')}`
+      : undefined;
+
+    const balance = Math.max(0, Number(inv.grand_total) - Number(inv.amount_paid));
+    let upiQrDataUrl: string | undefined;
+    if (co.upiVpa && balance > 0) {
+      const uri = `upi://pay?pa=${encodeURIComponent(co.upiVpa)}&am=${balance.toFixed(2)}&tn=${encodeURIComponent(inv.invoice_number)}&cu=INR`;
+      upiQrDataUrl = await QRCode.toDataURL(uri, { width: 80, margin: 1 });
+    }
+
+    const data: PdfInvoiceData = {
+      docType: 'INVOICE',
+      invoiceNumber: inv.invoice_number,
+      invoiceDate: fmtDate(inv.invoice_date),
+      company: {
+        name: co.name, gstin: co.gstin, address: co.address,
+        state: co.state, phone: co.phone, email: co.email,
+      },
+      customer: {
+        name: inv.customer_name ?? 'Walk-in Customer',
+        address: inv.customer_address ?? '',
+        gstin: inv.customer_gstin,
+        phone: inv.customer_phone || undefined,
+      },
+      items: lineRes.rows.map((l) => {
+        const variant = [l.color_name, l.size_name]
+          .filter((v: string | null) => v && v !== 'None' && v !== 'Regular').join(' / ');
+        return {
+          description: l.item_name, variant: variant || undefined,
+          hsn: l.hsn_code ?? '', qty: Number(l.quantity), unit: l.unit,
+          rate: Number(l.rate), discountAmount: Number(l.discount_amount),
+          gstRate: Number(l.gst_rate), taxableValue: Number(l.taxable_value),
+          cgst: Number(l.cgst_amount), sgst: Number(l.sgst_amount), total: Number(l.total_amount),
+        };
+      }),
+      invoiceDiscountAmount: Number(inv.invoice_discount_amount),
+      subtotal: Number(inv.subtotal),
+      totalCgst: Number(inv.total_cgst),
+      totalSgst: Number(inv.total_sgst),
+      grandTotal: Number(inv.grand_total),
+      amountPaid: Number(inv.amount_paid),
+      paymentMode: inv.payment_mode || undefined,
+      upiVpa: co.upiVpa || undefined,
+      upiQrDataUrl,
+      schemeDiscount: Number(inv.scheme_discount_amount ?? 0),
+      loyaltyDiscount: Number(inv.loyalty_discount_amount ?? 0),
+      loyaltyPoints: Number(inv.loyalty_points_redeemed ?? 0),
+    };
+
+    const buffer = await renderThermalPdf(data, logoDataUrl);
+    const safe = inv.invoice_number.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/thermal_${safe}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateThermalInvoicePdf failed:', err);
+    return null;
+  }
+}
 
 // ─── Credit Note ─────────────────────────────────────────────────────────────
 
@@ -297,9 +392,9 @@ async function getTailoringOrderData(orderId: string) {
 }
 
 /**
- * Customer copy: grouped PDF — all orders sharing the same group_number in one document.
- * Each page shows the group number (e.g. "27") without suffix so the customer sees one order.
- * Falls back to a single-page PDF for legacy orders without group_number.
+ * Customer copy: grouped PDF — all orders sharing the same group_number on ONE page,
+ * listed as line items with a single combined total at the bottom.
+ * Falls back to a single-page PDF for orders without group_number.
  */
 export async function generateTailoringCustomerPdf(orderId: string): Promise<string | null> {
   try {
@@ -317,46 +412,75 @@ export async function generateTailoringCustomerPdf(orderId: string): Promise<str
       if (groupRes.rows.length > 0) orderIds = groupRes.rows.map((r) => r.id);
     }
 
-    const pages = await Promise.all(
-      orderIds.map(async (id) => {
-        const { order, measurements } = await getTailoringOrderData(id);
-        if (!order) return null;
+    // Fetch data for all sibling orders
+    const allData = await Promise.all(orderIds.map((id) => getTailoringOrderData(id)));
+    const validData = allData.filter((d) => d.order !== null) as Array<{ order: NonNullable<Awaited<ReturnType<typeof getTailoringOrderData>>['order']>; measurements: Awaited<ReturnType<typeof getTailoringOrderData>>['measurements'] }>;
+    if (!validData.length) return null;
 
+    const companyInfo = { name: co.name, gstin: co.gstin, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath };
+    const groupNumber = firstOrder.group_number ?? firstOrder.order_number;
+    const safe = groupNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/tailoring_customer_${safe}.pdf`;
+
+    let buffer: Buffer;
+
+    if (validData.length === 1) {
+      // Solo order — single-page layout
+      const { order, measurements } = validData[0];
+      let designPhotoAbsPath: string | undefined;
+      if (order.design_photo) {
+        const p = path.join(process.cwd(), 'public', order.design_photo);
+        if (fs.existsSync(p)) designPhotoAbsPath = p;
+      }
+      buffer = await renderTailoringPdf({
+        docType:      'TAILORING ORDER',
+        orderNumber:  groupNumber,
+        orderDate:    fmtDate(order.created_at),
+        dueDate:      order.due_date ? fmtDate(order.due_date) : undefined,
+        company:      companyInfo,
+        customer:     { name: order.customer_name, phone: order.customer_phone ?? undefined },
+        design:       { name: order.design_name, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
+        colorFabric:  order.color_fabric ?? undefined,
+        measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
+        notes:        order.notes ?? undefined,
+        price:        Number(order.price),
+      });
+    } else {
+      // Grouped booking — ONE page, all items as rows, one combined total
+      const items: GroupedTailoringPdfInput['items'] = [];
+      let grandTotal = 0;
+      for (const { order, measurements } of validData) {
         let designPhotoAbsPath: string | undefined;
         if (order.design_photo) {
           const p = path.join(process.cwd(), 'public', order.design_photo);
           if (fs.existsSync(p)) designPhotoAbsPath = p;
         }
-
-        // Customer sees the group number without suffix (e.g. "27" not "27A")
-        const displayNum = order.group_number ?? order.order_number;
-
-        return {
-          docType:     'TAILORING ORDER' as const,
-          orderNumber: displayNum,
-          orderDate:   fmtDate(order.created_at),
-          dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
-          company:     { name: co.name, gstin: co.gstin, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
-          customer:    { name: order.customer_name, phone: order.customer_phone ?? undefined },
-          design:      { name: order.design_name, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
-          colorFabric: order.color_fabric ?? undefined,
+        const price = Number(order.price);
+        grandTotal += price;
+        // Guard: if design_name is the company name (data bug), use category instead
+        const designName = (order.design_name && order.design_name.toLowerCase() !== co.name.toLowerCase())
+          ? order.design_name
+          : (order.design_category ?? order.design_name);
+        items.push({
+          design:       { name: designName, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
+          colorFabric:  order.color_fabric ?? undefined,
           measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
-          notes:       order.notes ?? undefined,
-          price:       Number(order.price),
-        };
-      })
-    );
+          notes:        order.notes ?? undefined,
+          price,
+        });
+      }
+      const firstValid = validData[0].order;
+      buffer = await renderGroupedTailoringPdf({
+        groupNumber,
+        orderDate:  fmtDate(firstValid.created_at),
+        dueDate:    firstValid.due_date ? fmtDate(firstValid.due_date) : undefined,
+        company:    companyInfo,
+        customer:   { name: firstValid.customer_name, phone: firstValid.customer_phone ?? undefined },
+        items,
+        grandTotal,
+      });
+    }
 
-    const validPages = pages.filter((p): p is NonNullable<typeof p> => p !== null);
-    if (!validPages.length) return null;
-
-    const buffer = validPages.length === 1
-      ? await renderTailoringPdf(validPages[0])
-      : await renderBatchTailoringPdf(validPages);
-
-    const displayNum = firstOrder.group_number ?? firstOrder.order_number;
-    const safe = displayNum.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filePath = `/tmp/tailoring_customer_${safe}.pdf`;
     fs.writeFileSync(filePath, buffer);
     return filePath;
   } catch (err) {
@@ -365,7 +489,7 @@ export async function generateTailoringCustomerPdf(orderId: string): Promise<str
   }
 }
 
-/** Tailor copy: NO customer name/phone/price — header shows "#27A" (group + suffix) for easy identification. */
+/** Tailor copy: NO customer name/phone/price — header shows full order_number e.g. "TO/2026-27/0029-A". */
 export async function generateTailoringTailorPdf(orderId: string): Promise<string | null> {
   try {
     const { order, measurements } = await getTailoringOrderData(orderId);
@@ -378,10 +502,8 @@ export async function generateTailoringTailorPdf(orderId: string): Promise<strin
       if (fs.existsSync(p)) designPhotoAbsPath = p;
     }
 
-    // Tailor sees "#27A" — group_number + suffix identifies their specific item
-    const displayNum = order.group_number && order.suffix
-      ? `${order.group_number}${order.suffix}`
-      : order.order_number;
+    // order_number already contains suffix (e.g. "TO/2026-27/0029-A")
+    const displayNum = order.order_number;
 
     const buffer = await renderTailoringPdf({
       docType:     'PRODUCTION ORDER',

@@ -62,6 +62,15 @@ export async function createItemAction(
 
   const itemType = await resolveItemType(d.category_id);
 
+  // Prevent duplicates: reject if a same-name item (case-insensitive) already exists
+  const dupCheck = await query<{ id: string }>(
+    `SELECT id FROM items WHERE LOWER(TRIM(name)) = LOWER(TRIM($1)) LIMIT 1`,
+    [d.name]
+  );
+  if (dupCheck.rows.length > 0) {
+    return { error: `An item named "${d.name}" already exists.` };
+  }
+
   try {
     const res = await query<{ id: string }>(
       `INSERT INTO items (name, hsn_code, item_type, category_id, gst_rate, unit, sale_price, low_stock_threshold, is_active)
@@ -69,10 +78,10 @@ export async function createItemAction(
       [d.name, d.hsn_code || null, itemType, d.category_id ?? null, d.gst_rate, d.unit, d.sale_price ?? null, d.low_stock_threshold ?? null, d.is_active]
     );
     const newId = res.rows[0].id;
-    // Seed default size and color for every new item
+    // Seed default size and color so every item shows at least 1S / 1C
     await Promise.all([
       query('INSERT INTO item_sizes (item_id, size_name, is_default, sort_order) VALUES ($1,$2,true,0)', [newId, 'Regular']),
-      query('INSERT INTO item_colors (item_id, color_name, is_default, sort_order) VALUES ($1,$2,true,0)', [newId, 'None']),
+      query('INSERT INTO item_colors (item_id, color_name, is_default, sort_order) VALUES ($1,$2,true,0)', [newId, 'Default']),
     ]);
     logAudit({ userId: session.userId, action: 'create', entityType: 'item', entityId: newId, entityLabel: d.name }).catch(() => {});
     revalidatePath('/inventory/items');

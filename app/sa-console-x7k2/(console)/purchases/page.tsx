@@ -5,8 +5,8 @@ import { DeletePurchaseButton } from './_buttons';
 
 interface PurchaseRow {
   id: string;
-  invoice_number: string | null;
-  invoice_date: string;
+  purchase_number: string | null;
+  purchase_date: string | Date;
   status: string;
   grand_total: string;
   amount_paid: string;
@@ -19,8 +19,9 @@ const STATUS_BADGE: Record<string, string> = {
   cancelled: 'bg-red-900/50 text-red-400',
 };
 
-function fmtDate(dateStr: string) {
-  const [y, m, d] = dateStr.split('T')[0].split('-');
+function fmtDate(dateStr: string | Date) {
+  const s = typeof dateStr === 'string' ? dateStr : (dateStr as Date).toISOString();
+  const [y, m, d] = s.split('T')[0].split('-');
   return `${d}/${m}/${y}`;
 }
 
@@ -32,11 +33,11 @@ export default async function PurchasesPage() {
   await requireSA();
 
   const res = await query<PurchaseRow>(`
-    SELECT p.id, p.invoice_number, p.invoice_date, p.status, p.grand_total, p.amount_paid,
+    SELECT p.id, p.purchase_number, p.purchase_date, p.status, p.grand_total, p.amount_paid,
            COALESCE(s.name, '—') AS supplier_name
     FROM purchase_invoices p
     LEFT JOIN suppliers s ON s.id = p.supplier_id
-    ORDER BY p.invoice_date DESC
+    ORDER BY p.purchase_date DESC
     LIMIT 200
   `);
 
@@ -79,8 +80,8 @@ export default async function PurchasesPage() {
               const balance = parseFloat(p.grand_total) - parseFloat(p.amount_paid);
               return (
                 <tr key={p.id} className="border-t border-gray-700 hover:bg-gray-700/30">
-                  <td className="px-4 py-3 font-medium text-white">{p.invoice_number ?? '—'}</td>
-                  <td className="px-4 py-3 text-gray-300">{fmtDate(p.invoice_date)}</td>
+                  <td className="px-4 py-3 font-medium text-white">{p.purchase_number ?? '—'}</td>
+                  <td className="px-4 py-3 text-gray-300">{fmtDate(p.purchase_date)}</td>
                   <td className="px-4 py-3 text-gray-300">{p.supplier_name}</td>
                   <td className="px-4 py-3">
                     <span
@@ -101,7 +102,7 @@ export default async function PurchasesPage() {
                   <td className="px-4 py-3">
                     <DeletePurchaseButton
                       id={p.id}
-                      invoiceNumber={p.invoice_number ?? p.id}
+                      invoiceNumber={p.purchase_number ?? p.id}
                     />
                   </td>
                 </tr>

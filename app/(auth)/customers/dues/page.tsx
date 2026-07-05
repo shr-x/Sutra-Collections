@@ -5,7 +5,6 @@ import { pool } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import { recordPaymentAction } from '@/app/(auth)/billing/invoices/actions';
 import CollectPaymentModal from '@/components/collect-payment-modal';
-import DatePicker from '@/components/date-picker';
 
 export const metadata: Metadata = { title: 'Outstanding Dues' };
 
@@ -24,14 +23,12 @@ interface InvoiceRow {
 export default async function DuesPage({
   searchParams,
 }: {
-  searchParams: { warehouse?: string; from?: string; to?: string };
+  searchParams: { warehouse?: string; days?: string };
 }) {
   await requireRole('admin', 'accountant');
 
   const warehouseFilter = searchParams.warehouse ?? '';
-  const fromFilter      = searchParams.from ?? '';
-  const toFilter        = searchParams.to ?? '';
-  const today = new Date().toISOString().slice(0, 10);
+  const daysFilter      = searchParams.days ?? ''; // '30' | '60' | '90' | ''
 
   const conditions: string[] = [
     `i.status IN ('issued','partially_paid')`,
@@ -41,8 +38,9 @@ export default async function DuesPage({
   const params: unknown[] = [];
 
   if (warehouseFilter) { params.push(warehouseFilter); conditions.push(`i.warehouse_id = $${params.length}`); }
-  if (fromFilter)      { params.push(fromFilter);      conditions.push(`i.invoice_date >= $${params.length}`); }
-  if (toFilter)        { params.push(toFilter);        conditions.push(`i.invoice_date <= $${params.length}`); }
+  if (daysFilter === '30')      conditions.push(`(CURRENT_DATE - COALESCE(i.due_date, (i.invoice_date + INTERVAL '30 days')::date)) BETWEEN 0 AND 30`);
+  else if (daysFilter === '60') conditions.push(`(CURRENT_DATE - COALESCE(i.due_date, (i.invoice_date + INTERVAL '30 days')::date)) BETWEEN 31 AND 60`);
+  else if (daysFilter === '90') conditions.push(`(CURRENT_DATE - COALESCE(i.due_date, (i.invoice_date + INTERVAL '30 days')::date)) > 90`);
 
   const where = `WHERE ${conditions.join(' AND ')}`;
 
@@ -86,8 +84,7 @@ export default async function DuesPage({
 
   const csvParams = new URLSearchParams();
   if (warehouseFilter) csvParams.set('warehouse', warehouseFilter);
-  if (fromFilter) csvParams.set('from', fromFilter);
-  if (toFilter) csvParams.set('to', toFilter);
+  if (daysFilter) csvParams.set('days', daysFilter);
 
   return (
     <div>
@@ -97,57 +94,130 @@ export default async function DuesPage({
       </div>
 
       {/* Filters */}
-      <form method="GET" className="mb-4 rounded-xl bg-white shadow-sm p-6 flex flex-wrap gap-6 items-end">
-        <div>
-          <label className="mb-1.5 block text-xs font-semibold text-gray-500">Warehouse</label>
-          <select name="warehouse" defaultValue={warehouseFilter}
-            className="form-input min-w-[180px] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm">
-            <option value="">All warehouses</option>
-            {warehousesRes.rows.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-semibold text-gray-500">From</label>
-          <DatePicker name="from" defaultValue={fromFilter || today} />
-        </div>
-        <div>
-          <label className="mb-1.5 block text-xs font-semibold text-gray-500">To</label>
-          <DatePicker name="to" defaultValue={toFilter || today} />
-        </div>
-        <div className="flex items-end gap-3">
-          <button type="submit"
-            className="rounded-full bg-purple-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 transition-colors">
-            Filter
-          </button>
-          {(warehouseFilter || fromFilter || toFilter) && (
-            <a href="/customers/dues" className="text-sm text-gray-500 hover:underline pb-0.5">Clear</a>
-          )}
-        </div>
-      </form>
-
-      {/* Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <div className="rounded-2xl border-l-4 border-red-400 bg-red-50 px-4 py-3 shadow-sm">
-          <p className="text-xs font-medium text-red-600">💰 Total Outstanding</p>
-          <p className="text-xl font-bold text-red-700 mt-1">{formatInr(totalDue)}</p>
-        </div>
-        <div className="rounded-2xl border-l-4 border-gray-300 bg-white px-4 py-3 shadow-sm">
-          <p className="text-xs font-medium text-gray-500">👥 Customers with Dues</p>
-          <p className="text-xl font-bold text-gray-800 mt-1">{custCount}</p>
-        </div>
-        <div className="rounded-2xl border-l-4 border-yellow-400 bg-yellow-50 px-4 py-3 shadow-sm">
-          <p className="text-xs font-medium text-yellow-700">⏳ 60–90 Days</p>
-          <p className="text-xl font-bold text-yellow-800 mt-1">{formatInr(bucket6190)}</p>
-        </div>
-        <div className="rounded-2xl border-l-4 border-red-600 bg-red-50 px-4 py-3 shadow-sm">
-          <p className="text-xs font-medium text-red-700">🚨 90+ Days (Critical)</p>
-          <p className="text-xl font-bold text-red-800 mt-1">{formatInr(bucket90p)}</p>
+      <div className="card mb-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          {/* Aging bucket quick-filter — fires immediately on tap */}
+          <div>
+            <p className="mb-1.5 text-xs font-semibold text-gray-500">Overdue By</p>
+            <div className="flex flex-wrap gap-1.5">
+              {([
+                { label: 'All', value: '' },
+                { label: '30 Days', value: '30' },
+                { label: '60 Days', value: '60' },
+                { label: '90+ Days', value: '90' },
+              ] as const).map((opt) => {
+                const qs = new URLSearchParams();
+                if (warehouseFilter) qs.set('warehouse', warehouseFilter);
+                if (opt.value) qs.set('days', opt.value);
+                const href = `/customers/dues${qs.toString() ? `?${qs.toString()}` : ''}`;
+                return (
+                  <Link
+                    key={opt.value}
+                    href={href}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      daysFilter === opt.value
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {opt.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+          {/* Warehouse — still needs explicit submit since it's a select */}
+          <form method="GET" className="flex items-end gap-2">
+            {daysFilter && <input type="hidden" name="days" value={daysFilter} />}
+            <div className="min-w-[160px]">
+              <label className="mb-1.5 block text-xs font-semibold text-gray-500">Warehouse</label>
+              <select name="warehouse" defaultValue={warehouseFilter}
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500">
+                <option value="">All warehouses</option>
+                {warehousesRes.rows.map((w) => (
+                  <option key={w.id} value={w.id}>{w.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button type="submit" className="btn-primary btn-sm">Filter</button>
+              {warehouseFilter && (
+                <a href={`/customers/dues${daysFilter ? `?days=${daysFilter}` : ''}`} className="btn-ghost btn-sm">Clear</a>
+              )}
+            </div>
+          </form>
         </div>
       </div>
 
-      <div className="card p-0 overflow-x-auto">
+      {/* Summary — same KPI card pattern as Dashboard */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+        {[
+          { label: 'Total Outstanding',   value: formatInr(totalDue),  color: 'text-red-700',   grad: 'from-red-50 to-white',   ring: 'ring-red-100',   icon: '💰', iconBg: 'bg-red-100 text-red-700' },
+          { label: 'Customers with Dues', value: String(custCount),     color: 'text-gray-800',  grad: 'from-gray-50 to-white',  ring: 'ring-gray-100',  icon: '👥', iconBg: 'bg-gray-100 text-gray-600' },
+          { label: '60–90 Days',          value: formatInr(bucket6190), color: 'text-amber-700', grad: 'from-amber-50 to-white', ring: 'ring-amber-100', icon: '⏳', iconBg: 'bg-amber-100 text-amber-700' },
+          { label: '90+ Days Critical',   value: formatInr(bucket90p),  color: 'text-red-800',   grad: 'from-red-50 to-white',   ring: 'ring-red-200',   icon: '🚨', iconBg: 'bg-red-200 text-red-800' },
+        ].map((k) => (
+          <div key={k.label} className={`rounded-2xl bg-gradient-to-br ${k.grad} p-4 shadow-sm ring-1 ${k.ring} transition-shadow hover:shadow-md`}>
+            <div className={`mb-3 flex h-9 w-9 items-center justify-center rounded-xl text-lg ${k.iconBg}`}>{k.icon}</div>
+            <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
+            <p className="mt-0.5 text-xs font-medium text-gray-500">{k.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Mobile: stacked due cards */}
+      <div className="sm:hidden space-y-3">
+        {rows.length === 0 ? (
+          <div className="card text-center py-8">
+            <span className="text-4xl">🎉</span>
+            <p className="mt-2 text-sm font-medium text-gray-500">All dues are cleared!</p>
+          </div>
+        ) : (
+          rows.map((row) => {
+            const payAction = recordPaymentAction.bind(null, row.id);
+            return (
+              <div key={row.id} className="card">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <Link href={`/customers/${row.customer_id}`}
+                    className="font-semibold text-purple-700 hover:underline leading-tight">
+                    {row.customer_name}
+                  </Link>
+                  <span className="tabular-nums font-bold text-red-700 text-sm shrink-0">
+                    {formatInr(row.balance_due)}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500 mb-3">
+                  <div>
+                    <span className="text-gray-400">Invoice </span>
+                    <Link href={`/billing/invoices/${row.id}`} className="font-mono text-purple-600 hover:underline">
+                      {row.invoice_number}
+                    </Link>
+                  </div>
+                  <div><span className="text-gray-400">Phone </span>{row.phone ?? '—'}</div>
+                  <div><span className="text-gray-400">Date </span>{new Date(row.invoice_date).toLocaleDateString('en-IN')}</div>
+                  <div><span className="text-gray-400">Mode </span><span className="capitalize">{row.payment_mode ?? '—'}</span></div>
+                </div>
+                <CollectPaymentModal
+                  balance={row.balance_due}
+                  action={payAction}
+                  invoiceNumber={row.invoice_number}
+                  customerName={row.customer_name}
+                  returnTo="/customers/dues"
+                />
+              </div>
+            );
+          })
+        )}
+        {rows.length > 0 && (
+          <div className="card flex justify-between items-center text-sm font-semibold">
+            <span>{rows.length} invoice{rows.length !== 1 ? 's' : ''}</span>
+            <span className="tabular-nums text-red-700">{formatInr(totalDue)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Desktop: table */}
+      <div className="hidden sm:block card p-0 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>

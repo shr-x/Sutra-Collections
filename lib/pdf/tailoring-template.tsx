@@ -25,7 +25,7 @@ const S = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 8,
   },
-  headerLeft:  { flexDirection: 'row', alignItems: 'flex-start', flex: 1 },
+  headerLeft:  { flexDirection: 'row', alignItems: 'center', flex: 1 },
   logoImg:     { width: 45, height: 45, objectFit: 'contain', marginRight: 8 },
   logoBox: {
     width: 45, height: 45,
@@ -65,9 +65,38 @@ const S = StyleSheet.create({
   amberText: { fontSize: 8, fontFamily: 'Helvetica-Bold', color: '#92400E' },
 
   // ── Info grid ────────────────────────────────────────────────────────────────
-  infoGrid:          { flexDirection: 'row', marginBottom: 8 },
-  infoColLeft:       { flex: 1, paddingRight: 12 },
-  infoColRight:      { flex: 1, flexDirection: 'row', alignItems: 'flex-start' },
+  infoGrid:     { flexDirection: 'row', gap: 8, marginBottom: 8, alignItems: 'flex-start' },
+  infoColLeft:  { flex: 1, paddingRight: 12 },
+  infoColRight: { flex: 1, flexDirection: 'row', alignItems: 'flex-start' },
+  // Card variants — used for customer/design info boxes
+  infoCardLeft: {
+    flex: 1,
+    padding: 8,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 0.5,
+    borderColor: RULE,
+    borderRadius: 3,
+  },
+  infoCardRight: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 8,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 0.5,
+    borderColor: RULE,
+    borderRadius: 3,
+  },
+  // Compact customer card for grouped layout — no flex: 1 so it sizes to content
+  infoCardCustomer: {
+    alignSelf: 'flex-start',
+    padding: 8,
+    marginBottom: 8,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 0.5,
+    borderColor: RULE,
+    borderRadius: 3,
+  },
   infoColDesignText: { flex: 1, paddingRight: 8 },
   infoLabel: {
     fontSize: 7,
@@ -144,8 +173,8 @@ const S = StyleSheet.create({
   totalLabel: { fontSize: 9, color: MUTED, marginRight: 6 },
   totalAmt:   { fontSize: 14, fontFamily: 'Helvetica-Bold', color: PURPLE },
 
-  // ── Footer ────────────────────────────────────────────────────────────────
-  footer:      { position: 'absolute', bottom: 20, left: 35, right: 35 },
+  // ── Footer (flex-flow, pushed to bottom by flexGrow spacer) ──────────────
+  footer:      { paddingTop: 6 },
   footerRule:  { borderTopWidth: 0.5, borderTopColor: RULE, marginBottom: 4 },
   footerText:  { fontSize: 8, color: MUTED, textAlign: 'center' },
   footerText2: { fontSize: 7.5, color: LIGHT, textAlign: 'center', marginTop: 1 },
@@ -200,8 +229,19 @@ function MeasurementsTable({
     return <Text style={S.measText}>No measurements recorded.</Text>;
   }
 
+  const headerCellText = {
+    fontSize: 7, fontFamily: 'Helvetica-Bold' as const,
+    color: '#FFFFFF', textTransform: 'uppercase' as const, letterSpacing: 0.5,
+  };
+
   return (
     <View style={S.measTable}>
+      {/* Header row */}
+      <View style={{ ...S.measRow, backgroundColor: PURPLE }}>
+        <View style={S.measCellField}><Text style={headerCellText}>Measurement</Text></View>
+        <View style={S.measCellValue}><Text style={headerCellText}>Value</Text></View>
+        <View style={S.measCellUnit}><Text style={headerCellText}>Unit</Text></View>
+      </View>
       {measurements.map((m, i) => {
         const isAlt     = i % 2 !== 0;
         const hasBorder = i > 0;
@@ -265,17 +305,19 @@ function TailoringPage({ data }: { data: TailoringPdfInput }) {
       {/* ── Info grid ── */}
       <View style={S.infoGrid}>
         {isCustomer && data.customer && (
-          <View style={S.infoColLeft}>
+          <View style={S.infoCardLeft}>
             <Text style={S.infoLabel}>Customer</Text>
             <Text style={S.infoName}>{data.customer.name}</Text>
             {data.customer.phone ? <Text style={S.infoSub}>{data.customer.phone}</Text> : null}
           </View>
         )}
-        <View style={S.infoColRight}>
+        <View style={S.infoCardRight}>
           <View style={S.infoColDesignText}>
             <Text style={S.infoLabel}>Design</Text>
             <Text style={S.infoName}>{data.design.name}</Text>
-            {data.design.category ? <Text style={S.infoSub}>{data.design.category}</Text> : null}
+            {data.design.category && data.design.category !== data.design.name
+              ? <Text style={S.infoSub}>{data.design.category}</Text>
+              : null}
             {data.colorFabric ? <Text style={S.infoSub}>{data.colorFabric}</Text> : null}
           </View>
           <DesignThumb photoAbsPath={data.design.photoAbsPath} name={data.design.name} />
@@ -310,15 +352,25 @@ function TailoringPage({ data }: { data: TailoringPdfInput }) {
         </View>
       ) : null}
 
+      {/* Flex spacer — pushes footer to bottom of content area */}
+      <View style={{ flexGrow: 1 }} />
+
       {/* ── Footer ── */}
       <View style={S.footer}>
         <View style={S.footerRule} />
         {isCustomer ? (
-          <Text style={S.footerText}>
-            {`Thank you for choosing ${data.company.name}`}
-            {data.company.phone ? `  |  Phone: ${data.company.phone}` : ''}
-            {data.company.gstin ? `  |  GSTIN: ${data.company.gstin}` : ''}
-          </Text>
+          <View>
+            <Text style={S.footerText}>
+              {`Thank you for choosing ${data.company.name}`}
+            </Text>
+            <Text style={S.footerText2}>
+              {[
+                data.company.address,
+                data.company.phone ? `Ph: ${data.company.phone}` : null,
+                data.company.gstin ? `GSTIN: ${data.company.gstin}` : null,
+              ].filter(Boolean).join('  |  ')}
+            </Text>
+          </View>
         ) : (
           <View>
             <Text style={S.footerText}>
@@ -350,6 +402,209 @@ export async function renderBatchTailoringPdf(pages: TailoringPdfInput[]): Promi
       {pages.map((data, i) => (
         <TailoringPage key={i} data={data} />
       ))}
+    </Document>
+  );
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (renderToBuffer as any)(doc) as Promise<Buffer>;
+}
+
+// ── Grouped customer PDF (one page, all items, one combined total) ────────────
+
+export interface GroupedTailoringPdfInput {
+  /** Base TO number shared by all items, e.g. "TO/2026-27/0029" */
+  groupNumber: string;
+  orderDate: string;
+  dueDate?: string;
+  company: {
+    name: string;
+    gstin?: string;
+    address?: string;
+    phone?: string;
+    logoAbsPath?: string;
+  };
+  customer: { name: string; phone?: string };
+  items: Array<{
+    design: { name: string; category?: string; photoAbsPath?: string };
+    colorFabric?: string;
+    measurements: Array<{ fieldName: string; value: string; unit?: string | null }>;
+    notes?: string;
+    price: number;
+  }>;
+  grandTotal: number;
+}
+
+const GS = StyleSheet.create({
+  itemDivider: {
+    borderTopWidth: 1,
+    borderTopColor: PURPLE,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  itemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 4,
+  },
+  itemLabel: {
+    fontSize: 9,
+    fontFamily: 'Helvetica-Bold',
+    color: PURPLE,
+  },
+  itemPrice: {
+    fontSize: 10,
+    fontFamily: 'Helvetica-Bold',
+    color: DARK,
+  },
+  itemDesignRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+  },
+  itemThumb: {
+    width: 32,
+    height: 32,
+    objectFit: 'contain',
+    borderRadius: 2,
+    marginRight: 8,
+  },
+  itemThumbBox: {
+    width: 32,
+    height: 32,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 2,
+    borderWidth: 0.5,
+    borderColor: RULE,
+    marginRight: 8,
+  },
+  itemThumbInit: { fontSize: 12, fontFamily: 'Helvetica-Bold', color: LIGHT },
+  itemMeta: { flex: 1 },
+  itemDesignName: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: DARK },
+  itemSubText: { fontSize: 8, color: MUTED, marginTop: 1 },
+  itemNotes: { fontSize: 8, color: MUTED, marginTop: 2, fontStyle: 'italic' },
+  grandTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 14,
+    paddingTop: 8,
+    borderTopWidth: 1.5,
+    borderTopColor: DARK,
+  },
+  grandTotalLabel: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: DARK, marginRight: 16 },
+  grandTotalAmt: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: PURPLE },
+});
+
+function GroupedItemThumb({ photoAbsPath, name }: { photoAbsPath?: string; name: string }) {
+  if (photoAbsPath) return <Image src={photoAbsPath} style={GS.itemThumb} />;
+  return (
+    <View style={GS.itemThumbBox}>
+      <Text style={GS.itemThumbInit}>{name.charAt(0).toUpperCase()}</Text>
+    </View>
+  );
+}
+
+function GroupedTailoringPage({ data }: { data: GroupedTailoringPdfInput }) {
+  const coLine = [data.company.address, data.company.phone ? `Ph: ${data.company.phone}` : null]
+    .filter(Boolean).join('  |  ');
+
+  return (
+    <Page size="A4" style={S.page}>
+      {/* ── Header ── */}
+      <View style={S.header}>
+        <View style={S.headerLeft}>
+          {data.company.logoAbsPath ? (
+            <Image src={data.company.logoAbsPath} style={S.logoImg} />
+          ) : (
+            <View style={S.logoBox}>
+              <Text style={S.logoInit}>{data.company.name.charAt(0)}</Text>
+            </View>
+          )}
+          <View style={S.coInfo}>
+            <Text style={S.coName}>{data.company.name}</Text>
+            {coLine ? <Text style={S.coSub}>{coLine}</Text> : null}
+            {data.company.gstin ? <Text style={S.coSub}>GSTIN: {data.company.gstin}</Text> : null}
+          </View>
+        </View>
+        <View style={S.headerRight}>
+          <Text style={S.docTitle}>TAILORING ORDER</Text>
+          <Text style={S.docNum}>#{data.groupNumber}</Text>
+          <Text style={S.docDate}>Date: {data.orderDate}</Text>
+          {data.dueDate ? <Text style={S.docDelivery}>Delivery: {data.dueDate}</Text> : null}
+        </View>
+      </View>
+
+      <View style={S.rulePurple} />
+
+      {/* ── Customer — compact card, no flex: 1 so it sizes to content ── */}
+      <View style={S.infoCardCustomer}>
+        <Text style={S.infoLabel}>Customer</Text>
+        <Text style={S.infoName}>{data.customer.name}</Text>
+        {data.customer.phone ? <Text style={S.infoSub}>{data.customer.phone}</Text> : null}
+      </View>
+
+      {/* ── Items ── */}
+      {data.items.map((item, idx) => (
+        <View key={idx}>
+          <View style={GS.itemDivider} />
+          <View style={GS.itemHeader}>
+            <Text style={GS.itemLabel}>Item {String.fromCharCode(65 + idx)}</Text>
+            <Text style={GS.itemPrice}>{fmtMoney(item.price)}</Text>
+          </View>
+          <View style={GS.itemDesignRow}>
+            <GroupedItemThumb
+              photoAbsPath={item.design.photoAbsPath}
+              name={item.design.name}
+            />
+            <View style={GS.itemMeta}>
+              <Text style={GS.itemDesignName}>{item.design.name}</Text>
+              {item.design.category && item.design.category !== item.design.name
+                ? <Text style={GS.itemSubText}>{item.design.category}</Text>
+                : null}
+              {item.colorFabric ? <Text style={GS.itemSubText}>{item.colorFabric}</Text> : null}
+            </View>
+          </View>
+          {item.measurements.length > 0 && (
+            <MeasurementsTable measurements={item.measurements} large={false} />
+          )}
+          {item.notes ? <Text style={GS.itemNotes}>Note: {item.notes}</Text> : null}
+        </View>
+      ))}
+
+      {/* ── Grand Total ── */}
+      <View style={GS.grandTotalRow}>
+        <Text style={GS.grandTotalLabel}>Order Total</Text>
+        <Text style={GS.grandTotalAmt}>{fmtMoney(data.grandTotal)}</Text>
+      </View>
+
+      {/* Flex spacer — pushes footer to bottom of content area */}
+      <View style={{ flexGrow: 1 }} />
+
+      {/* ── Footer ── */}
+      <View style={S.footer}>
+        <View style={S.footerRule} />
+        <Text style={S.footerText}>
+          {`Thank you for choosing ${data.company.name}`}
+        </Text>
+        <Text style={S.footerText2}>
+          {[
+            data.company.address,
+            data.company.phone ? `Ph: ${data.company.phone}` : null,
+            data.company.gstin ? `GSTIN: ${data.company.gstin}` : null,
+          ].filter(Boolean).join('  |  ')}
+        </Text>
+      </View>
+    </Page>
+  );
+}
+
+/** Customer-facing PDF for a grouped booking — all items on one page with combined total. */
+export async function renderGroupedTailoringPdf(data: GroupedTailoringPdfInput): Promise<Buffer> {
+  const doc = (
+    <Document>
+      <GroupedTailoringPage data={data} />
     </Document>
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

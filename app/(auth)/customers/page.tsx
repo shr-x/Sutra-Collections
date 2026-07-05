@@ -42,14 +42,14 @@ export default async function CustomersPage({
           <h1 className="page-title">{showDeleted ? 'Deleted Customers' : 'Customers'}</h1>
           <p className="text-sm text-gray-500">{customers.length} result{customers.length !== 1 ? 's' : ''}</p>
         </div>
-        <div className="flex gap-2">
-          <Link href={toggleHref} className="btn-secondary">
+        <div className="flex flex-wrap gap-2">
+          <Link href={toggleHref} className="btn-secondary btn-sm">
             {showDeleted ? 'Active' : 'Deleted'}
           </Link>
           {!showDeleted && (
             <>
-              <Link href="/customers/import" className="btn-secondary">↑ Import</Link>
-              <Link href="/customers/new" className="btn-primary">+ New Customer</Link>
+              <Link href="/customers/import" className="btn-secondary btn-sm">↑ Import</Link>
+              <Link href="/customers/new" className="btn-primary btn-sm">+ New Customer</Link>
             </>
           )}
         </div>
@@ -67,90 +67,108 @@ export default async function CustomersPage({
               : showDeleted ? 'No deleted customers.' : 'No customers yet.'}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="border-b bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
-              <tr>
-                <th className="px-4 py-3 text-left whitespace-nowrap sticky left-0 z-10 bg-gray-50">Name</th>
-                <th className="px-4 py-3 text-left whitespace-nowrap">Phone</th>
-                <th className="px-4 py-3 text-left whitespace-nowrap">GSTIN</th>
-                {!showDeleted && <th className="px-4 py-3 text-right whitespace-nowrap">Outstanding</th>}
-                <th className="px-4 py-3 whitespace-nowrap" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
+          <>
+            {/* ── Mobile: stacked cards (< sm) ───────────────────────────── */}
+            <div className="sm:hidden divide-y divide-gray-100">
               {customers.map((c) => (
-                <tr key={c.id} className={`hover:bg-gray-50${showDeleted ? ' opacity-60' : ''}`}>
-                  <td className="px-4 py-3 sticky left-0 z-10 bg-white">
-                    <div className="font-medium text-gray-900">{c.name}</div>
-                  </td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                    {c.phone || (
-                      <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
-                        Walk-in
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{c.gstin || '—'}</td>
-                  {!showDeleted && (
-                    <td className={`px-4 py-3 text-right tabular-nums font-medium whitespace-nowrap ${Number(c.outstanding) > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                      {Number(c.outstanding) > 0 ? formatInr(Number(c.outstanding)) : '—'}
-                    </td>
-                  )}
-                  <td className="px-4 py-3 text-right">
-                    {!showDeleted && (
-                      <>
-                        <Link
-                          href={`/customers/${c.id}`}
-                          className="inline-flex items-center rounded px-2 min-h-[44px] text-xs font-medium text-purple-600 hover:bg-purple-50"
-                        >
-                          View
-                        </Link>
-                        <Link
-                          href={`/customers/${c.id}/edit`}
-                          className="ml-1 inline-flex items-center rounded px-2 min-h-[44px] text-xs font-medium text-gray-600 hover:bg-gray-100"
-                        >
-                          Edit
-                        </Link>
-                      </>
-                    )}
-                    {session.role === 'admin' && (
-                      showDeleted ? (
-                        <ConfirmForm
-                          action={restoreCustomerAction}
-                          message={`Restore "${c.name}"?`}
-                          className="inline"
-                        >
-                          <input type="hidden" name="id" value={c.id} />
-                          <button
-                            type="submit"
-                            className="ml-1 inline-flex items-center rounded px-2 min-h-[44px] text-xs font-medium text-green-600 hover:bg-green-50"
-                          >
-                            Restore
-                          </button>
-                        </ConfirmForm>
-                      ) : (
-                        <ConfirmForm
-                          action={softDeleteCustomerAction}
-                          message={`Delete "${c.name}"? They will be hidden but data is preserved.`}
-                          className="inline"
-                        >
-                          <input type="hidden" name="id" value={c.id} />
-                          <button
-                            type="submit"
-                            className="ml-1 inline-flex items-center rounded px-2 min-h-[44px] text-xs font-medium text-red-600 hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
-                        </ConfirmForm>
-                      )
-                    )}
-                  </td>
-                </tr>
+                <div key={c.id} className={`p-4 ${showDeleted ? 'opacity-60' : ''}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{c.name}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        {c.phone ?? <span className="badge-gray">Walk-in</span>}
+                      </p>
+                      {c.gstin && (
+                        <p className="mt-0.5 font-mono text-xs text-gray-400">{c.gstin}</p>
+                      )}
+                      {!showDeleted && Number(c.outstanding) > 0 && (
+                        <p className="mt-1 text-xs font-semibold text-red-600">
+                          Due: {formatInr(Number(c.outstanding))}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {!showDeleted && (
+                        <>
+                          <Link href={`/customers/${c.id}`} className="btn-ghost btn-sm">View</Link>
+                          <Link href={`/customers/${c.id}/edit`} className="btn-ghost btn-sm">Edit</Link>
+                        </>
+                      )}
+                      {session.role === 'admin' && (
+                        showDeleted ? (
+                          <ConfirmForm action={restoreCustomerAction} message={`Restore "${c.name}"?`} className="inline">
+                            <input type="hidden" name="id" value={c.id} />
+                            <button type="submit" className="btn-ghost btn-sm text-green-600 hover:bg-green-50">Restore</button>
+                          </ConfirmForm>
+                        ) : (
+                          <ConfirmForm action={softDeleteCustomerAction} message={`Delete "${c.name}"? Data is preserved.`} className="inline">
+                            <input type="hidden" name="id" value={c.id} />
+                            <button type="submit" className="btn-ghost btn-sm text-red-600 hover:bg-red-50">Delete</button>
+                          </ConfirmForm>
+                        )
+                      )}
+                    </div>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
-          </div>
+            </div>
+
+            {/* ── Desktop: table (≥ sm) ───────────────────────────────────── */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="border-b bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3 text-left whitespace-nowrap sticky left-0 z-10 bg-gray-50">Name</th>
+                    <th className="px-4 py-3 text-left whitespace-nowrap">Phone</th>
+                    <th className="px-4 py-3 text-left whitespace-nowrap">GSTIN</th>
+                    {!showDeleted && <th className="px-4 py-3 text-right whitespace-nowrap">Outstanding</th>}
+                    <th className="px-4 py-3 whitespace-nowrap" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {customers.map((c) => (
+                    <tr key={c.id} className={`hover:bg-gray-50${showDeleted ? ' opacity-60' : ''}`}>
+                      <td className="px-4 py-3 sticky left-0 z-10 bg-white">
+                        <div className="font-medium text-gray-900">{c.name}</div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                        {c.phone || (
+                          <span className="badge-gray">Walk-in</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{c.gstin || '—'}</td>
+                      {!showDeleted && (
+                        <td className={`px-4 py-3 text-right tabular-nums font-medium whitespace-nowrap ${Number(c.outstanding) > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                          {Number(c.outstanding) > 0 ? formatInr(Number(c.outstanding)) : '—'}
+                        </td>
+                      )}
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        {!showDeleted && (
+                          <>
+                            <Link href={`/customers/${c.id}`} className="btn-ghost btn-sm">View</Link>
+                            <Link href={`/customers/${c.id}/edit`} className="btn-ghost btn-sm ml-1">Edit</Link>
+                          </>
+                        )}
+                        {session.role === 'admin' && (
+                          showDeleted ? (
+                            <ConfirmForm action={restoreCustomerAction} message={`Restore "${c.name}"?`} className="inline">
+                              <input type="hidden" name="id" value={c.id} />
+                              <button type="submit" className="btn-ghost btn-sm text-green-600 hover:bg-green-50 ml-1">Restore</button>
+                            </ConfirmForm>
+                          ) : (
+                            <ConfirmForm action={softDeleteCustomerAction} message={`Delete "${c.name}"? Data is preserved.`} className="inline">
+                              <input type="hidden" name="id" value={c.id} />
+                              <button type="submit" className="btn-ghost btn-sm text-red-600 hover:bg-red-50 ml-1">Delete</button>
+                            </ConfirmForm>
+                          )
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

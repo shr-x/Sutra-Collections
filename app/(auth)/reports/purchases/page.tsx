@@ -91,13 +91,13 @@ export default async function PurchaseReportPage({
         <div className="flex gap-2">
           <a
             href={`/api/reports/purchases?from=${from}&to=${to}${searchParams.supplier_id ? '&supplier_id=' + searchParams.supplier_id : ''}`}
-            className="btn-secondary text-sm"
+            className="btn-secondary btn-sm"
           >
             Export CSV
           </a>
           <a
             href={`/api/reports/purchases/pdf?from=${from}&to=${to}${searchParams.supplier_id ? '&supplier_id=' + searchParams.supplier_id : ''}`}
-            className="btn-secondary text-sm"
+            className="btn-secondary btn-sm"
             download
           >
             Export PDF
@@ -125,8 +125,8 @@ export default async function PurchaseReportPage({
               ))}
             </select>
           </div>
-          <button type="submit" className="btn-primary text-sm">Apply</button>
-          <Link href="/reports/purchases" className="text-sm text-gray-500 hover:underline">Clear</Link>
+          <button type="submit" className="btn-primary btn-sm">Apply</button>
+          <Link href="/reports/purchases" className="btn-ghost btn-sm">Clear</Link>
         </div>
       </form>
 
@@ -151,26 +151,44 @@ export default async function PurchaseReportPage({
           <div className="px-4 py-3 border-b bg-gray-50">
             <h2 className="text-sm font-semibold text-gray-700">By Supplier</h2>
           </div>
-          <table className="w-full text-sm">
-            <thead className="text-xs font-semibold uppercase tracking-wide text-gray-500 border-b">
-              <tr>
-                <th className="px-4 py-3 text-left">Supplier</th>
-                <th className="px-4 py-3 text-right">Invoices</th>
-                <th className="px-4 py-3 text-right">Total</th>
-                <th className="px-4 py-3 text-right">ITC</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {(bySupplierRes.rows as Array<{ supplier_name: string | null; invoice_count: number; total: string; itc: string }>).map((r, i) => (
-                <tr key={i} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 font-medium">{r.supplier_name ?? '—'}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{r.invoice_count}</td>
-                  <td className="px-4 py-2 text-right tabular-nums font-semibold">{formatInr(Number(r.total))}</td>
-                  <td className="px-4 py-2 text-right tabular-nums text-blue-700">{formatInr(Number(r.itc))}</td>
+          {/* Mobile: stacked supplier cards */}
+          <div className="sm:hidden divide-y divide-gray-100">
+            {(bySupplierRes.rows as Array<{ supplier_name: string | null; invoice_count: number; total: string; itc: string }>).map((r, i) => (
+              <div key={i} className="px-4 py-3">
+                <div className="flex justify-between items-start mb-1">
+                  <span className="font-medium text-sm">{r.supplier_name ?? '—'}</span>
+                  <span className="text-xs text-gray-500">{r.invoice_count} inv</span>
+                </div>
+                <div className="flex gap-4 text-xs">
+                  <div><span className="text-gray-400">Total </span><span className="font-semibold">{formatInr(Number(r.total))}</span></div>
+                  <div><span className="text-gray-400">ITC </span><span className="text-blue-700">{formatInr(Number(r.itc))}</span></div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {/* Desktop: table */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs font-semibold uppercase tracking-wide text-gray-500 border-b">
+                <tr>
+                  <th className="px-4 py-3 text-left">Supplier</th>
+                  <th className="px-4 py-3 text-right">Invoices</th>
+                  <th className="px-4 py-3 text-right">Total</th>
+                  <th className="px-4 py-3 text-right">ITC</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {(bySupplierRes.rows as Array<{ supplier_name: string | null; invoice_count: number; total: string; itc: string }>).map((r, i) => (
+                  <tr key={i} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 font-medium">{r.supplier_name ?? '—'}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{r.invoice_count}</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold">{formatInr(Number(r.total))}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-blue-700">{formatInr(Number(r.itc))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

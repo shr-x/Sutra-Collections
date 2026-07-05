@@ -70,7 +70,7 @@ export default function SalesChart({ data }: Props) {
     <ResponsiveContainer width="100%" height={280}>
       <BarChart
         data={chartData}
-        margin={{ top: 10, right: 20, bottom: 60, left: 60 }}
+        margin={{ top: 10, right: 10, bottom: 60, left: 10 }}
       >
         <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
         <XAxis
@@ -84,9 +84,9 @@ export default function SalesChart({ data }: Props) {
           axisLine={false}
         />
         <YAxis
-          tickFormatter={(v: number) => '₹' + v.toLocaleString('en-IN')}
-          tick={{ fill: '#9CA3AF', fontSize: 12 }}
-          width={60}
+          tickFormatter={(v: number) => formatInrShort(v)}
+          tick={{ fill: '#9CA3AF', fontSize: 11 }}
+          width={50}
           tickLine={false}
           axisLine={false}
         />

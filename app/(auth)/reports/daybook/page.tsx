@@ -138,11 +138,11 @@ export default async function DaybookPage({
           </nav>
           <h1 className="page-title">Daybook</h1>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2 items-center">
-          <a href={`/api/reports/daybook?date=${date}`} className="btn-secondary text-sm min-h-[44px]">
+        <div className="flex flex-wrap gap-2">
+          <a href={`/api/reports/daybook?date=${date}`} className="btn-secondary btn-sm">
             Export CSV
           </a>
-          <a href={`/api/reports/daybook/pdf?date=${date}`} className="btn-secondary text-sm min-h-[44px]" download>
+          <a href={`/api/reports/daybook/pdf?date=${date}`} className="btn-secondary btn-sm" download>
             Export PDF
           </a>
         </div>
@@ -152,7 +152,7 @@ export default async function DaybookPage({
       <form method="get" className="mb-6 flex items-center gap-3">
         <label className="text-sm font-medium text-gray-700">Date</label>
         <DatePicker name="date" defaultValue={date} className="input" />
-        <button type="submit" className="btn-primary text-sm">View</button>
+        <button type="submit" className="btn-primary btn-sm">View</button>
         {date !== today && (
           <Link href="/reports/daybook" className="text-sm text-purple-600 hover:underline">
             Today

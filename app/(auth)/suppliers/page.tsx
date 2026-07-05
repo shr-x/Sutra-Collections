@@ -33,14 +33,14 @@ export default async function SuppliersPage({ searchParams }: { searchParams: { 
           <h1 className="page-title">{showDeleted ? 'Deleted Suppliers' : 'Suppliers'}</h1>
           <p className="text-sm text-gray-500">{suppliers.length} result{suppliers.length !== 1 ? 's' : ''}</p>
         </div>
-        <div className="flex gap-2">
-          <Link href={toggleHref} className="btn-secondary">
+        <div className="flex flex-wrap gap-2">
+          <Link href={toggleHref} className="btn-secondary btn-sm">
             {showDeleted ? 'Active' : 'Deleted'}
           </Link>
           {!showDeleted && (
             <>
-              <Link href="/suppliers/import" className="btn-secondary">↑ Import</Link>
-              <Link href="/suppliers/new" className="btn-primary">+ New Supplier</Link>
+              <Link href="/suppliers/import" className="btn-secondary btn-sm">↑ Import</Link>
+              <Link href="/suppliers/new" className="btn-primary btn-sm">+ New Supplier</Link>
             </>
           )}
         </div>
@@ -58,68 +58,90 @@ export default async function SuppliersPage({ searchParams }: { searchParams: { 
               : showDeleted ? 'No deleted suppliers.' : 'No suppliers yet.'}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="border-b bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
-              <tr>
-                <th className="px-4 py-3 text-left whitespace-nowrap sticky left-0 z-10 bg-gray-50">Name</th>
-                <th className="px-4 py-3 text-left whitespace-nowrap">Phone</th>
-                <th className="px-4 py-3 text-left whitespace-nowrap">GSTIN</th>
-                <th className="px-4 py-3 text-left whitespace-nowrap">Address</th>
-                <th className="px-4 py-3 whitespace-nowrap" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
+          <>
+            {/* ── Mobile: stacked cards (< sm) ───────────────────────────── */}
+            <div className="sm:hidden divide-y divide-gray-100">
               {suppliers.map((s) => (
-                <tr key={s.id} className={`hover:bg-gray-50${showDeleted ? ' opacity-60' : ''}`}>
-                  <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap sticky left-0 z-10 bg-white">{s.name}</td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{s.phone}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-500">{s.gstin || '—'}</td>
-                  <td className="px-4 py-3 text-gray-500 max-w-xs truncate">{s.address || '—'}</td>
-                  <td className="px-4 py-3 text-right">
-                    {!showDeleted && (
-                      <>
-                        <Link href={`/suppliers/${s.id}`} className="inline-flex items-center rounded px-2 min-h-[44px] text-xs font-medium text-purple-600 hover:bg-purple-50">View</Link>
-                        <Link href={`/suppliers/${s.id}/edit`} className="ml-1 inline-flex items-center rounded px-2 min-h-[44px] text-xs font-medium text-gray-600 hover:bg-gray-100">Edit</Link>
-                      </>
-                    )}
-                    {session.role === 'admin' && (
-                      showDeleted ? (
-                        <ConfirmForm
-                          action={restoreSupplierAction}
-                          message={`Restore "${s.name}"?`}
-                          className="inline"
-                        >
-                          <input type="hidden" name="id" value={s.id} />
-                          <button
-                            type="submit"
-                            className="ml-1 inline-flex items-center rounded px-2 min-h-[44px] text-xs font-medium text-green-600 hover:bg-green-50"
-                          >
-                            Restore
-                          </button>
-                        </ConfirmForm>
-                      ) : (
-                        <ConfirmForm
-                          action={softDeleteSupplierAction}
-                          message={`Delete "${s.name}"? They will be hidden but data is preserved.`}
-                          className="inline"
-                        >
-                          <input type="hidden" name="id" value={s.id} />
-                          <button
-                            type="submit"
-                            className="ml-1 inline-flex items-center rounded px-2 min-h-[44px] text-xs font-medium text-red-600 hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
-                        </ConfirmForm>
-                      )
-                    )}
-                  </td>
-                </tr>
+                <div key={s.id} className={`p-4 ${showDeleted ? 'opacity-60' : ''}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{s.name}</p>
+                      {s.phone && <p className="mt-0.5 text-xs text-gray-500">{s.phone}</p>}
+                      {s.gstin && <p className="mt-0.5 font-mono text-xs text-gray-400">{s.gstin}</p>}
+                      {s.address && <p className="mt-0.5 text-xs text-gray-400 truncate">{s.address}</p>}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {!showDeleted && (
+                        <>
+                          <Link href={`/suppliers/${s.id}`} className="btn-ghost btn-sm">View</Link>
+                          <Link href={`/suppliers/${s.id}/edit`} className="btn-ghost btn-sm">Edit</Link>
+                        </>
+                      )}
+                      {session.role === 'admin' && (
+                        showDeleted ? (
+                          <ConfirmForm action={restoreSupplierAction} message={`Restore "${s.name}"?`} className="inline">
+                            <input type="hidden" name="id" value={s.id} />
+                            <button type="submit" className="btn-ghost btn-sm text-green-600 hover:bg-green-50">Restore</button>
+                          </ConfirmForm>
+                        ) : (
+                          <ConfirmForm action={softDeleteSupplierAction} message={`Delete "${s.name}"? Data is preserved.`} className="inline">
+                            <input type="hidden" name="id" value={s.id} />
+                            <button type="submit" className="btn-ghost btn-sm text-red-600 hover:bg-red-50">Delete</button>
+                          </ConfirmForm>
+                        )
+                      )}
+                    </div>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
-          </div>
+            </div>
+
+            {/* ── Desktop: table (≥ sm) ───────────────────────────────────── */}
+            <div className="hidden sm:block overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="border-b bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-4 py-3 text-left whitespace-nowrap sticky left-0 z-10 bg-gray-50">Name</th>
+                    <th className="px-4 py-3 text-left whitespace-nowrap">Phone</th>
+                    <th className="px-4 py-3 text-left whitespace-nowrap">GSTIN</th>
+                    <th className="px-4 py-3 text-left whitespace-nowrap">Address</th>
+                    <th className="px-4 py-3 whitespace-nowrap" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {suppliers.map((s) => (
+                    <tr key={s.id} className={`hover:bg-gray-50${showDeleted ? ' opacity-60' : ''}`}>
+                      <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap sticky left-0 z-10 bg-white">{s.name}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{s.phone ?? '—'}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-gray-500">{s.gstin || '—'}</td>
+                      <td className="px-4 py-3 text-gray-500 max-w-xs truncate">{s.address || '—'}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        {!showDeleted && (
+                          <>
+                            <Link href={`/suppliers/${s.id}`} className="btn-ghost btn-sm">View</Link>
+                            <Link href={`/suppliers/${s.id}/edit`} className="btn-ghost btn-sm ml-1">Edit</Link>
+                          </>
+                        )}
+                        {session.role === 'admin' && (
+                          showDeleted ? (
+                            <ConfirmForm action={restoreSupplierAction} message={`Restore "${s.name}"?`} className="inline">
+                              <input type="hidden" name="id" value={s.id} />
+                              <button type="submit" className="btn-ghost btn-sm text-green-600 hover:bg-green-50 ml-1">Restore</button>
+                            </ConfirmForm>
+                          ) : (
+                            <ConfirmForm action={softDeleteSupplierAction} message={`Delete "${s.name}"? Data is preserved.`} className="inline">
+                              <input type="hidden" name="id" value={s.id} />
+                              <button type="submit" className="btn-ghost btn-sm text-red-600 hover:bg-red-50 ml-1">Delete</button>
+                            </ConfirmForm>
+                          )
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

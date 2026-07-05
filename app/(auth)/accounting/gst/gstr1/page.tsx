@@ -68,10 +68,10 @@ export default async function Gstr1Page({ searchParams }: { searchParams: { mont
     <div>
       <div className="page-header">
         <h1 className="page-title">GSTR-1 — Sales Register</h1>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <a href={csvUrl} className="btn-secondary min-h-[44px]">Export CSV</a>
-          <a href={`/api/accounting/gstr1?${params.toString()}&format=json`} className="btn-secondary min-h-[44px]" download>Export JSON</a>
-          <a href={pdfUrl} className="btn-secondary min-h-[44px]" download>Export PDF</a>
+        <div className="flex flex-wrap gap-2">
+          <a href={csvUrl} className="btn-secondary btn-sm">Export CSV</a>
+          <a href={`/api/accounting/gstr1?${params.toString()}&format=json`} className="btn-secondary btn-sm" download>Export JSON</a>
+          <a href={pdfUrl} className="btn-secondary btn-sm" download>Export PDF</a>
         </div>
       </div>
 

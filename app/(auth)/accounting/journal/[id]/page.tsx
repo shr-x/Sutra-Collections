@@ -79,7 +79,7 @@ export default async function JournalEntryDetailPage({ params }: { params: { id:
           ['Total Debit', `₹${totalDebit.toFixed(2)}`],
           ['Balanced', totalDebit === totalCredit ? 'Yes' : 'No'],
         ].map(([k, v]) => (
-          <div key={k} className="card py-3">
+          <div key={k} className="card">
             <p className="text-xs text-gray-500">{k}</p>
             <p className="mt-0.5 font-semibold text-gray-800">{v}</p>
           </div>
@@ -94,7 +94,46 @@ export default async function JournalEntryDetailPage({ params }: { params: { id:
         </div>
       )}
 
-      <div className="card p-0 overflow-hidden">
+      {/* Mobile: stacked account cards */}
+      <div className="sm:hidden card p-0 divide-y divide-gray-100">
+        {lines.map((l) => (
+          <div key={l.id} className="p-4">
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div>
+                <p className="font-medium text-gray-800 text-sm">{l.account_name}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{l.account_code}</p>
+              </div>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium capitalize text-gray-600 shrink-0">
+                {l.account_type}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-lg bg-emerald-50 px-3 py-2">
+                <p className="text-xs text-gray-400 mb-0.5">Debit</p>
+                <p className="tabular-nums font-semibold text-gray-800 text-sm">
+                  {l.debit_amount > 0 ? `₹${l.debit_amount.toFixed(2)}` : '—'}
+                </p>
+              </div>
+              <div className="rounded-lg bg-rose-50 px-3 py-2">
+                <p className="text-xs text-gray-400 mb-0.5">Credit</p>
+                <p className="tabular-nums font-semibold text-gray-800 text-sm">
+                  {l.credit_amount > 0 ? `₹${l.credit_amount.toFixed(2)}` : '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+        ))}
+        <div className="p-4 bg-gray-50 flex items-center justify-between font-semibold">
+          <span className="text-sm">Totals</span>
+          <div className="flex gap-4 text-sm tabular-nums">
+            <span>Dr: ₹{totalDebit.toFixed(2)}</span>
+            <span>Cr: ₹{totalCredit.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop: table */}
+      <div className="hidden sm:block card p-0 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>

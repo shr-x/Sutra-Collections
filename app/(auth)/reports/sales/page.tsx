@@ -96,23 +96,23 @@ export default async function SalesReportPage({
           </nav>
           <h1 className="page-title">Sales Report</h1>
         </div>
-        <div className="flex flex-col sm:flex-row gap-2">
+        <div className="flex flex-wrap gap-2">
           <a
             href={`/api/reports/sales?from=${from}&to=${to}${searchParams.warehouse_id ? '&warehouse_id=' + searchParams.warehouse_id : ''}${searchParams.created_by ? '&created_by=' + searchParams.created_by : ''}`}
-            className="btn-secondary text-sm min-h-[44px]"
+            className="btn-secondary btn-sm"
           >
             Export CSV
           </a>
           <a
             href={`/api/reports/export/invoices?format=json`}
-            className="btn-secondary text-sm min-h-[44px]"
+            className="btn-secondary btn-sm"
             download
           >
             Export JSON
           </a>
           <a
             href={`/api/reports/sales/pdf?from=${from}&to=${to}${searchParams.warehouse_id ? '&warehouse_id=' + searchParams.warehouse_id : ''}`}
-            className="btn-secondary text-sm min-h-[44px]"
+            className="btn-secondary btn-sm"
             download
           >
             Export PDF
@@ -149,8 +149,8 @@ export default async function SalesReportPage({
               ))}
             </select>
           </div>
-          <button type="submit" className="btn-primary text-sm">Apply</button>
-          <Link href="/reports/sales" className="text-sm text-gray-500 hover:underline">Clear</Link>
+          <button type="submit" className="btn-primary btn-sm">Apply</button>
+          <Link href="/reports/sales" className="btn-ghost btn-sm">Clear</Link>
         </div>
       </form>
 
