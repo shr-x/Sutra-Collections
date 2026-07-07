@@ -11,9 +11,9 @@ import type { PdfCompany, PdfInvoiceData } from '@/lib/pdf/invoice-template';
 import { renderThermalPdf } from '@/lib/pdf/thermal-template';
 import {
   renderTailoringPdf,
-  renderBatchTailoringPdf,
   renderGroupedTailoringPdf,
   type GroupedTailoringPdfInput,
+  type TailoringLineItem,
 } from '@/lib/pdf/tailoring-template';
 
 const fmtDate = (d: string | Date | null): string =>
@@ -362,13 +362,13 @@ async function getTailoringOrderData(orderId: string) {
   const [orderRes, measRes] = await Promise.all([
     query<{
       id: string; order_number: string; group_number: string | null; suffix: string | null;
-      price: string; due_date: string | null;
+      price: string; gst_rate: string | null; due_date: string | null;
       notes: string | null; color_fabric: string | null; created_at: string;
       customer_name: string; customer_phone: string | null;
       design_name: string; design_category: string | null; design_photo: string | null;
     }>(
       `SELECT o.id, o.order_number, o.group_number, o.suffix,
-              o.price::text, o.due_date::text, o.notes, o.color_fabric, o.created_at::text,
+              o.price::text, o.gst_rate::text, o.due_date::text, o.notes, o.color_fabric, o.created_at::text,
               c.name AS customer_name, c.phone AS customer_phone,
               d.name AS design_name, d.category AS design_category, d.photo_path AS design_photo
        FROM tailoring_orders o
@@ -424,60 +424,61 @@ export async function generateTailoringCustomerPdf(orderId: string): Promise<str
 
     let buffer: Buffer;
 
+    const resolvePhoto = (rawPath: string | null): string | undefined => {
+      if (!rawPath) return undefined;
+      const abs = path.join(process.cwd(), 'public', rawPath);
+      return fs.existsSync(abs) ? abs : undefined;
+    };
+
     if (validData.length === 1) {
       // Solo order — single-page layout
       const { order, measurements } = validData[0];
-      let designPhotoAbsPath: string | undefined;
-      if (order.design_photo) {
-        const p = path.join(process.cwd(), 'public', order.design_photo);
-        if (fs.existsSync(p)) designPhotoAbsPath = p;
-      }
       buffer = await renderTailoringPdf({
-        docType:      'TAILORING ORDER',
-        orderNumber:  groupNumber,
-        orderDate:    fmtDate(order.created_at),
-        dueDate:      order.due_date ? fmtDate(order.due_date) : undefined,
-        company:      companyInfo,
-        customer:     { name: order.customer_name, phone: order.customer_phone ?? undefined },
-        design:       { name: order.design_name, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
-        colorFabric:  order.color_fabric ?? undefined,
-        measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
-        notes:        order.notes ?? undefined,
-        price:        Number(order.price),
+        docType:     'TAILORING ORDER',
+        orderNumber: groupNumber,
+        orderDate:   fmtDate(order.created_at),
+        dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
+        company:     companyInfo,
+        customer:    { name: order.customer_name, phone: order.customer_phone ?? undefined },
+        items: [{
+          designName:   order.design_name,
+          colorFabric:  order.color_fabric ?? undefined,
+          photoAbsPath: resolvePhoto(order.design_photo),
+          qty:          1,
+          price:        Number(order.price),
+          notes:        order.notes ?? undefined,
+          measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
+        }],
+        gstRate: order.gst_rate ? Number(order.gst_rate) : undefined,
       });
     } else {
-      // Grouped booking — ONE page, all items as rows, one combined total
-      const items: GroupedTailoringPdfInput['items'] = [];
-      let grandTotal = 0;
+      // Grouped booking — ONE page with items table and combined total
+      const pdfItems: TailoringLineItem[] = [];
       for (const { order, measurements } of validData) {
-        let designPhotoAbsPath: string | undefined;
-        if (order.design_photo) {
-          const p = path.join(process.cwd(), 'public', order.design_photo);
-          if (fs.existsSync(p)) designPhotoAbsPath = p;
-        }
-        const price = Number(order.price);
-        grandTotal += price;
         // Guard: if design_name is the company name (data bug), use category instead
         const designName = (order.design_name && order.design_name.toLowerCase() !== co.name.toLowerCase())
           ? order.design_name
           : (order.design_category ?? order.design_name);
-        items.push({
-          design:       { name: designName, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
+        pdfItems.push({
+          designName,
           colorFabric:  order.color_fabric ?? undefined,
-          measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
+          photoAbsPath: resolvePhoto(order.design_photo),
+          qty:          1,
+          price:        Number(order.price),
           notes:        order.notes ?? undefined,
-          price,
+          measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
         });
       }
       const firstValid = validData[0].order;
       buffer = await renderGroupedTailoringPdf({
-        groupNumber,
-        orderDate:  fmtDate(firstValid.created_at),
-        dueDate:    firstValid.due_date ? fmtDate(firstValid.due_date) : undefined,
-        company:    companyInfo,
-        customer:   { name: firstValid.customer_name, phone: firstValid.customer_phone ?? undefined },
-        items,
-        grandTotal,
+        docType:     'TAILORING ORDER',
+        orderNumber: groupNumber,
+        orderDate:   fmtDate(firstValid.created_at),
+        dueDate:     firstValid.due_date ? fmtDate(firstValid.due_date) : undefined,
+        company:     companyInfo,
+        customer:    { name: firstValid.customer_name, phone: firstValid.customer_phone ?? undefined },
+        items:       pdfItems,
+        gstRate:     firstValid.gst_rate ? Number(firstValid.gst_rate) : undefined,
       });
     }
 
@@ -496,12 +497,6 @@ export async function generateTailoringTailorPdf(orderId: string): Promise<strin
     if (!order) return null;
     const co = await getCompany();
 
-    let designPhotoAbsPath: string | undefined;
-    if (order.design_photo) {
-      const p = path.join(process.cwd(), 'public', order.design_photo);
-      if (fs.existsSync(p)) designPhotoAbsPath = p;
-    }
-
     // order_number already contains suffix (e.g. "TO/2026-27/0029-A")
     const displayNum = order.order_number;
 
@@ -510,12 +505,21 @@ export async function generateTailoringTailorPdf(orderId: string): Promise<strin
       orderNumber: displayNum,
       orderDate:   fmtDate(order.created_at),
       dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
-      company:     { name: co.name, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
-      // no customer, no price
-      design:      { name: order.design_name, category: order.design_category ?? undefined, photoAbsPath: designPhotoAbsPath },
-      colorFabric: order.color_fabric ?? undefined,
-      measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
-      notes:       order.notes ?? undefined,
+      company:     { name: co.name, gstin: co.gstin, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
+      customer:    { name: order.customer_name, phone: order.customer_phone ?? undefined },
+      items: [{
+        designName:   order.design_name,
+        colorFabric:  order.color_fabric ?? undefined,
+        photoAbsPath: (() => {
+          if (!order.design_photo) return undefined;
+          const abs = path.join(process.cwd(), 'public', order.design_photo);
+          return fs.existsSync(abs) ? abs : undefined;
+        })(),
+        qty:          1,
+        price:        Number(order.price),
+        notes:        order.notes ?? undefined,
+        measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
+      }],
     });
 
     const safe = order.order_number.replace(/[^a-zA-Z0-9_-]/g, '_');

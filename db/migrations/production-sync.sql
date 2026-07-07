@@ -272,6 +272,26 @@ BEGIN
   RAISE NOTICE 'Duplicate item cleanup complete.';
 END $$;
 
+-- ── 14b. tailoring_orders: gst_rate column ───────────────────────────────────
+ALTER TABLE tailoring_orders ADD COLUMN IF NOT EXISTS gst_rate NUMERIC(5,2) NOT NULL DEFAULT 0;
+
+-- ── 15. Sticker codes — per-unit labels generated on purchase invoice save ────
+CREATE SEQUENCE IF NOT EXISTS sticker_code_seq;
+
+CREATE TABLE IF NOT EXISTS sticker_codes (
+  id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  code                TEXT         NOT NULL UNIQUE,
+  item_id             UUID         NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  purchase_invoice_id UUID         NOT NULL REFERENCES purchase_invoices(id) ON DELETE CASCADE,
+  size_id             UUID         REFERENCES item_sizes(id) ON DELETE SET NULL,
+  color_id            UUID         REFERENCES item_colors(id) ON DELETE SET NULL,
+  price               NUMERIC(12,2) NOT NULL DEFAULT 0,
+  created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sticker_codes_purchase ON sticker_codes(purchase_invoice_id);
+CREATE INDEX IF NOT EXISTS idx_sticker_codes_item     ON sticker_codes(item_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sticker_codes_code ON sticker_codes(code);
+
 -- ── 14. Fix design records where name = company name (data bug) ───────────────
 -- If a design's name matches the company name setting and the category has the
 -- actual design name, use the category as the canonical name.

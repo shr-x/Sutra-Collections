@@ -7,6 +7,7 @@ import { requireRole } from '@/lib/auth';
 import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { postPurchaseInvoice } from '@/lib/accounting';
+import { generateStickersForPurchase } from '@/lib/stickers';
 import type { ActionResult } from '@/types';
 
 const LineSchema = z.object({
@@ -124,6 +125,10 @@ export async function createPurchaseInvoiceAction(
           createdBy: session.userId,
         }, client);
       } catch (acctErr) { console.error('Accounting post failed:', acctErr); }
+
+      try {
+        await generateStickersForPurchase(client, purId);
+      } catch (stickerErr) { console.error('Sticker generation failed (non-fatal):', stickerErr); }
 
       await client.query('COMMIT');
     } catch (err) { await client.query('ROLLBACK'); throw err; }

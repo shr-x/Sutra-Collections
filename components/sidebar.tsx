@@ -90,6 +90,7 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
     { href: '/customers',  label: 'Customers',  icon: '👥', children: CUSTOMERS_CHILDREN },
     { href: '/suppliers',  label: 'Suppliers',  icon: '🏭' },
     { href: '/inventory',  label: 'Inventory',  icon: '📦' },
+    { href: '/stickers',   label: 'Stickers',   icon: '🏷️' },
     { href: '/accounting', label: 'Accounting', icon: '📒', children: ACCOUNTING_CHILDREN },
     { href: '/tailoring',  label: 'Tailoring',  icon: '✂️', children: TAILORING_CHILDREN },
     { href: '/staff',      label: 'Staff',      icon: '👤', children: STAFF_CHILDREN_ADMIN },
@@ -99,6 +100,7 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
   staff: [
     { href: '/billing',   label: 'Billing',   icon: '🧾', children: BILLING_CHILDREN_STAFF },
     { href: '/tailoring', label: 'Tailoring', icon: '✂️', children: TAILORING_CHILDREN_STAFF },
+    { href: '/stickers',  label: 'Stickers',  icon: '🏷️' },
   ],
   accountant: [
     { href: '/accounting', label: 'Accounting', icon: '📒', children: ACCOUNTING_CHILDREN },
