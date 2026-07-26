@@ -88,6 +88,16 @@ export async function runDailyGreetings(): Promise<GreetingRunResult> {
 
       result.checked += allRes.rows.length;
 
+      // sutra_anniversary_greeting was approved with a media header image (logo) —
+      // Meta requires header media on every send, so resolve the shop logo to a
+      // public URL once for the whole broadcast.
+      const logoRes = await client.query<{ value: string }>(
+        `SELECT value FROM settings WHERE key = 'company_logo_path' LIMIT 1`
+      );
+      const logoPath = logoRes.rows[0]?.value ?? '';
+      const appBaseUrl = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+      const logoUrl = logoPath ? `${appBaseUrl}/${logoPath.replace(/^\//, '')}` : null;
+
       for (const cust of allRes.rows) {
         const sentRes = await client.query<{ id: string }>(
           `SELECT id FROM greeting_log
@@ -98,7 +108,7 @@ export async function runDailyGreetings(): Promise<GreetingRunResult> {
 
         const message = `Dear ${cust.name}, today is a special day for us at Sutra Collections! 🎉 Thank you for being a cherished part of our journey. – Team Sutra Collections`;
         try {
-          await sendWhatsAppTemplate(cust.phone, 'sutra_anniversary_greeting', [cust.name]);
+          await sendWhatsAppTemplate(cust.phone, 'sutra_anniversary_greeting', [cust.name], null, logoUrl);
           await client.query(
             `INSERT INTO greeting_log (customer_id, greeting_type, message_sent, sent_at) VALUES ($1,'shop_anniversary',$2,NOW())`,
             [cust.id, message]

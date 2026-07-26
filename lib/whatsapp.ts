@@ -129,21 +129,23 @@ async function uploadWhatsAppMedia(pdfPath: string): Promise<string | null> {
 
 /**
  * Templates that have a "Visit website" button with a dynamic URL parameter ({{1}}).
- * These require a button component; templates not in this set have no button slot.
+ * `index` is the button's 0-based position among ALL buttons on the approved template
+ * (not just URL buttons) — Meta matches button components by index, so a template
+ * with a static button before the URL button must use a higher index.
+ * sutra_invoice_notification has two buttons — Call Us (static, index 0) then
+ * View our Collections (dynamic URL, index 1) — so its URL button must be index "1".
+ * Templates not in this map have no button slot.
  */
-const TEMPLATES_WITH_URL_BUTTON = new Set([
-  'sutra_invoice_notification',
-  'sutra_payment_reminder',
-  'sutra_payment_received',
-  'sutra_refund_issued',
-  'sutra_order_confirmation',
-  'sutra_low_stock_alert',
-  'sutra_birthday_greeting',
-  'sutra_anniversary_greeting',
-  // Call/no button: sutra_order_ready, sutra_order_delivered, sutra_invoice_cancelled,
-  //                 sutra_debit_note_issued, sutra_tailor_assignment,
-  //                 sutra_order_updated, sutra_tailor_removed
-]);
+const URL_BUTTON_CONFIG: Record<string, { index: string; url: string }> = {
+  sutra_invoice_notification: { index: '1', url: 'https://sutra.shr-x.in/' },
+  sutra_payment_reminder:     { index: '0', url: 'https://shr-x.in' },
+  sutra_payment_received:     { index: '0', url: 'https://shr-x.in' },
+  sutra_refund_issued:        { index: '0', url: 'https://shr-x.in' },
+  sutra_order_confirmation:   { index: '0', url: 'https://shr-x.in' },
+  sutra_low_stock_alert:      { index: '0', url: 'https://shr-x.in' },
+  sutra_birthday_greeting:    { index: '0', url: 'https://shr-x.in' },
+  sutra_anniversary_greeting: { index: '0', url: 'https://shr-x.in' },
+};
 
 /**
  * Send a Meta-approved template message.
@@ -151,14 +153,18 @@ const TEMPLATES_WITH_URL_BUTTON = new Set([
  * pdfPath: optional absolute path to a PDF — uploaded as document header if the
  *   template was approved with a Document header. On upload failure, falls back
  *   to body-only so the message still goes out.
- * buttonUrl: override URL for the "Visit website" button. Defaults to https://shr-x.in
- *   for all templates in TEMPLATES_WITH_URL_BUTTON. Pass null to suppress.
+ * headerImageUrl: optional public HTTPS URL for a static image header (e.g. the
+ *   sutra_anniversary_greeting logo). Ignored if pdfPath is also provided — a
+ *   template has only one header slot.
+ * buttonUrl: override URL for the "Visit website" button. Defaults to the
+ *   per-template entry in URL_BUTTON_CONFIG. Pass null to suppress.
  */
 export async function sendWhatsAppTemplate(
   toPhone: string,
   templateName: string,
   parameters: string[],
   pdfPath?: string | null,
+  headerImageUrl?: string | null,
   buttonUrl?: string | null
 ): Promise<WaSendResult> {
   console.log(`[WA] sendWhatsAppTemplate: template="${templateName}" params=${parameters.length} pdf=${pdfPath ? 'yes' : 'none'}`);
@@ -192,21 +198,27 @@ export async function sendWhatsAppTemplate(
     } else {
       console.warn(`[WA] PDF upload failed for "${templateName}" — continuing without document header`);
     }
+  } else if (headerImageUrl) {
+    // Image header sent by public link — no upload round-trip needed.
+    components.unshift({
+      type: 'header',
+      parameters: [{ type: 'image', image: { link: headerImageUrl } }],
+    });
+    console.log(`[WA] Image header attached — url: ${headerImageUrl}`);
   }
 
   // Button component — required for templates with a "Visit website" URL button.
-  // Auto-inject https://shr-x.in for known templates; allow override via buttonUrl param.
-  const effectiveButtonUrl = buttonUrl !== undefined
-    ? buttonUrl
-    : TEMPLATES_WITH_URL_BUTTON.has(templateName) ? 'https://shr-x.in' : null;
+  // Auto-inject the per-template default from URL_BUTTON_CONFIG; allow override via buttonUrl param.
+  const buttonConfig = URL_BUTTON_CONFIG[templateName];
+  const effectiveButtonUrl = buttonUrl !== undefined ? buttonUrl : buttonConfig?.url ?? null;
   if (effectiveButtonUrl) {
     components.push({
       type: 'button',
       sub_type: 'url',
-      index: '0',
+      index: buttonConfig?.index ?? '0',
       parameters: [{ type: 'text', text: effectiveButtonUrl }],
     });
-    console.log(`[WA] Button component added — url: ${effectiveButtonUrl}`);
+    console.log(`[WA] Button component added — index: ${buttonConfig?.index ?? '0'} url: ${effectiveButtonUrl}`);
   }
 
   const body = {
