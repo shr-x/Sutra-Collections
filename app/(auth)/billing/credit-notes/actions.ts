@@ -200,7 +200,7 @@ export async function createCreditNoteAction(
   logAudit({ userId: session.userId, action: 'create', entityType: 'credit_note', entityId: cnId!, entityLabel: cnNum, newValue: { grandTotal: totals.grandTotal, resolution: parsed.resolution } }).catch(() => {});
 
   // Generate credit note PDF and send sutra_refund_issued
-  // {{1}}=name, {{2}}=refund amount, {{3}}=invoice#
+  // {{1}}=name, {{2}}=refund amount, {{3}}=invoice# (template body already reads "Rs.{{2}}")
   if (customerPhone) {
     generateCreditNotePdf(cnId!).then((pdfPath) =>
       sendWhatsAppTemplate(
@@ -208,7 +208,7 @@ export async function createCreditNoteAction(
         'sutra_refund_issued',
         [
           customerName ?? 'Customer',
-          `Rs.${totals.grandTotal.toFixed(2)}`,
+          totals.grandTotal.toFixed(2),
           origInvoiceNumber ?? cnNum,
         ],
         pdfPath

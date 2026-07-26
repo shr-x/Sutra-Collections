@@ -128,24 +128,25 @@ async function uploadWhatsAppMedia(pdfPath: string): Promise<string | null> {
 }
 
 /**
- * Templates that have a "Visit website" button with a dynamic URL parameter ({{1}}).
- * `index` is the button's 0-based position among ALL buttons on the approved template
- * (not just URL buttons) — Meta matches button components by index, so a template
- * with a static button before the URL button must use a higher index.
- * sutra_invoice_notification has two buttons — Call Us (static, index 0) then
- * View our Collections (dynamic URL, index 1) — so its URL button must be index "1".
- * Templates not in this map have no button slot.
+ * Templates that have a "Visit website" button with a DYNAMIC URL parameter ({{1}}
+ * in the button's url, shown as an `example` array on the button in the live template).
+ * `index` is the button's 0-based position among ALL buttons on the approved template.
+ *
+ * All 15 sutra_* templates were fetched live from Meta (GET .../message_templates) and
+ * audited component-by-component. Every "URL" button found (invoice_notification,
+ * payment_received, order_confirmation, order_delivered, low_stock_alert,
+ * birthday_greeting, anniversary_greeting) is fully static — no {{1}} placeholder, no
+ * example array. Several templates assumed to have a URL button don't have one at all
+ * (payment_reminder has only a static PHONE_NUMBER button; refund_issued has no
+ * BUTTONS component whatsoever). Sending a button component for a button with zero
+ * declared variables — or for a template with no button at all — is exactly what
+ * produces Meta error #132018 ("issue with the parameters in your template").
+ *
+ * This map is intentionally EMPTY as of the last live audit — do not add an entry
+ * without first confirming the live template has a genuine {{1}}/example in that
+ * button's url.
  */
-const URL_BUTTON_CONFIG: Record<string, { index: string; url: string }> = {
-  sutra_invoice_notification: { index: '1', url: 'https://sutra.shr-x.in/' },
-  sutra_payment_reminder:     { index: '0', url: 'https://shr-x.in' },
-  sutra_payment_received:     { index: '0', url: 'https://shr-x.in' },
-  sutra_refund_issued:        { index: '0', url: 'https://shr-x.in' },
-  sutra_order_confirmation:   { index: '0', url: 'https://shr-x.in' },
-  sutra_low_stock_alert:      { index: '0', url: 'https://shr-x.in' },
-  sutra_birthday_greeting:    { index: '0', url: 'https://shr-x.in' },
-  sutra_anniversary_greeting: { index: '0', url: 'https://shr-x.in' },
-};
+const URL_BUTTON_CONFIG: Record<string, { index: string; url: string }> = {};
 
 /**
  * Send a Meta-approved template message.

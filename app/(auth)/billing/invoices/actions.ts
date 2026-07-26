@@ -372,7 +372,7 @@ export async function createInvoiceAction(
   checkLowStockForItems(soldItemIds).catch(() => {});
 
   // WhatsApp notification — sutra_invoice_notification with PDF attached
-  // {{1}}=name {{2}}=invoice# {{3}}=amount
+  // {{1}}=name {{2}}=invoice# {{3}}=amount (template body already reads "Amount: Rs.{{3}}" — send the bare number)
   let waResult: 'sent' | 'failed' | 'skip' = 'skip';
   let waError = '';
   if (header.customer_id) {
@@ -387,7 +387,7 @@ export async function createInvoiceAction(
         const waSent = await sendWhatsAppTemplate(
           phone,
           'sutra_invoice_notification',
-          [cust.name ?? 'Customer', invoiceNumber, `Rs.${amount}`],
+          [cust.name ?? 'Customer', invoiceNumber, amount],
           pdfPath
         );
         waResult = waSent.success ? 'sent' : 'failed';
@@ -652,12 +652,12 @@ export async function cancelInvoiceAction(id: string, _fd?: FormData): Promise<v
     console.error(err);
   }
 
-  // sutra_invoice_cancelled: {{1}}=name, {{2}}=invoice#, {{3}}=amount
+  // sutra_invoice_cancelled: {{1}}=name, {{2}}=invoice#, {{3}}=amount (template body already reads "Rs.{{3}}")
   if (customerPhone && invoiceNumber) {
     sendWhatsAppTemplate(customerPhone, 'sutra_invoice_cancelled', [
       customerName ?? 'Customer',
       invoiceNumber,
-      `Rs.${invoiceGrandTotal.toFixed(2)}`,
+      invoiceGrandTotal.toFixed(2),
     ]).catch((e) => console.error('[cancelInvoiceAction] WhatsApp failed:', e));
   }
 
@@ -739,7 +739,7 @@ export async function recordPaymentAction(
   }
 
   // Generate receipt PDF then send sutra_payment_received
-  // {{1}}=name, {{2}}=amount, {{3}}=invoice#
+  // {{1}}=name, {{2}}=amount, {{3}}=invoice# (template body already reads "Rs.{{2}}" — send the bare number)
   const receiptPath = await generateThermalInvoicePdf(id).catch(() => null);
 
   let waResult: 'sent' | 'failed' | 'skip' = 'skip';
@@ -752,7 +752,7 @@ export async function recordPaymentAction(
         'sutra_payment_received',
         [
           invRes.rows[0].customer_name ?? 'Customer',
-          `Rs.${amount.toFixed(2)}`,
+          amount.toFixed(2),
           invRes.rows[0].invoice_number,
         ],
         receiptPath
@@ -840,11 +840,11 @@ export async function sendReminderAction(
   // Generate thermal PDF and attach to reminder
   const reminderPdfPath = await generateThermalInvoicePdf(id).catch(() => null);
 
-  // sutra_payment_reminder: {{1}}=name, {{2}}=amount due, {{3}}=invoice#
+  // sutra_payment_reminder: {{1}}=name, {{2}}=amount due, {{3}}=invoice# (template body already reads "Rs.{{2}}")
   const result = await sendWhatsAppTemplate(
     inv.phone,
     'sutra_payment_reminder',
-    [inv.customer_name ?? 'Customer', `Rs.${balance.toFixed(2)}`, inv.invoice_number],
+    [inv.customer_name ?? 'Customer', balance.toFixed(2), inv.invoice_number],
     reminderPdfPath
   );
 
@@ -964,7 +964,7 @@ export async function retryInvoiceWaAction(invoiceId: string): Promise<void> {
       const r = await sendWhatsAppTemplate(
         inv.phone,
         'sutra_invoice_notification',
-        [inv.name ?? 'Customer', inv.invoice_number, `Rs.${Number(inv.grand_total).toFixed(2)}`],
+        [inv.name ?? 'Customer', inv.invoice_number, Number(inv.grand_total).toFixed(2)],
         retryPdf
       );
       console.log('[WhatsApp] Retry result:', JSON.stringify(r));

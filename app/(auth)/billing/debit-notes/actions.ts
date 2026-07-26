@@ -146,13 +146,13 @@ export async function createDebitNoteAction(
   }
 
   // Generate debit note PDF and send sutra_debit_note_issued to supplier
-  // {{1}}=supplier name, {{2}}=dn#, {{3}}=amount
+  // {{1}}=supplier name, {{2}}=dn#, {{3}}=amount (template body already reads "Rs.{{3}}")
   if (supplierPhone) {
     generateDebitNotePdf(dnId!).then((pdfPath) =>
       sendWhatsAppTemplate(
         supplierPhone!,
         'sutra_debit_note_issued',
-        [supplierName ?? 'Supplier', dnNum, `Rs.${totals.grandTotal.toFixed(2)}`],
+        [supplierName ?? 'Supplier', dnNum, totals.grandTotal.toFixed(2)],
         pdfPath
       )
     ).catch((e) => console.error('[createDebitNoteAction] WhatsApp failed:', e));

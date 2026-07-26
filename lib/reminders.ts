@@ -53,10 +53,10 @@ export async function runDailyReminders(): Promise<ReminderRunResult> {
       const balance = Number(row.grand_total) - Number(row.amount_paid);
       // Generate invoice PDF to attach (best-effort — send even if generation fails)
       const pdfPath = await generateInvoicePdf(row.invoice_id).catch(() => null);
-      // {{1}}=name {{2}}=amount due {{3}}=invoice number
+      // {{1}}=name {{2}}=amount due {{3}}=invoice number (template body already reads "Rs.{{2}}" — send the bare number)
       const waResult = await sendWhatsAppTemplate(row.phone, 'sutra_payment_reminder', [
         row.customer_name ?? 'Customer',
-        `Rs.${balance.toFixed(2)}`,
+        balance.toFixed(2),
         row.invoice_number,
       ], pdfPath);
 
