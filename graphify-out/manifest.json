@@ -5,8 +5,8 @@
     "semantic_hash": "e1073342e958ac9f00716938c8f165e3"
   },
   ".claude/settings.local.json": {
-    "mtime": 1785085377.399745,
-    "ast_hash": "2d348ef47c020e0b7cff6bbc63795eaf",
+    "mtime": 1785139243.1372273,
+    "ast_hash": "390d7ddb55664c4c05d5471695e1891a",
     "semantic_hash": ""
   },
   "app/(auth)/accounting/balance-sheet/page.tsx": {
@@ -980,13 +980,8 @@
     "semantic_hash": ""
   },
   "db/migrate.ts": {
-    "mtime": 1783002286.8626244,
-    "ast_hash": "fae6f1a74497a6d4bac782d83690e376",
-    "semantic_hash": ""
-  },
-  "db/schema.sql": {
-    "mtime": 1783012208.3574314,
-    "ast_hash": "0e84015cf028e178700712da930a31df",
+    "mtime": 1785140200.2996206,
+    "ast_hash": "4fe6e5a8f99c6310f759c6e6cc1e029c",
     "semantic_hash": ""
   },
   "db/seed.ts": {
@@ -1799,11 +1794,6 @@
     "ast_hash": "4411428a96c576e33d91748b95f64037",
     "semantic_hash": ""
   },
-  "db/migrations/production-sync.sql": {
-    "mtime": 1783368092.7675953,
-    "ast_hash": "23d5f30b339af837097fbc7577e579d9",
-    "semantic_hash": ""
-  },
   "deploy.sh": {
     "mtime": 1782994236.6004262,
     "ast_hash": "1961e6b9e0e069bb512ea3c3248a9872",
@@ -1882,6 +1872,16 @@
   "uploads/designs/e34fdfa2-572d-4067-8d97-9f15c1b66338.jpg": {
     "mtime": 1782666170.0202646,
     "ast_hash": "c0b338ff07291fef494ae7ff21492a5d",
+    "semantic_hash": ""
+  },
+  "db/migrations/000_initial_schema.sql": {
+    "mtime": 1785139900.7868052,
+    "ast_hash": "7689f0bcd784ff4b2c90630adcb224e7",
+    "semantic_hash": ""
+  },
+  "db/migrations/001_production_sync.sql": {
+    "mtime": 1783368092.7675953,
+    "ast_hash": "23d5f30b339af837097fbc7577e579d9",
     "semantic_hash": ""
   }
 }

@@ -6036,7 +6036,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "new_fabric_combobox",
-      "community": 5,
+      "community": 114,
       "norm_label": "fabric-combobox.tsx"
     },
     {
@@ -6046,7 +6046,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "new_fabric_combobox_fabricoption",
-      "community": 5,
+      "community": 114,
       "norm_label": "fabricoption"
     },
     {
@@ -6056,7 +6056,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "new_fabric_combobox_props",
-      "community": 5,
+      "community": 114,
       "norm_label": "props"
     },
     {
@@ -6066,7 +6066,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "new_fabric_combobox_fabriccombobox",
-      "community": 5,
+      "community": 114,
       "norm_label": "fabriccombobox()"
     },
     {
@@ -8476,7 +8476,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "customer_pdf_route",
-      "community": 88,
+      "community": 5,
       "norm_label": "route.ts"
     },
     {
@@ -8486,7 +8486,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "customer_pdf_route_get",
-      "community": 88,
+      "community": 5,
       "norm_label": "get()"
     },
     {
@@ -9106,7 +9106,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_sa_console_x7k2_console_customers_id_page_tsx_id_page",
-      "community": 35,
+      "community": 110,
       "norm_label": "page.tsx"
     },
     {
@@ -9116,7 +9116,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "id_page_customer",
-      "community": 35,
+      "community": 110,
       "norm_label": "customer"
     },
     {
@@ -9126,7 +9126,7 @@
       "source_location": "L18",
       "_origin": "ast",
       "id": "id_page_invoice",
-      "community": 35,
+      "community": 110,
       "norm_label": "invoice"
     },
     {
@@ -9136,7 +9136,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "id": "app_sa_console_x7k2_console_customers_id_page_tsx_id_page_customerdetailpage",
-      "community": 35,
+      "community": 110,
       "norm_label": "customerdetailpage()"
     },
     {
@@ -9886,7 +9886,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_sa_console_x7k2_console_items_id_edit_page_tsx_edit_page",
-      "community": 35,
+      "community": 111,
       "norm_label": "page.tsx"
     },
     {
@@ -9896,7 +9896,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "edit_page_itemrow",
-      "community": 35,
+      "community": 111,
       "norm_label": "itemrow"
     },
     {
@@ -9906,7 +9906,7 @@
       "source_location": "L18",
       "_origin": "ast",
       "id": "edit_page_category",
-      "community": 35,
+      "community": 111,
       "norm_label": "category"
     },
     {
@@ -9916,7 +9916,7 @@
       "source_location": "L23",
       "_origin": "ast",
       "id": "app_sa_console_x7k2_console_items_id_edit_page_tsx_edit_page_edititempage",
-      "community": 35,
+      "community": 111,
       "norm_label": "edititempage()"
     },
     {
@@ -10116,7 +10116,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "console_page",
-      "community": 110,
+      "community": 35,
       "norm_label": "page.tsx"
     },
     {
@@ -10126,7 +10126,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "console_page_dashboardstats",
-      "community": 110,
+      "community": 35,
       "norm_label": "dashboardstats"
     },
     {
@@ -10136,7 +10136,7 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "console_page_updatelog",
-      "community": 110,
+      "community": 35,
       "norm_label": "updatelog"
     },
     {
@@ -10146,7 +10146,7 @@
       "source_location": "L19",
       "_origin": "ast",
       "id": "console_page_sadashboardpage",
-      "community": 110,
+      "community": 35,
       "norm_label": "sadashboardpage()"
     },
     {
@@ -10156,7 +10156,7 @@
       "source_location": "L103",
       "_origin": "ast",
       "id": "console_page_statusbadge",
-      "community": 110,
+      "community": 35,
       "norm_label": "statusbadge()"
     },
     {
@@ -11446,7 +11446,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_sa_console_x7k2_console_users_id_edit_page_tsx_edit_page",
-      "community": 111,
+      "community": 49,
       "norm_label": "page.tsx"
     },
     {
@@ -11456,7 +11456,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "edit_page_userrow",
-      "community": 111,
+      "community": 49,
       "norm_label": "userrow"
     },
     {
@@ -11466,7 +11466,7 @@
       "source_location": "L17",
       "_origin": "ast",
       "id": "edit_page_warehouse",
-      "community": 111,
+      "community": 49,
       "norm_label": "warehouse"
     },
     {
@@ -11476,7 +11476,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "id": "app_sa_console_x7k2_console_users_id_edit_page_tsx_edit_page_props",
-      "community": 111,
+      "community": 49,
       "norm_label": "props"
     },
     {
@@ -11486,7 +11486,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "id": "app_sa_console_x7k2_console_users_id_edit_page_tsx_edit_page_edituserpage",
-      "community": 111,
+      "community": 49,
       "norm_label": "edituserpage()"
     },
     {
@@ -13113,7 +13113,7 @@
       "label": "migrate()",
       "file_type": "code",
       "source_file": "db/migrate.ts",
-      "source_location": "L16",
+      "source_location": "L12",
       "_origin": "ast",
       "id": "db_migrate_migrate",
       "community": 15,
@@ -13962,7 +13962,7 @@
       "source_location": "L399",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatetailoringcustomerpdf",
-      "community": 88,
+      "community": 5,
       "norm_label": "generatetailoringcustomerpdf()"
     },
     {
@@ -13982,7 +13982,7 @@
       "source_location": "L539",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatebatchtailoringpdf",
-      "community": 88,
+      "community": 5,
       "norm_label": "generatebatchtailoringpdf()"
     },
     {
@@ -14092,7 +14092,7 @@
       "source_location": "L553",
       "_origin": "ast",
       "id": "pdf_invoice_template_renderinvoicepdf",
-      "community": 63,
+      "community": 88,
       "norm_label": "renderinvoicepdf()"
     },
     {
@@ -14402,7 +14402,7 @@
       "source_location": "L465",
       "_origin": "ast",
       "id": "pdf_tailoring_template_rendertailoringpdf",
-      "community": 88,
+      "community": 54,
       "norm_label": "rendertailoringpdf()"
     },
     {
@@ -14422,7 +14422,7 @@
       "source_location": "L481",
       "_origin": "ast",
       "id": "pdf_tailoring_template_rendergroupedtailoringpdf",
-      "community": 88,
+      "community": 54,
       "norm_label": "rendergroupedtailoringpdf()"
     },
     {
@@ -56997,5 +56997,5 @@
       "source_file": "docker-compose.yml"
     }
   ],
-  "built_at_commit": "f1b2c6f5013fd707f16abfd747f21a96f2008bd4"
+  "built_at_commit": "465e74f129f140a85aad5bbcfd0c722823aa3d90"
 }

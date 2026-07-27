@@ -9,20 +9,6 @@ CREATE TABLE IF NOT EXISTS warehouses (
   address     TEXT,
   is_active   BOOLEAN NOT NULL DEFAULT TRUE
 );
--- Idempotent column additions for existing DBs (run on every start, safe to re-run)
-ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
-ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
--- stock_movements: reference to source document + human-readable description
-ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS reference_id UUID;
-ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS notes TEXT;
--- expenses: optional notes field shown in the expense form
-ALTER TABLE expenses ADD COLUMN IF NOT EXISTS notes TEXT;
--- Business profile extended settings
-INSERT INTO settings (key, value) VALUES
-  ('company_phone',     ''),
-  ('company_email',     ''),
-  ('company_logo_path', '')
-ON CONFLICT (key) DO NOTHING;
 
 -- ─── Users ────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
@@ -964,3 +950,65 @@ CREATE TABLE IF NOT EXISTS whatsapp_incoming_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_wa_incoming_phone ON whatsapp_incoming_messages(from_phone);
 CREATE INDEX IF NOT EXISTS idx_wa_incoming_received ON whatsapp_incoming_messages(received_at DESC);
+
+-- ─── Columns relocated from the top of this file ─────────────────────────────
+-- These were originally placed right after the warehouses table (before
+-- customers/stock_movements/expenses/settings existed), which made every
+-- migration on a fresh database fail with "relation ... does not exist".
+-- Moved here where all target tables are guaranteed to already exist.
+ALTER TABLE customers        ADD COLUMN IF NOT EXISTS is_active    BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE stock_movements  ADD COLUMN IF NOT EXISTS reference_id UUID;
+ALTER TABLE stock_movements  ADD COLUMN IF NOT EXISTS notes        TEXT;
+ALTER TABLE expenses         ADD COLUMN IF NOT EXISTS notes        TEXT;
+
+INSERT INTO settings (key, value) VALUES
+  ('company_phone',     ''),
+  ('company_email',     ''),
+  ('company_logo_path', '')
+ON CONFLICT (key) DO NOTHING;
+
+-- ─── Gaps found by cross-checking this schema against actual application queries ──
+-- (db/migrations/production-sync.sql had already patched some of these onto the
+--  live production DB, but they were never added back into this base schema —
+--  so a fresh database built from this file alone was still missing them.)
+
+-- item_sizes / item_colors: sort_order (used by the item form's ordering + the
+-- duplicate-item merge logic in production-sync.sql)
+ALTER TABLE item_sizes  ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+ALTER TABLE item_colors ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0;
+
+-- tailoring_orders: grouped-booking display columns + GST rate
+-- group_number = the base TO/YYYY-YY/NNNN number shared by all items in a booking
+-- session; suffix = A, B, C... appended to form the full order_number.
+ALTER TABLE tailoring_orders ADD COLUMN IF NOT EXISTS group_number TEXT;
+ALTER TABLE tailoring_orders ADD COLUMN IF NOT EXISTS suffix TEXT;
+ALTER TABLE tailoring_orders ADD COLUMN IF NOT EXISTS gst_rate NUMERIC(5,2) NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_tailoring_orders_group ON tailoring_orders(group_number);
+
+-- Sticker codes — per-unit labels generated on purchase invoice save (lib/stickers.ts)
+CREATE SEQUENCE IF NOT EXISTS sticker_code_seq;
+
+CREATE TABLE IF NOT EXISTS sticker_codes (
+  id                  UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  code                TEXT          NOT NULL UNIQUE,
+  item_id             UUID          NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  purchase_invoice_id UUID          NOT NULL REFERENCES purchase_invoices(id) ON DELETE CASCADE,
+  size_id             UUID          REFERENCES item_sizes(id) ON DELETE SET NULL,
+  color_id            UUID          REFERENCES item_colors(id) ON DELETE SET NULL,
+  price               NUMERIC(12,2) NOT NULL DEFAULT 0,
+  created_at          TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sticker_codes_purchase ON sticker_codes(purchase_invoice_id);
+CREATE INDEX IF NOT EXISTS idx_sticker_codes_item     ON sticker_codes(item_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sticker_codes_code ON sticker_codes(code);
+
+-- Birthday / shop-anniversary WhatsApp greeting dedup log (lib/greetings.ts) —
+-- referenced by the daily greetings cron but never had a CREATE TABLE anywhere.
+CREATE TABLE IF NOT EXISTS greeting_log (
+  id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id    UUID        NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  greeting_type  VARCHAR(20) NOT NULL CHECK (greeting_type IN ('birthday', 'shop_anniversary')),
+  message_sent   TEXT        NOT NULL,
+  sent_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_greeting_log_customer_type ON greeting_log(customer_id, greeting_type);

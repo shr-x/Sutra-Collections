@@ -1,29 +1,28 @@
-import { readFileSync, existsSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import type { PoolClient } from 'pg';
 import pool from '../lib/db';
 
 async function runSqlFile(client: PoolClient, filePath: string, label: string) {
-  if (!existsSync(filePath)) {
-    console.log(`  (skipping ${label} — file not found)`);
-    return;
-  }
   const sql = readFileSync(filePath, 'utf-8');
   await client.query(sql);
   console.log(`✓ ${label}`);
 }
 
 async function migrate() {
+  const migrationsDir = join(process.cwd(), 'db', 'migrations');
+  // Zero-padded numeric prefixes (000_, 001_, ...) sort correctly as plain strings.
+  const files = readdirSync(migrationsDir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort();
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    await runSqlFile(client, join(process.cwd(), 'db', 'schema.sql'), 'schema.sql');
-    await runSqlFile(
-      client,
-      join(process.cwd(), 'db', 'migrations', 'production-sync.sql'),
-      'production-sync.sql'
-    );
+    for (const file of files) {
+      await runSqlFile(client, join(migrationsDir, file), file);
+    }
 
     await client.query('COMMIT');
     console.log('✓ All migrations applied successfully');
