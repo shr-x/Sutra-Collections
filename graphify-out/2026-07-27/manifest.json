@@ -5,8 +5,8 @@
     "semantic_hash": "e1073342e958ac9f00716938c8f165e3"
   },
   ".claude/settings.local.json": {
-    "mtime": 1785085377.399745,
-    "ast_hash": "2d348ef47c020e0b7cff6bbc63795eaf",
+    "mtime": 1785081854.9736798,
+    "ast_hash": "9e30d2d4280a0fdc083dfac331961485",
     "semantic_hash": ""
   },
   "app/(auth)/accounting/balance-sheet/page.tsx": {
@@ -765,8 +765,8 @@
     "semantic_hash": ""
   },
   "app/api/invoices/[id]/thermal/route.ts": {
-    "mtime": 1785084999.3527055,
-    "ast_hash": "6e0af9c047a236a75176c125fb299ecb",
+    "mtime": 1782453493.0749092,
+    "ast_hash": "4ff526893a33a6a39755ea634930be95",
     "semantic_hash": ""
   },
   "app/api/invoices/[id]/upi-qr/route.ts": {
@@ -1055,8 +1055,8 @@
     "semantic_hash": ""
   },
   "lib/pdf/thermal-template.tsx": {
-    "mtime": 1785084953.2688947,
-    "ast_hash": "355aa5d983e0b7f3b4c52bc9f25c5cd5",
+    "mtime": 1782453506.3720524,
+    "ast_hash": "edcd6c9abc210462a61aa2ef67f73171",
     "semantic_hash": ""
   },
   "lib/reminders.ts": {
@@ -1815,8 +1815,8 @@
     "semantic_hash": ""
   },
   "lib/pdf-generator.ts": {
-    "mtime": 1785084970.6856327,
-    "ast_hash": "6b7d68e8223dc38c85dd80c80e560d37",
+    "mtime": 1783400509.6027527,
+    "ast_hash": "ec7dc6787eeeb4220313e09c88453d41",
     "semantic_hash": ""
   },
   "lib/pdf/sticker-template.tsx": {

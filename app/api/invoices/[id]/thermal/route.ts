@@ -51,10 +51,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     : undefined;
 
   const upiVpa      = settings.upi_vpa ?? '';
-  const balance     = Math.max(0, Number(inv.grand_total) - Number(inv.amount_paid));
+  const companyName = settings.company_name ?? 'Sutra Collections';
   let upiQrDataUrl: string | undefined;
-  if (upiVpa && balance > 0) {
-    const upiUri = `upi://pay?pa=${encodeURIComponent(upiVpa)}&am=${balance.toFixed(2)}&tn=${encodeURIComponent(inv.invoice_number)}&cu=INR`;
+  if (upiVpa) {
+    const upiUri = `upi://pay?pa=${encodeURIComponent(upiVpa)}&pn=${encodeURIComponent(companyName)}&am=${Number(inv.grand_total).toFixed(2)}&tn=${encodeURIComponent(inv.invoice_number)}&cu=INR`;
     upiQrDataUrl = await QRCode.toDataURL(upiUri, { width: 80, margin: 1 });
   }
 
@@ -65,7 +65,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     invoiceNumber: inv.invoice_number,
     invoiceDate:   fmtDate(inv.invoice_date),
     company: {
-      name:    settings.company_name ?? 'Sutra Collections',
+      name:    companyName,
       gstin:   settings.company_gstin ?? '',
       address: settings.company_address ?? '',
       state:   settings.company_state ?? 'Karnataka',

@@ -24,10 +24,6 @@ const S = StyleSheet.create({
   totRow:   { flexDirection: 'row', justifyContent: 'space-between', marginTop: 1 },
   grandRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
   qrImg:    { width: 70, height: 70, alignSelf: 'center', marginTop: 4 },
-  qrBox:    {
-    width: 70, height: 70, borderWidth: 0.5, borderColor: '#000',
-    alignSelf: 'center', marginTop: 4, alignItems: 'center', justifyContent: 'center',
-  },
 });
 
 interface ThermalData extends PdfInvoiceData {
@@ -178,17 +174,11 @@ function ThermalDoc({ data }: { data: ThermalData }) {
             </View>
           )}
 
-          {/* UPI QR */}
-          {(data.upiVpa || data.upiQrDataUrl) && (
+          {/* UPI QR — only render when a real QR image was generated (never show a placeholder box) */}
+          {data.upiQrDataUrl && (
             <>
               <Text style={S.sep}>{SEP}</Text>
-              {data.upiQrDataUrl ? (
-                <Image src={data.upiQrDataUrl} style={S.qrImg} />
-              ) : (
-                <View style={S.qrBox}>
-                  <Text style={{ fontSize: 7 }}>UPI QR</Text>
-                </View>
-              )}
+              <Image src={data.upiQrDataUrl} style={S.qrImg} />
               {data.upiVpa && (
                 <Text style={[S.center, { fontSize: 7, marginTop: 2 }]}>
                   UPI: {data.upiVpa}
@@ -199,8 +189,23 @@ function ThermalDoc({ data }: { data: ThermalData }) {
 
           <Text style={S.sep}>{SEP}</Text>
 
-          <Text style={[S.center, { marginTop: 2, fontSize: 7.5 }]}>
-            Thank you for shopping at {data.company.name}!
+          {/*
+            Manual break after "shopping at" (never mid-word) keeps the business
+            name — however long — together on its own line. hyphenationCallback
+            disables react-pdf's default hyphenation so long words/names never
+            split mid-word either.
+          */}
+          <Text
+            style={[S.center, { marginTop: 2, fontSize: 6.5 }]}
+            hyphenationCallback={(word) => [word]}
+          >
+            Thank you for shopping at
+          </Text>
+          <Text
+            style={[S.center, { fontSize: 6.5 }]}
+            hyphenationCallback={(word) => [word]}
+          >
+            {data.company.name}!
           </Text>
           <Text style={[S.center, { fontSize: 7, marginTop: 2 }]}>
             Goods once sold are not returnable.

@@ -164,10 +164,10 @@ export async function generateThermalInvoicePdf(invoiceId: string): Promise<stri
       ? `data:image/${path.extname(co.logoAbsPath).slice(1).replace('jpg', 'jpeg')};base64,${fs.readFileSync(co.logoAbsPath).toString('base64')}`
       : undefined;
 
-    const balance = Math.max(0, Number(inv.grand_total) - Number(inv.amount_paid));
+    const grandTotal = Number(inv.grand_total);
     let upiQrDataUrl: string | undefined;
-    if (co.upiVpa && balance > 0) {
-      const uri = `upi://pay?pa=${encodeURIComponent(co.upiVpa)}&am=${balance.toFixed(2)}&tn=${encodeURIComponent(inv.invoice_number)}&cu=INR`;
+    if (co.upiVpa) {
+      const uri = `upi://pay?pa=${encodeURIComponent(co.upiVpa)}&pn=${encodeURIComponent(co.name)}&am=${grandTotal.toFixed(2)}&tn=${encodeURIComponent(inv.invoice_number)}&cu=INR`;
       upiQrDataUrl = await QRCode.toDataURL(uri, { width: 80, margin: 1 });
     }
 
@@ -200,7 +200,7 @@ export async function generateThermalInvoicePdf(invoiceId: string): Promise<stri
       subtotal: Number(inv.subtotal),
       totalCgst: Number(inv.total_cgst),
       totalSgst: Number(inv.total_sgst),
-      grandTotal: Number(inv.grand_total),
+      grandTotal,
       amountPaid: Number(inv.amount_paid),
       paymentMode: inv.payment_mode || undefined,
       upiVpa: co.upiVpa || undefined,
