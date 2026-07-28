@@ -5,7 +5,7 @@ import { query } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import AssignTailorButton from './assign-tailor-button';
 import StageButton from './stage-button';
-import type { TailoringStage } from '@/types';
+import type { TailoringStatus } from '@/types';
 
 export const metadata: Metadata = { title: 'Production Board' };
 
@@ -14,8 +14,8 @@ interface OrderRow {
   order_number: string;
   group_number: string | null;
   suffix: string | null;
-  stage: string;
-  price: string;
+  status: TailoringStatus;
+  total_amount: string;
   due_date: string | null;
   customer_name: string;
   design_name: string;
@@ -26,28 +26,30 @@ interface OrderRow {
   batch_size: number | null;
 }
 
-const COLUMNS: { stage: TailoringStage; label: string; hdr: string; border: string }[] = [
-  { stage: 'placed',     label: 'Order Placed',     hdr: 'bg-blue-100 text-blue-800',     border: 'border-blue-200 bg-blue-50' },
-  { stage: 'production', label: 'In Production',    hdr: 'bg-yellow-100 text-yellow-800', border: 'border-yellow-200 bg-yellow-50' },
-  { stage: 'ready',      label: 'Ready for Pickup', hdr: 'bg-green-100 text-green-800',   border: 'border-green-200 bg-green-50' },
-  { stage: 'delivered',  label: 'Delivered',         hdr: 'bg-gray-100 text-gray-600',     border: 'border-gray-200 bg-gray-50' },
+const COLUMNS: { status: TailoringStatus; label: string; hdr: string; border: string }[] = [
+  { status: 'in_progress',      label: 'In Progress',      hdr: 'bg-amber-100 text-amber-800',  border: 'border-amber-200 bg-amber-50' },
+  { status: 'ready_for_pickup', label: 'Ready for Pickup', hdr: 'bg-green-100 text-green-800',   border: 'border-green-200 bg-green-50' },
+  { status: 'picked_up',        label: 'Picked Up',        hdr: 'bg-blue-100 text-blue-800',     border: 'border-blue-200 bg-blue-50' },
+  { status: 'delivered',        label: 'Delivered',         hdr: 'bg-gray-100 text-gray-600',     border: 'border-gray-200 bg-gray-50' },
 ];
 
-const NEXT_STAGE: Partial<Record<TailoringStage, TailoringStage>> = {
-  production: 'ready',
-  ready:      'delivered',
+// Only these two transitions can happen from the board — 'delivered' always
+// requires the payment-aware actions on the order detail page.
+const NEXT_STATUS: Partial<Record<TailoringStatus, TailoringStatus>> = {
+  in_progress:      'ready_for_pickup',
+  ready_for_pickup: 'picked_up',
 };
 
-const NEXT_LABEL: Partial<Record<TailoringStage, string>> = {
-  production: '→ Ready',
-  ready:      '→ Delivered',
+const NEXT_LABEL: Partial<Record<TailoringStatus, string>> = {
+  in_progress:      '→ Ready for Pickup',
+  ready_for_pickup: '→ Picked Up',
 };
 
 export default async function ProductionBoardPage() {
   await requireRole('admin');
 
   const orderQuery = `
-    SELECT o.id, o.order_number, o.group_number, o.suffix, o.stage, o.price::text, o.due_date::text,
+    SELECT o.id, o.order_number, o.group_number, o.suffix, o.status, o.total_amount::text, o.due_date::text,
            COALESCE(o.customer_name_snapshot, c.name, 'Unknown') AS customer_name,
            d.name AS design_name,
            o.color_fabric,
@@ -65,15 +67,15 @@ export default async function ProductionBoardPage() {
 
   const [res, deliveredRes] = await Promise.all([
     query<OrderRow>(
-      `${orderQuery} WHERE o.stage <> 'delivered' ORDER BY o.due_date ASC NULLS LAST, o.created_at ASC`
+      `${orderQuery} WHERE o.status <> 'delivered' ORDER BY o.due_date ASC NULLS LAST, o.created_at ASC`
     ),
     query<OrderRow>(
-      `${orderQuery} WHERE o.stage = 'delivered' ORDER BY o.updated_at DESC LIMIT 30`
+      `${orderQuery} WHERE o.status = 'delivered' ORDER BY o.updated_at DESC LIMIT 30`
     ),
   ]);
 
   const allOrders = [...res.rows, ...deliveredRes.rows];
-  const byStage   = (s: TailoringStage) => allOrders.filter((o) => o.stage === s);
+  const byStatus  = (s: TailoringStatus) => allOrders.filter((o) => o.status === s);
 
   return (
     <div className="md:flex md:flex-col md:h-[calc(100vh-120px)]">
@@ -90,12 +92,12 @@ export default async function ProductionBoardPage() {
 
       {/* Board — fixed height, 4 scrollable columns */}
       <div className="grid min-h-0 md:flex-1 grid-cols-1 gap-3 md:overflow-hidden md:grid-cols-2 xl:grid-cols-4">
-        {COLUMNS.map(({ stage, label, hdr, border }) => {
-          const orders    = byStage(stage);
-          const nextStage = NEXT_STAGE[stage];
+        {COLUMNS.map(({ status, label, hdr, border }) => {
+          const orders    = byStatus(status);
+          const nextStatus = NEXT_STATUS[status];
           return (
             <div
-              key={stage}
+              key={status}
               className={`flex flex-col md:overflow-hidden rounded-xl border ${border}`}
             >
               {/* Column header */}
@@ -113,7 +115,7 @@ export default async function ProductionBoardPage() {
                 ) : (
                   orders.map((o) => {
                     const isOverdue =
-                      o.due_date && new Date(o.due_date) < new Date() && stage !== 'delivered';
+                      o.due_date && new Date(o.due_date) < new Date() && status !== 'delivered';
                     return (
                       <div
                         key={o.id}
@@ -138,7 +140,7 @@ export default async function ProductionBoardPage() {
                             )}
                           </div>
                           <span className="text-xs font-semibold text-gray-700 shrink-0">
-                            {formatInr(Number(o.price))}
+                            {formatInr(Number(o.total_amount))}
                           </span>
                         </div>
 
@@ -166,8 +168,8 @@ export default async function ProductionBoardPage() {
                           </div>
                         )}
 
-                        {/* Assign / change tailor — placed + production */}
-                        {(stage === 'placed' || stage === 'production') && (
+                        {/* Assign / change tailor — only while stitching is in progress */}
+                        {status === 'in_progress' && (
                           <AssignTailorButton
                             orderId={o.id}
                             currentTailorId={o.tailor_id}
@@ -175,13 +177,23 @@ export default async function ProductionBoardPage() {
                           />
                         )}
 
-                        {/* Stage advance — production + ready only (placed goes via Assign Tailor) */}
-                        {nextStage && (
+                        {/* Status advance — in_progress and ready_for_pickup only.
+                            picked_up -> delivered always goes through the order
+                            detail page's payment-aware delivery actions. */}
+                        {nextStatus && (
                           <StageButton
                             orderId={o.id}
-                            newStage={nextStage}
-                            label={NEXT_LABEL[stage]!}
+                            newStatus={nextStatus}
+                            label={NEXT_LABEL[status]!}
                           />
+                        )}
+                        {status === 'picked_up' && (
+                          <Link
+                            href={`/tailoring/${o.id}`}
+                            className="block w-full rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-center text-xs font-medium text-blue-700 hover:bg-blue-100"
+                          >
+                            Deliver →
+                          </Link>
                         )}
                       </div>
                     );
@@ -189,9 +201,9 @@ export default async function ProductionBoardPage() {
                 )}
               </div>
 
-              {stage === 'delivered' && deliveredRes.rows.length === 30 && (
+              {status === 'delivered' && deliveredRes.rows.length === 30 && (
                 <div className="shrink-0 border-t px-4 py-2 text-center">
-                  <Link href="/tailoring?stage=delivered" className="text-xs text-purple-600 hover:underline">
+                  <Link href="/tailoring?status=delivered" className="text-xs text-purple-600 hover:underline">
                     View all delivered →
                   </Link>
                 </div>

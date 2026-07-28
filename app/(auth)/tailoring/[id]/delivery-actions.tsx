@@ -1,0 +1,84 @@
+'use client';
+
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import ConfirmDialog from '@/components/confirm-dialog';
+import { markDeliveredPaidAction, markDeliveredOnCreditAction } from '../actions';
+
+const fmt = (n: number) =>
+  `₹${new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(n)}`;
+
+interface Props {
+  orderId: string;
+  balanceDue: number;
+}
+
+export default function DeliveryActions({ orderId, balanceDue }: Props) {
+  const router = useRouter();
+  const [isPending, startTrans] = useTransition();
+  const [confirmCredit, setConfirmCredit] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canMarkPaid = balanceDue <= 0;
+
+  function handlePaid() {
+    setError(null);
+    startTrans(async () => {
+      const res = await markDeliveredPaidAction(orderId);
+      if (res.success) router.refresh();
+      else setError(res.error ?? 'Failed to mark delivered.');
+    });
+  }
+
+  function handleOnCredit() {
+    setConfirmCredit(false);
+    setError(null);
+    startTrans(async () => {
+      const res = await markDeliveredOnCreditAction(orderId);
+      if (res.success) router.refresh();
+      else setError(res.error ?? 'Failed to mark delivered.');
+    });
+  }
+
+  return (
+    <div className="mt-3 space-y-2">
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
+      )}
+
+      <button
+        type="button"
+        onClick={handlePaid}
+        disabled={isPending || !canMarkPaid}
+        title={!canMarkPaid ? `Balance of ${fmt(balanceDue)} still due` : undefined}
+        className="btn-primary w-full disabled:opacity-40"
+      >
+        {isPending ? 'Updating…' : 'Mark Delivered (Paid)'}
+      </button>
+
+      <button
+        type="button"
+        onClick={() => (balanceDue > 0 ? setConfirmCredit(true) : handleOnCredit())}
+        disabled={isPending}
+        className="w-full rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-40"
+      >
+        {isPending ? 'Updating…' : 'Mark Delivered (On Credit)'}
+      </button>
+
+      {!canMarkPaid && (
+        <p className="text-xs text-gray-400">
+          Balance due {fmt(balanceDue)} — collect payment, or deliver on credit to push it to the customer's dues.
+        </p>
+      )}
+
+      <ConfirmDialog
+        open={confirmCredit}
+        title="Deliver on Credit?"
+        message={`This order has a balance of ${fmt(balanceDue)}. Confirming will mark it delivered and add ${fmt(balanceDue)} to this customer's outstanding dues.`}
+        confirmLabel="Deliver on Credit"
+        onConfirm={handleOnCredit}
+        onCancel={() => setConfirmCredit(false)}
+      />
+    </div>
+  );
+}

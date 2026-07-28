@@ -10,17 +10,16 @@ import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import { generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf } from '@/lib/pdf-generator';
 import { logAudit } from '@/lib/audit';
-import type { ActionResult } from '@/types';
-import type { TailoringStage } from '@/types';
+import type { ActionResult, TailoringStatus, TailoringPaymentMode } from '@/types';
 
 // ── Batch notification helpers ─────────────────────────────────────────────
 
-// Returns true only when every order in the batch has reached requiredStage or beyond.
-// passedStages: stages that count as "already past" the threshold (e.g. 'delivered' counts as past 'ready').
-async function isBatchFullyAt(batchId: string, requiredStage: TailoringStage, passedStages: TailoringStage[]): Promise<boolean> {
-  const allowed = [requiredStage, ...passedStages].map((s) => `'${s}'`).join(', ');
+// Returns true only when every order in the batch has reached requiredStatus or beyond.
+// passedStatuses: statuses that count as "already past" the threshold (e.g. 'delivered' counts as past 'ready_for_pickup').
+async function isBatchFullyAt(batchId: string, requiredStatus: TailoringStatus, passedStatuses: TailoringStatus[]): Promise<boolean> {
+  const allowed = [requiredStatus, ...passedStatuses].map((s) => `'${s}'`).join(', ');
   const res = await query<{ pending: string }>(
-    `SELECT COUNT(*) FILTER (WHERE stage NOT IN (${allowed})) AS pending
+    `SELECT COUNT(*) FILTER (WHERE status NOT IN (${allowed})) AS pending
      FROM tailoring_orders WHERE batch_id = $1`,
     [batchId]
   );
@@ -36,6 +35,59 @@ async function batchFirstOrder(batchId: string): Promise<{ id: string; order_num
   return res.rows[0] ?? null;
 }
 
+// Sends sutra_order_ready / sutra_order_delivered, honoring batch holds (only
+// fires once, on the last sibling to reach the threshold).
+async function sendStatusWhatsApp(
+  orderId: string,
+  template: 'sutra_order_ready' | 'sutra_order_delivered',
+  requiredStatus: TailoringStatus,
+  passedStatuses: TailoringStatus[]
+): Promise<void> {
+  try {
+    const { rows } = await query<{
+      phone: string | null; name: string; order_number: string; group_number: string | null; batch_id: string | null;
+    }>(
+      `SELECT c.phone, c.name, o.order_number, o.group_number, o.batch_id
+       FROM tailoring_orders o
+       JOIN customers c ON c.id = o.customer_id
+       WHERE o.id=$1`,
+      [orderId]
+    );
+    const r = rows[0];
+    if (!r?.phone) return;
+
+    const displayRef = r.group_number ?? r.order_number;
+
+    if (!r.batch_id) {
+      if (template === 'sutra_order_ready') {
+        const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
+        await sendWhatsAppTemplate(r.phone, template, [r.name, displayRef], pdfPath);
+      } else {
+        await sendWhatsAppTemplate(r.phone, template, [r.name, displayRef]);
+      }
+      return;
+    }
+
+    const allDone = await isBatchFullyAt(r.batch_id, requiredStatus, passedStatuses);
+    if (!allDone) {
+      console.log(`[sendStatusWhatsApp] Batch ${r.batch_id}: holding ${template} WA — siblings not yet at threshold`);
+      return;
+    }
+
+    const first = await batchFirstOrder(r.batch_id);
+    const batchDisplayRef = first?.group_number ?? first?.order_number ?? displayRef;
+
+    if (template === 'sutra_order_ready') {
+      const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
+      await sendWhatsAppTemplate(r.phone, template, [r.name, batchDisplayRef], pdfPath);
+    } else {
+      await sendWhatsAppTemplate(r.phone, template, [r.name, batchDisplayRef]);
+    }
+  } catch (e) {
+    console.error(`[sendStatusWhatsApp] ${template} failed:`, e);
+  }
+}
+
 // ── Create Order (called directly from client wizard) ─────────────────────
 
 const CreateOrderInput = z.object({
@@ -49,6 +101,9 @@ const CreateOrderInput = z.object({
   invoiceId:       z.string().uuid().optional(),
   batchId:         z.string().uuid().optional(),
   suppressWhatsApp: z.boolean().optional().default(false),
+  // Optional advance payment collected at creation time.
+  advanceAmount:      z.coerce.number().nonnegative().optional(),
+  advancePaymentMode: z.enum(['cash', 'upi', 'card']).optional(),
 });
 
 export async function createTailoringOrder(raw: unknown): Promise<{
@@ -63,7 +118,7 @@ export async function createTailoringOrder(raw: unknown): Promise<{
 
   const {
     designId, customerId, measurements, colorFabric, price, dueDate, notes,
-    invoiceId, batchId, suppressWhatsApp,
+    invoiceId, batchId, suppressWhatsApp, advanceAmount, advancePaymentMode,
   } = parsed.data;
 
   const custRes = await query<{ phone: string | null; name: string }>(
@@ -135,13 +190,13 @@ export async function createTailoringOrder(raw: unknown): Promise<{
     const ordRes = await client.query(
       `INSERT INTO tailoring_orders
          (order_number, customer_id, design_id, measurement_version_id,
-          color_fabric, price, due_date, notes, created_by, invoice_id,
+          color_fabric, price, total_amount, due_date, notes, created_by, invoice_id,
           customer_name_snapshot, customer_phone_snapshot, batch_id,
           group_number, suffix)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
       [
         orderNumber, customerId, designId, versionId,
-        colorFabric || null, price,
+        colorFabric || null, price, price,
         dueDate || null, notes || null, session.userId,
         invoiceId || null,
         customerName, customerPhone,
@@ -150,9 +205,23 @@ export async function createTailoringOrder(raw: unknown): Promise<{
       ]
     );
 
+    const newOrderId = ordRes.rows[0].id as string;
+
+    // Optional advance payment collected at booking time.
+    if (advanceAmount && advanceAmount > 0 && advancePaymentMode) {
+      await client.query(
+        `INSERT INTO tailoring_payments (tailoring_order_id, amount, payment_mode, recorded_by)
+         VALUES ($1,$2,$3,$4)`,
+        [newOrderId, advanceAmount, advancePaymentMode, session.userId]
+      );
+      await client.query(
+        `UPDATE tailoring_orders SET amount_paid=$1 WHERE id=$2`,
+        [advanceAmount, newOrderId]
+      );
+    }
+
     await client.query('COMMIT');
 
-    const newOrderId = ordRes.rows[0].id as string;
     logAudit({ userId: session.userId, action: 'create', entityType: 'tailoring_order', entityId: newOrderId, entityLabel: orderNumber }).catch(() => {});
 
     if (!suppressWhatsApp) {
@@ -237,87 +306,242 @@ export async function createCustomerInline(data: { name: string; phone: string }
   return { success: true, customer: { id: c.id, name: c.name, phone: c.phone } };
 }
 
-// ── Update Stage ───────────────────────────────────────────────────────────
+// ── Advance Status (in_progress -> ready_for_pickup -> picked_up ONLY) ──────
+// 'delivered' can never be reached through this generic action — only via the
+// two explicit mark-delivered actions below (Paid / On Credit), so a plain
+// status change can never bypass the payment/credit decision.
 
-const STAGE_ORDER: TailoringStage[] = ['placed', 'production', 'ready', 'delivered'];
+const NEXT_ALLOWED: Partial<Record<TailoringStatus, TailoringStatus>> = {
+  in_progress:      'ready_for_pickup',
+  ready_for_pickup: 'picked_up',
+};
 
-export async function updateStageAction(formData: FormData) {
-  const session = await requireRole('admin', 'staff');
+export async function advanceStatusAction(
+  orderId: string,
+  newStatus: TailoringStatus
+): Promise<{ success: boolean; waStatus: 'sent' | 'skipped' | 'failed'; message: string; error?: string }> {
+  await requireRole('admin', 'staff');
 
-  const orderId  = formData.get('order_id') as string;
-  const newStage = formData.get('stage') as TailoringStage;
-
-  if (!STAGE_ORDER.includes(newStage)) return;
+  const curRes = await query<{ status: TailoringStatus }>(
+    `SELECT status FROM tailoring_orders WHERE id=$1`, [orderId]
+  );
+  const current = curRes.rows[0]?.status;
+  if (!current || NEXT_ALLOWED[current] !== newStatus) {
+    return { success: false, waStatus: 'skipped', message: 'Invalid status transition.', error: 'Invalid status transition.' };
+  }
 
   await query(
-    `UPDATE tailoring_orders SET stage=$1, updated_at=NOW() WHERE id=$2`,
-    [newStage, orderId]
+    `UPDATE tailoring_orders SET status=$1, updated_at=NOW() WHERE id=$2`,
+    [newStatus, orderId]
   );
-  logAudit({ userId: session.userId, action: 'stage_change', entityType: 'tailoring_order', entityId: orderId, newValue: { stage: newStage } }).catch(() => {});
+  revalidatePath(`/tailoring/${orderId}`);
+  revalidatePath('/tailoring/production');
+  revalidatePath('/tailoring');
 
-  if (newStage === 'ready' || newStage === 'delivered') {
-    Promise.resolve().then(async () => {
-      try {
-        const { rows } = await query<{
-          phone: string | null; name: string; order_number: string; group_number: string | null; batch_id: string | null;
-        }>(
-          `SELECT c.phone, c.name, o.order_number, o.group_number, o.batch_id
-           FROM tailoring_orders o
-           JOIN customers c ON c.id = o.customer_id
-           WHERE o.id=$1`,
-          [orderId]
-        );
-        const r = rows[0];
-        if (!r?.phone) return;
-
-        const displayRef = r.group_number ?? r.order_number;
-
-        if (!r.batch_id) {
-          // Single order — send immediately
-          if (newStage === 'ready') {
-            const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
-            sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, displayRef], pdfPath)
-              .catch((e) => console.error('[updateStageAction] sutra_order_ready WA failed:', e));
-          } else {
-            sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, displayRef])
-              .catch((e) => console.error('[updateStageAction] sutra_order_delivered WA failed:', e));
-          }
-          return;
-        }
-
-        // Batch order — only send when ALL siblings are at this stage or beyond
-        const allReady     = newStage === 'ready' ? await isBatchFullyAt(r.batch_id, 'ready', ['delivered']) : false;
-        const allDelivered = newStage === 'delivered' ? await isBatchFullyAt(r.batch_id, 'delivered', []) : false;
-
-        if (newStage === 'ready' && !allReady) {
-          console.log(`[updateStageAction] Batch ${r.batch_id}: holding ready WA — siblings still in progress`);
-          return;
-        }
-        if (newStage === 'delivered' && !allDelivered) {
-          console.log(`[updateStageAction] Batch ${r.batch_id}: holding delivered WA — siblings not yet delivered`);
-          return;
-        }
-
-        // All batch orders at threshold — send ONE message using group_number as reference
-        const first = await batchFirstOrder(r.batch_id);
-        const batchDisplayRef = first?.group_number ?? first?.order_number ?? displayRef;
-
-        if (newStage === 'ready') {
-          const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
-          sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, batchDisplayRef], pdfPath)
-            .catch((e) => console.error('[updateStageAction] batch sutra_order_ready WA failed:', e));
-        } else {
-          sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, batchDisplayRef])
-            .catch((e) => console.error('[updateStageAction] batch sutra_order_delivered WA failed:', e));
-        }
-      } catch (e) {
-        console.error('[updateStageAction] DB query failed:', e);
-      }
-    });
+  if (newStatus !== 'ready_for_pickup') {
+    return { success: true, waStatus: 'skipped', message: 'Status updated.' };
   }
+
+  // Only ready_for_pickup sends a WhatsApp from this action (picked_up has no template).
+  const { rows } = await query<{ phone: string | null }>(
+    `SELECT c.phone FROM tailoring_orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=$1`,
+    [orderId]
+  );
+  if (!rows[0]?.phone) {
+    return { success: true, waStatus: 'skipped', message: 'Status updated. Customer has no phone.' };
+  }
+
+  await sendStatusWhatsApp(orderId, 'sutra_order_ready', 'ready_for_pickup', ['picked_up', 'delivered']);
+  return { success: true, waStatus: 'sent', message: '✅ Status updated. WhatsApp sent to customer.' };
+}
+
+// ── Mark Delivered (Paid) — only when balance due is fully settled ─────────
+
+export async function markDeliveredPaidAction(orderId: string): Promise<ActionResult> {
+  const session = await requireRole('admin', 'staff');
+
+  const res = await query<{ status: TailoringStatus; total_amount: string; amount_paid: string }>(
+    `SELECT status, total_amount, amount_paid FROM tailoring_orders WHERE id=$1`, [orderId]
+  );
+  const order = res.rows[0];
+  if (!order) return { success: false, error: 'Order not found.' };
+  if (order.status !== 'picked_up') {
+    return { success: false, error: 'Order must be picked up before it can be marked delivered.' };
+  }
+  const balance = Math.round((Number(order.total_amount) - Number(order.amount_paid)) * 100) / 100;
+  if (balance > 0) {
+    return { success: false, error: `Balance of ₹${balance.toFixed(2)} is still due — use "Mark Delivered (On Credit)" or collect payment first.` };
+  }
+
+  await query(
+    `UPDATE tailoring_orders SET status='delivered', delivered_at=NOW(), updated_at=NOW() WHERE id=$1`,
+    [orderId]
+  );
+  logAudit({ userId: session.userId, action: 'stage_change', entityType: 'tailoring_order', entityId: orderId, newValue: { status: 'delivered', paid_in_full: true } }).catch(() => {});
 
   revalidatePath(`/tailoring/${orderId}`);
   revalidatePath('/tailoring/production');
+  revalidatePath('/tailoring');
+
+  sendStatusWhatsApp(orderId, 'sutra_order_delivered', 'delivered', []).catch(() => {});
+
+  return { success: true };
+}
+
+// ── Mark Delivered (On Credit) — allowed with an outstanding balance ───────
+
+export async function markDeliveredOnCreditAction(orderId: string): Promise<ActionResult> {
+  const session = await requireRole('admin', 'staff');
+
+  const res = await query<{ status: TailoringStatus; total_amount: string; amount_paid: string; order_number: string; customer_id: string }>(
+    `SELECT status, total_amount, amount_paid, order_number, customer_id FROM tailoring_orders WHERE id=$1`, [orderId]
+  );
+  const order = res.rows[0];
+  if (!order) return { success: false, error: 'Order not found.' };
+  if (order.status !== 'picked_up') {
+    return { success: false, error: 'Order must be picked up before it can be marked delivered.' };
+  }
+  const balance = Math.max(0, Math.round((Number(order.total_amount) - Number(order.amount_paid)) * 100) / 100);
+
+  if (balance > 0) {
+    await query(
+      `UPDATE tailoring_orders
+       SET status='delivered', delivered_at=NOW(), updated_at=NOW(),
+           credit_amount = credit_amount + $1, credited_at = NOW()
+       WHERE id=$2`,
+      [balance, orderId]
+    );
+  } else {
+    await query(
+      `UPDATE tailoring_orders SET status='delivered', delivered_at=NOW(), updated_at=NOW() WHERE id=$1`,
+      [orderId]
+    );
+  }
+
+  logAudit({
+    userId: session.userId, action: 'stage_change', entityType: 'tailoring_order', entityId: orderId,
+    entityLabel: order.order_number, newValue: { status: 'delivered', delivered_on_credit: true, credit_amount: balance },
+  }).catch(() => {});
+
+  revalidatePath(`/tailoring/${orderId}`);
+  revalidatePath('/tailoring/production');
+  revalidatePath('/tailoring');
+  revalidatePath(`/customers/${order.customer_id}`);
+  revalidatePath('/reports/customer-dues');
+
+  sendStatusWhatsApp(orderId, 'sutra_order_delivered', 'delivered', []).catch(() => {});
+
+  return { success: true };
+}
+
+// ── Request Alteration — reopens a ready/picked-up/delivered order ─────────
+
+export async function requestAlterationAction(data: {
+  orderId: string;
+  description: string;
+  priceAdjustment: number;
+}): Promise<ActionResult> {
+  const session = await requireRole('admin', 'staff');
+
+  const description = data.description.trim();
+  if (!description) return { success: false, error: 'Describe what changed.' };
+
+  const res = await query<{ status: TailoringStatus; order_number: string }>(
+    `SELECT status, order_number FROM tailoring_orders WHERE id=$1`, [data.orderId]
+  );
+  const order = res.rows[0];
+  if (!order) return { success: false, error: 'Order not found.' };
+  if (!['ready_for_pickup', 'picked_up', 'delivered'].includes(order.status)) {
+    return { success: false, error: 'Alterations can only be requested once stitching is done.' };
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    await client.query(
+      `INSERT INTO tailoring_alterations (tailoring_order_id, description, price_adjustment, requested_by)
+       VALUES ($1,$2,$3,$4)`,
+      [data.orderId, description, data.priceAdjustment, session.userId]
+    );
+
+    await client.query(
+      `UPDATE tailoring_orders
+       SET status='in_progress', total_amount = total_amount + $1, updated_at=NOW()
+       WHERE id=$2`,
+      [data.priceAdjustment, data.orderId]
+    );
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[requestAlterationAction]', err);
+    return { success: false, error: 'Failed to save alteration.' };
+  } finally {
+    client.release();
+  }
+
+  logAudit({
+    userId: session.userId, action: 'update', entityType: 'tailoring_order', entityId: data.orderId,
+    entityLabel: order.order_number, newValue: { alteration: description, price_adjustment: data.priceAdjustment },
+  }).catch(() => {});
+
+  revalidatePath(`/tailoring/${data.orderId}`);
+  revalidatePath('/tailoring/production');
+  revalidatePath('/tailoring');
+
+  return { success: true };
+}
+
+// ── Record Payment ──────────────────────────────────────────────────────────
+
+export async function recordTailoringPaymentAction(data: {
+  orderId: string;
+  amount: number;
+  paymentMode: TailoringPaymentMode;
+}): Promise<ActionResult> {
+  const session = await requireRole('admin', 'staff');
+
+  if (!(data.amount > 0)) return { success: false, error: 'Enter an amount greater than zero.' };
+
+  const res = await query<{ order_number: string }>(
+    `SELECT order_number FROM tailoring_orders WHERE id=$1`, [data.orderId]
+  );
+  if (!res.rows[0]) return { success: false, error: 'Order not found.' };
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    await client.query(
+      `INSERT INTO tailoring_payments (tailoring_order_id, amount, payment_mode, recorded_by)
+       VALUES ($1,$2,$3,$4)`,
+      [data.orderId, data.amount, data.paymentMode, session.userId]
+    );
+
+    await client.query(
+      `UPDATE tailoring_orders SET amount_paid = amount_paid + $1, updated_at=NOW() WHERE id=$2`,
+      [data.amount, data.orderId]
+    );
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[recordTailoringPaymentAction]', err);
+    return { success: false, error: 'Failed to record payment.' };
+  } finally {
+    client.release();
+  }
+
+  logAudit({
+    userId: session.userId, action: 'payment', entityType: 'tailoring_order', entityId: data.orderId,
+    entityLabel: res.rows[0].order_number, newValue: { amount: data.amount, payment_mode: data.paymentMode },
+  }).catch(() => {});
+
+  revalidatePath(`/tailoring/${data.orderId}`);
+  revalidatePath('/tailoring');
+
+  return { success: true };
 }
 
 // ── Assign Tailor ─────────────────────────────────────────────────────────────
@@ -360,13 +584,14 @@ export async function assignTailorAction(
   const tailor = tailorRes.rows[0];
 
   await query(
-    `UPDATE tailoring_orders SET tailor_id=$1, stage='production', updated_at=NOW() WHERE id=$2`,
+    `UPDATE tailoring_orders SET tailor_id=$1, updated_at=NOW() WHERE id=$2`,
     [tailorId, orderId]
   );
   logAudit({ userId: session.userId, action: 'update', entityType: 'tailoring_order', entityId: orderId, entityLabel: order.order_number, newValue: { tailor_id: tailorId, tailor_name: tailor.name } }).catch(() => {});
 
   revalidatePath('/tailoring/production');
   revalidatePath('/tailoring');
+  revalidatePath(`/tailoring/${orderId}`);
 
   Promise.resolve().then(async () => {
     try {
@@ -422,7 +647,7 @@ export async function deleteOrderAction(formData: FormData) {
   redirect('/tailoring');
 }
 
-// ── Edit Order (measurements + details, preserves stage) ─────────────────────
+// ── Edit Order (measurements + details + price, only while in_progress) ────
 
 export async function updateOrderAction(data: {
   orderId: string;
@@ -430,16 +655,17 @@ export async function updateOrderAction(data: {
   colorFabric?: string;
   notes?: string;
   dueDate?: string | null;
+  totalAmount?: number;
 }): Promise<ActionResult> {
   const session = await requireRole('admin', 'staff');
 
   const orderRes = await query<{
-    stage: string; customer_id: string; design_id: string;
+    status: TailoringStatus; customer_id: string; design_id: string;
     old_due_date: string | null;
     customer_phone: string | null; customer_name: string;
     order_number: string; group_number: string | null;
   }>(
-    `SELECT o.stage, o.customer_id, o.design_id, o.due_date::text AS old_due_date,
+    `SELECT o.status, o.customer_id, o.design_id, o.due_date::text AS old_due_date,
             o.order_number, o.group_number,
             c.phone AS customer_phone, c.name AS customer_name
      FROM tailoring_orders o
@@ -450,8 +676,8 @@ export async function updateOrderAction(data: {
 
   const order = orderRes.rows[0];
   if (!order) return { success: false, error: 'Order not found' };
-  if (!['placed', 'production'].includes(order.stage)) {
-    return { success: false, error: 'Order cannot be edited at this stage.' };
+  if (order.status !== 'in_progress') {
+    return { success: false, error: 'Order cannot be edited at this status.' };
   }
 
   const client = await pool.connect();
@@ -480,12 +706,21 @@ export async function updateOrderAction(data: {
       );
     }
 
-    await client.query(
-      `UPDATE tailoring_orders
-       SET measurement_version_id=$1, color_fabric=$2, notes=$3, due_date=$4, updated_at=NOW()
-       WHERE id=$5`,
-      [versionId, data.colorFabric || null, data.notes || null, data.dueDate || null, data.orderId]
-    );
+    if (data.totalAmount !== undefined) {
+      await client.query(
+        `UPDATE tailoring_orders
+         SET measurement_version_id=$1, color_fabric=$2, notes=$3, due_date=$4, total_amount=$5, updated_at=NOW()
+         WHERE id=$6`,
+        [versionId, data.colorFabric || null, data.notes || null, data.dueDate || null, data.totalAmount, data.orderId]
+      );
+    } else {
+      await client.query(
+        `UPDATE tailoring_orders
+         SET measurement_version_id=$1, color_fabric=$2, notes=$3, due_date=$4, updated_at=NOW()
+         WHERE id=$5`,
+        [versionId, data.colorFabric || null, data.notes || null, data.dueDate || null, data.orderId]
+      );
+    }
 
     await client.query('COMMIT');
 
@@ -517,90 +752,7 @@ export async function updateOrderAction(data: {
   }
 }
 
-// ── Advance Stage with WA feedback (for production board) ────────────────────
-
-export async function advanceStageAction(
-  orderId: string,
-  newStage: TailoringStage
-): Promise<{ success: boolean; waStatus: 'sent' | 'skipped' | 'failed'; message: string }> {
-  await requireRole('admin', 'staff');
-
-  await query(
-    `UPDATE tailoring_orders SET stage=$1, updated_at=NOW() WHERE id=$2`,
-    [newStage, orderId]
-  );
-  revalidatePath(`/tailoring/${orderId}`);
-  revalidatePath('/tailoring/production');
-
-  if (newStage !== 'ready' && newStage !== 'delivered') {
-    return { success: true, waStatus: 'skipped', message: 'Stage updated.' };
-  }
-
-  try {
-    const { rows } = await query<{
-      phone: string | null; name: string; order_number: string; group_number: string | null; batch_id: string | null;
-    }>(
-      `SELECT c.phone, c.name, o.order_number, o.group_number, o.batch_id
-       FROM tailoring_orders o JOIN customers c ON c.id = o.customer_id WHERE o.id=$1`,
-      [orderId]
-    );
-    const r = rows[0];
-    if (!r?.phone) {
-      return { success: true, waStatus: 'skipped', message: 'Stage updated. Customer has no phone.' };
-    }
-
-    const displayRef = r.group_number ?? r.order_number;
-
-    // Batch logic: hold until all siblings reach the same threshold
-    if (r.batch_id) {
-      const allReady     = newStage === 'ready'     ? await isBatchFullyAt(r.batch_id, 'ready', ['delivered']) : false;
-      const allDelivered = newStage === 'delivered' ? await isBatchFullyAt(r.batch_id, 'delivered', []) : false;
-      const allDone = newStage === 'ready' ? allReady : allDelivered;
-
-      if (!allDone) {
-        return {
-          success: true,
-          waStatus: 'skipped',
-          message: `Stage updated. Waiting for other items in this batch before sending WhatsApp.`,
-        };
-      }
-
-      // All batch orders ready/delivered — send ONE message using group_number
-      const first = await batchFirstOrder(r.batch_id);
-      const batchDisplayRef = first?.group_number ?? first?.order_number ?? displayRef;
-      let waRes;
-      if (newStage === 'ready') {
-        const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
-        waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, batchDisplayRef], pdfPath);
-      } else {
-        waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, batchDisplayRef]);
-      }
-      if (waRes.success) {
-        return { success: true, waStatus: 'sent', message: '✅ Stage updated. WhatsApp sent (all batch items complete).' };
-      }
-      return { success: true, waStatus: 'failed', message: `⚠️ Stage updated. WhatsApp failed — ${waRes.error ?? 'unknown'}` };
-    }
-
-    // Single order — send immediately
-    let waRes;
-    if (newStage === 'ready') {
-      const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
-      waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_ready', [r.name, displayRef], pdfPath);
-    } else {
-      waRes = await sendWhatsAppTemplate(r.phone, 'sutra_order_delivered', [r.name, displayRef]);
-    }
-
-    if (waRes.success) {
-      return { success: true, waStatus: 'sent', message: '✅ Stage updated. WhatsApp sent to customer.' };
-    }
-    return { success: true, waStatus: 'failed', message: `⚠️ Stage updated. WhatsApp failed — ${waRes.error ?? 'unknown'}` };
-  } catch (e) {
-    console.error('[advanceStageAction] WA error:', e);
-    return { success: true, waStatus: 'failed', message: '⚠️ Stage updated. WhatsApp failed.' };
-  }
-}
-
-// ── Change Tailor (stays in production, notifies old + new tailor) ─────────────
+// ── Change Tailor (notifies old + new tailor) ─────────────────────────────
 
 export async function changeTailorAction(
   formData: FormData

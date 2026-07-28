@@ -14,7 +14,7 @@ interface Field {
 
 export interface OrderDetailsPanelProps {
   orderId: string;
-  stage: string;
+  status: string;
   // Editable
   currentColorFabric: string | null;
   currentNotes: string | null;
@@ -29,7 +29,7 @@ export interface OrderDetailsPanelProps {
   designId: string;
   designName: string;
   designCategory: string | null;
-  price: number;
+  totalAmount: number;
 }
 
 const fmt = (n: number) =>
@@ -41,20 +41,21 @@ const fmtDate = (d: string | null) =>
 export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
   const router = useRouter();
   const {
-    orderId, stage,
+    orderId, status,
     currentColorFabric, currentNotes, currentDueDate,
     fields, currentMeasurements, currentVersionNumber,
     customerId, customerName, customerPhone,
-    designId, designName, designCategory, price,
+    designId, designName, designCategory, totalAmount,
   } = props;
 
-  const canEdit = stage === 'placed' || stage === 'production';
+  const canEdit = status === 'in_progress';
 
   const [editing, setEditing]           = useState(false);
   const [measurements, setMeasurements] = useState<Record<string, string>>(currentMeasurements);
   const [colorFabric, setColorFabric]   = useState(currentColorFabric ?? '');
   const [notes, setNotes]               = useState(currentNotes ?? '');
   const [dueDate, setDueDate]           = useState(currentDueDate ?? '');
+  const [amount, setAmount]             = useState(String(totalAmount));
   const [error, setError]               = useState<string | null>(null);
   const [isPending, startTrans]         = useTransition();
 
@@ -64,11 +65,17 @@ export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
     setColorFabric(currentColorFabric ?? '');
     setNotes(currentNotes ?? '');
     setDueDate(currentDueDate ?? '');
+    setAmount(String(totalAmount));
     setError(null);
   }
 
   function handleSave() {
     setError(null);
+    const parsedAmount = parseFloat(amount);
+    if (!(parsedAmount >= 0)) {
+      setError('Enter a valid total amount.');
+      return;
+    }
     startTrans(async () => {
       const res = await updateOrderAction({
         orderId,
@@ -76,6 +83,7 @@ export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
         colorFabric: colorFabric || undefined,
         notes: notes || undefined,
         dueDate: dueDate || null,
+        totalAmount: parsedAmount,
       });
       if (res.success) {
         setEditing(false);
@@ -145,8 +153,24 @@ export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
             {designCategory && <dd className="text-xs text-gray-400">{designCategory}</dd>}
           </div>
           <div>
-            <dt className="text-xs text-gray-400">Price</dt>
-            <dd className="text-lg font-bold text-gray-900">{fmt(price)}</dd>
+            <dt className="text-xs text-gray-400">Total Amount</dt>
+            {editing ? (
+              <dd className="mt-0.5">
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">₹</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="input w-full pl-7 text-sm py-1"
+                  />
+                </div>
+              </dd>
+            ) : (
+              <dd className="text-lg font-bold text-gray-900">{fmt(totalAmount)}</dd>
+            )}
           </div>
           <div>
             <dt className="text-xs text-gray-400">Due Date</dt>

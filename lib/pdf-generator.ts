@@ -367,8 +367,9 @@ async function getTailoringOrderData(orderId: string) {
       customer_name: string; customer_phone: string | null;
       design_name: string; design_category: string | null; design_photo: string | null;
     }>(
+      // total_amount (not price) is the up-to-date figure — edits/alterations only update total_amount.
       `SELECT o.id, o.order_number, o.group_number, o.suffix,
-              o.price::text, o.gst_rate::text, o.due_date::text, o.notes, o.color_fabric, o.created_at::text,
+              o.total_amount::text AS price, o.gst_rate::text, o.due_date::text, o.notes, o.color_fabric, o.created_at::text,
               c.name AS customer_name, c.phone AS customer_phone,
               d.name AS design_name, d.category AS design_category, d.photo_path AS design_photo
        FROM tailoring_orders o

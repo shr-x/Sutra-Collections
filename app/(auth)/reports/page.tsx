@@ -43,6 +43,13 @@ const ALL_REPORTS = [
     roles:       ['admin'] as Role[],
   },
   {
+    href:        '/reports/customer-dues',
+    label:       'Customer Dues',
+    description: 'Tailoring orders delivered on credit — who owes what, and since when.',
+    icon:        '💳',
+    roles:       ['admin', 'accountant'] as Role[],
+  },
+  {
     href:        '/reports/audit',
     label:       'Audit Log',
     description: 'Every create / update / delete action — who did it, when, and what changed.',

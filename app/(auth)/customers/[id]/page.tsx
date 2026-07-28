@@ -22,7 +22,7 @@ interface InvoiceRow {
 export default async function CustomerDetailPage({ params }: { params: { id: string } }) {
   const session = await requireRole('admin');
 
-  const [custRes, invoicesRes, outstandingRes, measurementsRes, insightsRes, loyaltyRes] = await Promise.all([
+  const [custRes, invoicesRes, outstandingRes, measurementsRes, insightsRes, loyaltyRes, tailoringDuesRes] = await Promise.all([
     query<Customer & { store_credit_balance: number; loyalty_points_balance: number; date_of_birth: string | null }>(
       `SELECT *, store_credit_balance, loyalty_points_balance, date_of_birth FROM customers WHERE id=$1`, [params.id]
     ),
@@ -73,6 +73,11 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
        ORDER BY lt.created_at DESC LIMIT 20`,
       [params.id]
     ),
+    query<{ total: string }>(
+      `SELECT COALESCE(SUM(credit_amount), 0)::text AS total
+       FROM tailoring_orders WHERE customer_id=$1 AND credit_amount > 0`,
+      [params.id]
+    ),
   ]);
 
   if (!custRes.rows[0]) notFound();
@@ -86,6 +91,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
   }));
   const outstanding = Number(outstandingRes.rows[0]?.outstanding ?? 0);
   const storeCredit = Number(c.store_credit_balance ?? 0);
+  const tailoringDues = Number(tailoringDuesRes.rows[0]?.total ?? 0);
 
   type MeasRow = {
     id: string; version_number: number; created_at: string;
@@ -265,6 +271,12 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
                 <div className="flex items-center justify-between rounded-lg bg-blue-50 border border-blue-200 px-4 py-3">
                   <span className="text-sm font-medium text-blue-700">Store Credit</span>
                   <span className="text-base font-bold text-blue-800">{formatInr(storeCredit)}</span>
+                </div>
+              )}
+              {tailoringDues > 0 && (
+                <div className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+                  <span className="text-sm font-medium text-amber-800">Tailoring Credit Due</span>
+                  <span className="text-base font-bold text-amber-800">{formatInr(tailoringDues)}</span>
                 </div>
               )}
               {!c.phone && (

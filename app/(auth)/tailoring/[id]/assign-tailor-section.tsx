@@ -7,12 +7,12 @@ interface Tailor { id: string; name: string; specialty: string | null }
 
 interface Props {
   orderId: string;
-  stage: string;
+  status: string;
   currentTailorId: string | null;
   currentTailorName: string | null;
 }
 
-export default function AssignTailorSection({ orderId, stage, currentTailorId, currentTailorName }: Props) {
+export default function AssignTailorSection({ orderId, status, currentTailorId, currentTailorName }: Props) {
   const [tailors, setTailors]   = useState<Tailor[]>([]);
   const [loading, setLoading]   = useState(false);
   const [open, setOpen]         = useState(false);
@@ -42,7 +42,7 @@ export default function AssignTailorSection({ orderId, stage, currentTailorId, c
       const res = await assignTailorAction(fd);
       if (res.success) {
         showToast(`✅ Tailor assigned. WhatsApp being sent…`);
-        // Reload to reflect new stage
+        // Reload to reflect the newly assigned tailor
         setTimeout(() => window.location.reload(), 1200);
       } else {
         showToast(`⚠️ ${res.error ?? 'Failed to assign tailor.'}`);
@@ -66,10 +66,10 @@ export default function AssignTailorSection({ orderId, stage, currentTailorId, c
     });
   }
 
-  const handleSelect = stage === 'placed' ? handleAssign : handleChange;
-  const isAssigning  = stage === 'placed';
+  const isAssigning  = !currentTailorId;
+  const handleSelect = isAssigning ? handleAssign : handleChange;
 
-  if (stage !== 'placed' && stage !== 'production') return null;
+  if (status !== 'in_progress') return null;
 
   return (
     <div>
@@ -90,7 +90,7 @@ export default function AssignTailorSection({ orderId, stage, currentTailorId, c
         </div>
       )}
 
-      {/* Assign button when no tailor yet (placed stage) */}
+      {/* Assign button when no tailor yet */}
       {isAssigning && !currentTailorId && !open && (
         <button
           type="button"
@@ -98,7 +98,7 @@ export default function AssignTailorSection({ orderId, stage, currentTailorId, c
           disabled={isPending}
           className="mb-3 w-full rounded-lg border-2 border-dashed border-purple-200 py-2.5 text-sm font-medium text-purple-600 transition-colors hover:border-purple-400 hover:bg-purple-50 disabled:opacity-40"
         >
-          {isPending ? 'Assigning…' : '+ Assign Tailor & Move to Production'}
+          {isPending ? 'Assigning…' : '+ Assign Tailor'}
         </button>
       )}
 

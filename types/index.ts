@@ -295,6 +295,30 @@ export interface LineItemDraft {
 
 export type TailoringStage = 'placed' | 'production' | 'ready' | 'delivered';
 
+// Order lifecycle status. Replaces TailoringStage going forward — the old
+// `stage` column/values are kept in the DB for safety but unused by new code.
+export type TailoringStatus = 'in_progress' | 'ready_for_pickup' | 'picked_up' | 'delivered';
+
+export type TailoringPaymentMode = 'cash' | 'upi' | 'card';
+
+export interface TailoringPayment {
+  id: string;
+  tailoring_order_id: string;
+  amount: number;
+  payment_mode: TailoringPaymentMode;
+  recorded_at: Date;
+  recorded_by: string | null;
+}
+
+export interface TailoringAlteration {
+  id: string;
+  tailoring_order_id: string;
+  description: string;
+  price_adjustment: number;
+  requested_at: Date;
+  requested_by: string | null;
+}
+
 export interface Design {
   id: string;
   name: string;
@@ -342,6 +366,12 @@ export interface TailoringOrder {
   color_fabric: string | null;
   price: number;
   stage: TailoringStage;
+  status: TailoringStatus;
+  total_amount: number;
+  amount_paid: number;
+  credit_amount: number;
+  credited_at: Date | null;
+  delivered_at: Date | null;
   due_date: Date | null;
   notes: string | null;
   tailor_id: string | null;

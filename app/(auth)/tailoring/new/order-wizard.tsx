@@ -96,6 +96,8 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
   const [price, setPrice]                 = useState('');
   const [dueDate, setDueDate]             = useState('');
   const [notes, setNotes]                 = useState('');
+  const [advanceAmount, setAdvanceAmount] = useState('');
+  const [advanceMode, setAdvanceMode]     = useState<'cash' | 'upi' | 'card'>('cash');
   const [submitError, setSubmitError]     = useState<string | null>(null);
 
   // Batch session state
@@ -173,6 +175,8 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
     setPrice('');
     setDueDate('');
     setNotes('');
+    setAdvanceAmount('');
+    setAdvanceMode('cash');
     setSubmitError(null);
     setCustSearch('');
   }
@@ -196,6 +200,8 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
         notes:           notes || undefined,
         batchId:         currentBatchId,
         suppressWhatsApp: true,
+        advanceAmount:      advanceAmount ? parseFloat(advanceAmount) : undefined,
+        advancePaymentMode: advanceAmount ? advanceMode : undefined,
       });
 
       if (result.success) {
@@ -229,6 +235,8 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
         notes:           notes || undefined,
         batchId:         batchId ?? undefined,
         suppressWhatsApp: isBatch, // suppress individual WA; batch confirmation fired below
+        advanceAmount:      advanceAmount ? parseFloat(advanceAmount) : undefined,
+        advancePaymentMode: advanceAmount ? advanceMode : undefined,
       });
 
       if (result.success && result.orderId) {
@@ -556,6 +564,35 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
               required
             />
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Advance Payment (optional)</label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">₹</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={advanceAmount}
+                onChange={(e) => setAdvanceAmount(e.target.value)}
+                className="input w-full pl-7"
+                placeholder="0.00 (no advance)"
+              />
+            </div>
+            <select
+              value={advanceMode}
+              onChange={(e) => setAdvanceMode(e.target.value as 'cash' | 'upi' | 'card')}
+              disabled={!advanceAmount}
+              className="input w-32 disabled:opacity-50"
+            >
+              <option value="cash">Cash</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
+            </select>
+          </div>
+          <p className="mt-1 text-xs text-gray-400">Leave blank to save with zero advance — balance can be collected any time from the order page.</p>
         </div>
 
         <div>

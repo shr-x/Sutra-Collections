@@ -20,7 +20,7 @@ export default async function TailorsPage() {
 
   const { rows } = await query<TailorRow>(
     `SELECT t.id, t.name, t.phone, t.specialty, t.is_active,
-            COUNT(o.id) FILTER (WHERE o.stage NOT IN ('delivered'))::text AS active_orders,
+            COUNT(o.id) FILTER (WHERE o.status NOT IN ('delivered'))::text AS active_orders,
             COUNT(o.id)::text AS total_orders
      FROM tailors t
      LEFT JOIN tailoring_orders o ON o.tailor_id = t.id

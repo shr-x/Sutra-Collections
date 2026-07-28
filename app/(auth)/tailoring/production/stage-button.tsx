@@ -1,25 +1,28 @@
 'use client';
 
 import { useTransition, useState } from 'react';
-import { advanceStageAction } from '../actions';
-import type { TailoringStage } from '@/types';
+import { useRouter } from 'next/navigation';
+import { advanceStatusAction } from '../actions';
+import type { TailoringStatus } from '@/types';
 
 interface Props {
   orderId: string;
-  newStage: TailoringStage;
+  newStatus: TailoringStatus;
   label: string;
 }
 
-export default function StageButton({ orderId, newStage, label }: Props) {
+export default function StageButton({ orderId, newStatus, label }: Props) {
+  const router = useRouter();
   const [isPending, startTrans] = useTransition();
   const [toast, setToast]       = useState<{ msg: string; ok: boolean } | null>(null);
 
   function handle() {
     startTrans(async () => {
-      const res = await advanceStageAction(orderId, newStage);
+      const res = await advanceStatusAction(orderId, newStatus);
       const ok  = res.waStatus !== 'failed';
       setToast({ msg: res.message, ok });
       setTimeout(() => setToast(null), 4500);
+      if (res.success) router.refresh();
     });
   }
 

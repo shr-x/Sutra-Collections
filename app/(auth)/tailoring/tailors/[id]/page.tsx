@@ -5,19 +5,19 @@ import { requireRole } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import { updateTailorAction, toggleTailorActiveAction } from '../actions';
-import type { TailoringStage } from '@/types';
+import type { TailoringStatus } from '@/types';
 
 export const metadata: Metadata = { title: 'Tailor Profile' };
 
-const STAGE_BADGE: Record<TailoringStage, string> = {
-  placed:     'bg-blue-100 text-blue-700',
-  production: 'bg-yellow-100 text-yellow-700',
-  ready:      'bg-green-100 text-green-700',
-  delivered:  'bg-gray-100 text-gray-500',
+const STATUS_BADGE: Record<TailoringStatus, string> = {
+  in_progress:      'bg-amber-100 text-amber-700',
+  ready_for_pickup: 'bg-green-100 text-green-700',
+  picked_up:        'bg-blue-100 text-blue-700',
+  delivered:        'bg-gray-100 text-gray-500',
 };
 
-const STAGE_LABEL: Record<TailoringStage, string> = {
-  placed: 'Placed', production: 'In Production', ready: 'Ready', delivered: 'Delivered',
+const STATUS_LABEL: Record<TailoringStatus, string> = {
+  in_progress: 'In Progress', ready_for_pickup: 'Ready for Pickup', picked_up: 'Picked Up', delivered: 'Delivered',
 };
 
 interface PageProps {
@@ -37,35 +37,35 @@ export default async function TailorProfilePage({ params }: PageProps) {
 
   const [activeRes, completedRes, statsRes] = await Promise.all([
     query<{
-      id: string; order_number: string; stage: string; price: string;
+      id: string; order_number: string; status: string; total_amount: string;
       due_date: string | null; design_name: string; customer_name: string;
     }>(
-      `SELECT o.id, o.order_number, o.stage, o.price::text, o.due_date::text,
+      `SELECT o.id, o.order_number, o.status, o.total_amount::text, o.due_date::text,
               d.name AS design_name, c.name AS customer_name
        FROM tailoring_orders o
        JOIN designs   d ON d.id = o.design_id
        JOIN customers c ON c.id = o.customer_id
-       WHERE o.tailor_id=$1 AND o.stage != 'delivered'
+       WHERE o.tailor_id=$1 AND o.status != 'delivered'
        ORDER BY o.due_date ASC NULLS LAST`,
       [params.id]
     ),
     query<{
-      id: string; order_number: string; price: string;
+      id: string; order_number: string; total_amount: string;
       design_name: string; customer_name: string; updated_at: string;
     }>(
-      `SELECT o.id, o.order_number, o.price::text, o.updated_at::text,
+      `SELECT o.id, o.order_number, o.total_amount::text, o.updated_at::text,
               d.name AS design_name, c.name AS customer_name
        FROM tailoring_orders o
        JOIN designs   d ON d.id = o.design_id
        JOIN customers c ON c.id = o.customer_id
-       WHERE o.tailor_id=$1 AND o.stage='delivered'
+       WHERE o.tailor_id=$1 AND o.status='delivered'
        ORDER BY o.updated_at DESC LIMIT 20`,
       [params.id]
     ),
     query<{ total: string; active: string; revenue: string }>(
       `SELECT COUNT(*)::text AS total,
-              COUNT(*) FILTER (WHERE stage != 'delivered')::text AS active,
-              COALESCE(SUM(price), 0)::text AS revenue
+              COUNT(*) FILTER (WHERE status != 'delivered')::text AS active,
+              COALESCE(SUM(total_amount), 0)::text AS revenue
        FROM tailoring_orders WHERE tailor_id=$1`,
       [params.id]
     ),
@@ -210,9 +210,9 @@ export default async function TailorProfilePage({ params }: PageProps) {
                         <td className="px-3 py-2.5 text-xs text-gray-700">{o.customer_name}</td>
                         <td className="px-3 py-2.5">
                           <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${STAGE_BADGE[o.stage as TailoringStage]}`}
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[o.status as TailoringStatus]}`}
                           >
-                            {STAGE_LABEL[o.stage as TailoringStage]}
+                            {STATUS_LABEL[o.status as TailoringStatus]}
                           </span>
                         </td>
                         <td className="px-3 py-2.5 text-xs">
@@ -226,7 +226,7 @@ export default async function TailorProfilePage({ params }: PageProps) {
                           )}
                         </td>
                         <td className="px-4 py-2.5 text-right text-xs font-medium">
-                          {formatInr(Number(o.price))}
+                          {formatInr(Number(o.total_amount))}
                         </td>
                       </tr>
                     );
@@ -259,7 +259,7 @@ export default async function TailorProfilePage({ params }: PageProps) {
                         {new Date(o.updated_at).toLocaleDateString('en-IN')}
                       </td>
                       <td className="px-4 py-2.5 text-right text-xs font-medium">
-                        {formatInr(Number(o.price))}
+                        {formatInr(Number(o.total_amount))}
                       </td>
                     </tr>
                   ))}

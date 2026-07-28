@@ -58,7 +58,7 @@ export default async function DashboardPage() {
     ),
     // Active tailoring orders — graceful fallback if table doesn't exist
     pool.query<{ cnt: string }>(
-      `SELECT COUNT(*)::text AS cnt FROM tailoring_orders WHERE stage NOT IN ('delivered','cancelled')`
+      `SELECT COUNT(*)::text AS cnt FROM tailoring_orders WHERE status NOT IN ('delivered')`
     ).catch(() => ({ rows: [{ cnt: '0' }] })),
     // Recent 5 invoices
     pool.query<{

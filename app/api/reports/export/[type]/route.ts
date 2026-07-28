@@ -130,7 +130,7 @@ export async function GET(
 
     case 'tailoring-orders': {
       const res = await query(
-        `SELECT o.order_number, o.stage, o.price, o.due_date,
+        `SELECT o.order_number, o.status, o.total_amount, o.amount_paid, o.credit_amount, o.due_date,
                 c.name AS customer, c.phone,
                 d.name AS design, d.category,
                 o.color_fabric, o.notes, o.created_at
@@ -139,11 +139,11 @@ export async function GET(
          JOIN designs   d ON d.id=o.design_id
          ORDER BY o.created_at DESC`
       );
-      jsonRows = res.rows.map((r) => ({ order_number: r.order_number, stage: r.stage, price: r.price, due_date: r.due_date ? new Date(r.due_date).toLocaleDateString('en-IN') : '', customer: r.customer, phone: r.phone ?? '', design: r.design, category: r.category ?? '', color_fabric: r.color_fabric ?? '', notes: r.notes ?? '', created: new Date(r.created_at).toLocaleDateString('en-IN') }));
+      jsonRows = res.rows.map((r) => ({ order_number: r.order_number, status: r.status, total_amount: r.total_amount, amount_paid: r.amount_paid, credit_amount: r.credit_amount, due_date: r.due_date ? new Date(r.due_date).toLocaleDateString('en-IN') : '', customer: r.customer, phone: r.phone ?? '', design: r.design, category: r.category ?? '', color_fabric: r.color_fabric ?? '', notes: r.notes ?? '', created: new Date(r.created_at).toLocaleDateString('en-IN') }));
       data = [
-        ['Order No.','Stage','Price','Due Date','Customer','Phone','Design','Category','Color/Fabric','Notes','Created'],
+        ['Order No.','Status','Total Amount','Amount Paid','Credit Amount','Due Date','Customer','Phone','Design','Category','Color/Fabric','Notes','Created'],
         ...res.rows.map((r) => [
-          r.order_number, r.stage, r.price,
+          r.order_number, r.status, r.total_amount, r.amount_paid, r.credit_amount,
           r.due_date ? new Date(r.due_date).toLocaleDateString('en-IN') : '',
           r.customer, r.phone ?? '', r.design, r.category ?? '',
           r.color_fabric ?? '', r.notes ?? '',
