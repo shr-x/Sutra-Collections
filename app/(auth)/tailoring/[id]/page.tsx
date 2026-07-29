@@ -18,18 +18,16 @@ export const metadata: Metadata = { title: 'Tailoring Order' };
 const STATUS_BADGE: Record<TailoringStatus, string> = {
   in_progress:      'badge-amber',
   ready_for_pickup: 'badge-green',
-  picked_up:        'badge-blue',
   delivered:        'badge-gray',
 };
 
 const STATUS_LABEL: Record<TailoringStatus, string> = {
   in_progress:      'In Progress',
   ready_for_pickup: 'Ready for Pickup',
-  picked_up:        'Picked Up',
   delivered:        'Delivered',
 };
 
-const ALL_STATUSES: TailoringStatus[] = ['in_progress', 'ready_for_pickup', 'picked_up', 'delivered'];
+const ALL_STATUSES: TailoringStatus[] = ['in_progress', 'ready_for_pickup', 'delivered'];
 
 export default async function TailoringOrderDetailPage({ params }: { params: { id: string } }) {
   const session = await requireRole('admin', 'staff');
@@ -268,11 +266,11 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
               />
             )}
 
-            {/* Forward status advance (in_progress -> ready_for_pickup -> picked_up) */}
+            {/* Forward status advance (in_progress -> ready_for_pickup) */}
             <StatusActions orderId={order.id} status={status} />
 
-            {/* Delivery decision — only once the customer has physically picked it up */}
-            {status === 'picked_up' && (
+            {/* Delivery decision — available once ready for pickup */}
+            {status === 'ready_for_pickup' && (
               <DeliveryActions orderId={order.id} balanceDue={balanceDue} />
             )}
           </div>

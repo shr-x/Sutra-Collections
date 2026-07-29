@@ -6,8 +6,7 @@ import { advanceStatusAction } from '../actions';
 import type { TailoringStatus } from '@/types';
 
 const NEXT: Partial<Record<TailoringStatus, { target: TailoringStatus; label: string }>> = {
-  in_progress:      { target: 'ready_for_pickup', label: 'Mark Ready for Pickup' },
-  ready_for_pickup: { target: 'picked_up',         label: 'Mark Picked Up' },
+  in_progress: { target: 'ready_for_pickup', label: 'Mark Ready for Pickup' },
 };
 
 export default function StatusActions({ orderId, status }: { orderId: string; status: TailoringStatus }) {

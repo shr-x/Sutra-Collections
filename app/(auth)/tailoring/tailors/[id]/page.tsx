@@ -12,12 +12,11 @@ export const metadata: Metadata = { title: 'Tailor Profile' };
 const STATUS_BADGE: Record<TailoringStatus, string> = {
   in_progress:      'bg-amber-100 text-amber-700',
   ready_for_pickup: 'bg-green-100 text-green-700',
-  picked_up:        'bg-blue-100 text-blue-700',
   delivered:        'bg-gray-100 text-gray-500',
 };
 
 const STATUS_LABEL: Record<TailoringStatus, string> = {
-  in_progress: 'In Progress', ready_for_pickup: 'Ready for Pickup', picked_up: 'Picked Up', delivered: 'Delivered',
+  in_progress: 'In Progress', ready_for_pickup: 'Ready for Pickup', delivered: 'Delivered',
 };
 
 interface PageProps {

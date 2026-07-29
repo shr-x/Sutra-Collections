@@ -630,13 +630,13 @@
     "semantic_hash": "8d5cdf7897a70887f8ce1d62846853b8"
   },
   "app/(auth)/tailoring/[id]/page.tsx": {
-    "mtime": 1785251661.1605232,
-    "ast_hash": "7906129b3cc8847739bf9d447377eea8",
+    "mtime": 1785231570.1583781,
+    "ast_hash": "daf226b2eabb66ae0ee74d7ee9089593",
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/actions.ts": {
-    "mtime": 1785250101.2023947,
-    "ast_hash": "ebf317377a210c53a6e63210a793fb35",
+    "mtime": 1785230867.7315137,
+    "ast_hash": "3dab74934eab6a130ccd8df655c37550",
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/new/order-wizard.tsx": {
@@ -650,13 +650,13 @@
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/page.tsx": {
-    "mtime": 1785250564.1435893,
-    "ast_hash": "d2e141497037fb6943e496e2e8359ccb",
+    "mtime": 1785231604.8940995,
+    "ast_hash": "1f419de90b0fffb447231f1ac212292f",
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/production/page.tsx": {
-    "mtime": 1785251449.065524,
-    "ast_hash": "b508d6ed6bcfa052f0d5249f5a164d61",
+    "mtime": 1785232409.071974,
+    "ast_hash": "d4237ae9af55e5d413a0a3d55ce11d9d",
     "semantic_hash": ""
   },
   "app/api/accounting/gstr1/route.ts": {
@@ -1105,8 +1105,8 @@
     "semantic_hash": "1507ae427d7f93cb94108583d6a2e320"
   },
   "types/index.ts": {
-    "mtime": 1785249521.8065653,
-    "ast_hash": "3c7e75c0275d536ce9892036350ea592",
+    "mtime": 1785230753.5466607,
+    "ast_hash": "478dd1e902938ec02d46120bf242e234",
     "semantic_hash": ""
   },
   "updater/update.sh": {
@@ -1215,8 +1215,8 @@
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/tailors/[id]/page.tsx": {
-    "mtime": 1785250442.801935,
-    "ast_hash": "1ef787da37e67dd7eacc59007807046d",
+    "mtime": 1785232356.4751577,
+    "ast_hash": "20b69eb4cbe6050d5fdd57879b9ab0fc",
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/tailors/actions.ts": {
@@ -1890,8 +1890,8 @@
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/[id]/alteration-section.tsx": {
-    "mtime": 1785251225.1930056,
-    "ast_hash": "111cf5e6031a4ffd9a91a071ee1a8065",
+    "mtime": 1785231529.9274943,
+    "ast_hash": "2e21dced67afc53281a12a38b5d891fb",
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/[id]/delivery-actions.tsx": {
@@ -1900,33 +1900,18 @@
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/[id]/payment-section.tsx": {
-    "mtime": 1785251014.0999172,
-    "ast_hash": "c901759804925140bd61d26fa6419e6a",
+    "mtime": 1785231512.374855,
+    "ast_hash": "6d73013a107ebfc33cb02fc1244cac92",
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/[id]/status-actions.tsx": {
-    "mtime": 1785250273.327885,
-    "ast_hash": "d19535d68f9856b0c65554f98b029469",
+    "mtime": 1785231479.9441786,
+    "ast_hash": "a34a9b75d53449268a3c86e85371561e",
     "semantic_hash": ""
   },
   "db/migrations/002_tailoring_lifecycle.sql": {
     "mtime": 1785232790.7884653,
     "ast_hash": "a23de76ae91a970870a7c9ee5553e21e",
-    "semantic_hash": ""
-  },
-  "app/(auth)/tailoring/[id]/record-payment-button.tsx": {
-    "mtime": 1785250679.5798118,
-    "ast_hash": "1161420a1be6254093f3c5c6513390c4",
-    "semantic_hash": ""
-  },
-  "app/(auth)/tailoring/[id]/request-alteration-button.tsx": {
-    "mtime": 1785250754.0490437,
-    "ast_hash": "e05e65cab1b7e2d86426988b38808006",
-    "semantic_hash": ""
-  },
-  "db/migrations/003_remove_picked_up_stage.sql": {
-    "mtime": 1785249593.1523368,
-    "ast_hash": "bca356bd0b2e4cf70db6a0ebaafe1140",
     "semantic_hash": ""
   }
 }

@@ -5,6 +5,9 @@ import { query } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import AssignTailorButton from './assign-tailor-button';
 import StageButton from './stage-button';
+import RecordPaymentButton from '../[id]/record-payment-button';
+import RequestAlterationButton from '../[id]/request-alteration-button';
+import DeliveryActions from '../[id]/delivery-actions';
 import type { TailoringStatus } from '@/types';
 
 export const metadata: Metadata = { title: 'Production Board' };
@@ -16,6 +19,7 @@ interface OrderRow {
   suffix: string | null;
   status: TailoringStatus;
   total_amount: string;
+  amount_paid: string;
   due_date: string | null;
   customer_name: string;
   design_name: string;
@@ -26,30 +30,29 @@ interface OrderRow {
   batch_size: number | null;
 }
 
-const COLUMNS: { status: TailoringStatus; label: string; hdr: string; border: string }[] = [
-  { status: 'in_progress',      label: 'In Progress',      hdr: 'bg-amber-100 text-amber-800',  border: 'border-amber-200 bg-amber-50' },
-  { status: 'ready_for_pickup', label: 'Ready for Pickup', hdr: 'bg-green-100 text-green-800',   border: 'border-green-200 bg-green-50' },
-  { status: 'picked_up',        label: 'Picked Up',        hdr: 'bg-blue-100 text-blue-800',     border: 'border-blue-200 bg-blue-50' },
-  { status: 'delivered',        label: 'Delivered',         hdr: 'bg-gray-100 text-gray-600',     border: 'border-gray-200 bg-gray-50' },
+// Board columns are a DISPLAY split, not a new status — "Unassigned" vs
+// "In Production" are both status='in_progress', split purely on tailor_id.
+type ColumnKey = 'unassigned' | 'in_production' | 'ready_for_pickup' | 'delivered';
+
+function columnOf(o: OrderRow): ColumnKey {
+  if (o.status === 'delivered') return 'delivered';
+  if (o.status === 'ready_for_pickup') return 'ready_for_pickup';
+  return o.tailor_id ? 'in_production' : 'unassigned';
+}
+
+const COLUMNS: { key: ColumnKey; label: string; hdr: string; border: string }[] = [
+  { key: 'unassigned',       label: 'Unassigned',       hdr: 'bg-red-100 text-red-800',      border: 'border-red-200 bg-red-50' },
+  { key: 'in_production',    label: 'In Production',    hdr: 'bg-amber-100 text-amber-800',  border: 'border-amber-200 bg-amber-50' },
+  { key: 'ready_for_pickup', label: 'Ready for Pickup', hdr: 'bg-green-100 text-green-800',  border: 'border-green-200 bg-green-50' },
+  { key: 'delivered',        label: 'Delivered',        hdr: 'bg-gray-100 text-gray-600',    border: 'border-gray-200 bg-gray-50' },
 ];
-
-// Only these two transitions can happen from the board — 'delivered' always
-// requires the payment-aware actions on the order detail page.
-const NEXT_STATUS: Partial<Record<TailoringStatus, TailoringStatus>> = {
-  in_progress:      'ready_for_pickup',
-  ready_for_pickup: 'picked_up',
-};
-
-const NEXT_LABEL: Partial<Record<TailoringStatus, string>> = {
-  in_progress:      '→ Ready for Pickup',
-  ready_for_pickup: '→ Picked Up',
-};
 
 export default async function ProductionBoardPage() {
   await requireRole('admin');
 
   const orderQuery = `
-    SELECT o.id, o.order_number, o.group_number, o.suffix, o.status, o.total_amount::text, o.due_date::text,
+    SELECT o.id, o.order_number, o.group_number, o.suffix, o.status,
+           o.total_amount::text, o.amount_paid::text, o.due_date::text,
            COALESCE(o.customer_name_snapshot, c.name, 'Unknown') AS customer_name,
            d.name AS design_name,
            o.color_fabric,
@@ -75,7 +78,7 @@ export default async function ProductionBoardPage() {
   ]);
 
   const allOrders = [...res.rows, ...deliveredRes.rows];
-  const byStatus  = (s: TailoringStatus) => allOrders.filter((o) => o.status === s);
+  const byColumn = (key: ColumnKey) => allOrders.filter((o) => columnOf(o) === key);
 
   return (
     <div className="md:flex md:flex-col md:h-[calc(100vh-120px)]">
@@ -92,12 +95,11 @@ export default async function ProductionBoardPage() {
 
       {/* Board — fixed height, 4 scrollable columns */}
       <div className="grid min-h-0 md:flex-1 grid-cols-1 gap-3 md:overflow-hidden md:grid-cols-2 xl:grid-cols-4">
-        {COLUMNS.map(({ status, label, hdr, border }) => {
-          const orders    = byStatus(status);
-          const nextStatus = NEXT_STATUS[status];
+        {COLUMNS.map(({ key, label, hdr, border }) => {
+          const orders = byColumn(key);
           return (
             <div
-              key={status}
+              key={key}
               className={`flex flex-col md:overflow-hidden rounded-xl border ${border}`}
             >
               {/* Column header */}
@@ -114,8 +116,10 @@ export default async function ProductionBoardPage() {
                   <p className="py-8 text-center text-xs text-gray-400">No orders</p>
                 ) : (
                   orders.map((o) => {
-                    const isOverdue =
-                      o.due_date && new Date(o.due_date) < new Date() && status !== 'delivered';
+                    const total     = Number(o.total_amount);
+                    const paid      = Number(o.amount_paid);
+                    const balance   = Math.max(0, Math.round((total - paid) * 100) / 100);
+                    const isOverdue = o.due_date && new Date(o.due_date) < new Date() && key !== 'delivered';
                     return (
                       <div
                         key={o.id}
@@ -140,7 +144,7 @@ export default async function ProductionBoardPage() {
                             )}
                           </div>
                           <span className="text-xs font-semibold text-gray-700 shrink-0">
-                            {formatInr(Number(o.total_amount))}
+                            {formatInr(total)}
                           </span>
                         </div>
 
@@ -168,32 +172,82 @@ export default async function ProductionBoardPage() {
                           </div>
                         )}
 
-                        {/* Assign / change tailor — only while stitching is in progress */}
-                        {status === 'in_progress' && (
-                          <AssignTailorButton
-                            orderId={o.id}
-                            currentTailorId={o.tailor_id}
-                            currentTailorName={o.tailor_name}
-                          />
+                        {/* ── Unassigned: assign a tailor + optional payment ── */}
+                        {key === 'unassigned' && (
+                          <>
+                            <AssignTailorButton
+                              orderId={o.id}
+                              currentTailorId={o.tailor_id}
+                              currentTailorName={o.tailor_name}
+                            />
+                            <RecordPaymentButton
+                              orderId={o.id}
+                              balanceDue={balance}
+                              label="+ Record Payment"
+                              className="w-full rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
+                            />
+                          </>
                         )}
 
-                        {/* Status advance — in_progress and ready_for_pickup only.
-                            picked_up -> delivered always goes through the order
-                            detail page's payment-aware delivery actions. */}
-                        {nextStatus && (
-                          <StageButton
-                            orderId={o.id}
-                            newStatus={nextStatus}
-                            label={NEXT_LABEL[status]!}
-                          />
+                        {/* ── In Production: advance to Ready, reassign tailor, payment ── */}
+                        {key === 'in_production' && (
+                          <>
+                            <StageButton orderId={o.id} newStatus="ready_for_pickup" label="→ Ready for Pickup" />
+                            <AssignTailorButton
+                              orderId={o.id}
+                              currentTailorId={o.tailor_id}
+                              currentTailorName={o.tailor_name}
+                            />
+                            <RecordPaymentButton
+                              orderId={o.id}
+                              balanceDue={balance}
+                              label="+ Record Payment"
+                              className="w-full rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
+                            />
+                          </>
                         )}
-                        {status === 'picked_up' && (
-                          <Link
-                            href={`/tailoring/${o.id}`}
-                            className="block w-full rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-center text-xs font-medium text-blue-700 hover:bg-blue-100"
-                          >
-                            Deliver →
-                          </Link>
+
+                        {/* ── Ready for Pickup: balance + delivery decision + payment/alteration ── */}
+                        {key === 'ready_for_pickup' && (
+                          <>
+                            <div className="flex items-center justify-between rounded-md bg-gray-50 px-2.5 py-1.5 text-xs">
+                              <span className="text-gray-500">Balance Due</span>
+                              <span className={balance > 0 ? 'font-semibold text-red-700' : 'font-semibold text-gray-400'}>
+                                {balance > 0 ? formatInr(balance) : '—'}
+                              </span>
+                            </div>
+                            <DeliveryActions orderId={o.id} balanceDue={balance} />
+                            <div className="flex gap-2">
+                              <RecordPaymentButton
+                                orderId={o.id}
+                                balanceDue={balance}
+                                label="+ Payment"
+                                className="flex-1 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
+                              />
+                              <RequestAlterationButton
+                                orderId={o.id}
+                                label="+ Alteration"
+                                className="flex-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
+                              />
+                            </div>
+                          </>
+                        )}
+
+                        {/* ── Delivered: residual payment + alteration only ── */}
+                        {key === 'delivered' && (
+                          <div className="flex gap-2">
+                            <RecordPaymentButton
+                              orderId={o.id}
+                              balanceDue={balance}
+                              label="+ Payment"
+                              className="flex-1 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
+                            />
+                            <RequestAlterationButton
+                              orderId={o.id}
+                              label="+ Alteration"
+                              className="flex-1 rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-100"
+                            />
+                          </div>
                         )}
                       </div>
                     );
@@ -201,7 +255,7 @@ export default async function ProductionBoardPage() {
                 )}
               </div>
 
-              {status === 'delivered' && deliveredRes.rows.length === 30 && (
+              {key === 'delivered' && deliveredRes.rows.length === 30 && (
                 <div className="shrink-0 border-t px-4 py-2 text-center">
                   <Link href="/tailoring?status=delivered" className="text-xs text-purple-600 hover:underline">
                     View all delivered →

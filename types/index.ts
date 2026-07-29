@@ -297,7 +297,10 @@ export type TailoringStage = 'placed' | 'production' | 'ready' | 'delivered';
 
 // Order lifecycle status. Replaces TailoringStage going forward — the old
 // `stage` column/values are kept in the DB for safety but unused by new code.
-export type TailoringStatus = 'in_progress' | 'ready_for_pickup' | 'picked_up' | 'delivered';
+// 'picked_up' was removed per client feedback (see db/migrations/003_remove_picked_up_stage.sql) —
+// the production board now shows "Unassigned" vs "In Production" as a DISPLAY split of
+// in_progress (based on tailor_id), not a separate status value.
+export type TailoringStatus = 'in_progress' | 'ready_for_pickup' | 'delivered';
 
 export type TailoringPaymentMode = 'cash' | 'upi' | 'card';
 
