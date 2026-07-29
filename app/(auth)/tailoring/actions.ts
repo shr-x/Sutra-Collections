@@ -100,7 +100,10 @@ async function sendReadyForPickupWhatsApp(orderId: string): Promise<void> {
     );
     const hasAlterations = parseInt(alterRes.rows[0]?.cnt ?? '0', 10) > 0;
     const balance = Math.max(0, Math.round((Number(r.total_amount) - Number(r.amount_paid)) * 100) / 100);
-    const balanceDueLine = balance > 0 ? `Balance due: ₹${balance.toFixed(2)}.` : '';
+    // WhatsApp rejects empty-string template parameters (API error #131008) —
+    // always populate {{4}} with the real balance, including zero, rather than
+    // omitting the line when there's nothing due.
+    const balanceDueLine = `Balance due: ₹${balance.toFixed(2)}.`;
 
     const doSend = async (ref: string) => {
       if (hasAlterations) {

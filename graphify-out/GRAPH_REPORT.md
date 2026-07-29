@@ -1,16 +1,16 @@
 # Graph Report - Sutra Collections  (2026-07-29)
 
 ## Corpus Check
-- 384 files · ~206,686 words
+- 384 files · ~206,710 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1719 nodes · 3869 edges · 143 communities (118 shown, 25 thin omitted)
+- 1719 nodes · 3869 edges · 141 communities (116 shown, 25 thin omitted)
 - Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 337 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `f471db1b`
+- Built from commit: `58816817`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -120,7 +120,6 @@
 - [[_COMMUNITY_Community 105|Community 105]]
 - [[_COMMUNITY_Community 106|Community 106]]
 - [[_COMMUNITY_Community 107|Community 107]]
-- [[_COMMUNITY_Community 108|Community 108]]
 - [[_COMMUNITY_Community 109|Community 109]]
 - [[_COMMUNITY_Community 110|Community 110]]
 - [[_COMMUNITY_Community 111|Community 111]]
@@ -137,7 +136,6 @@
 - [[_COMMUNITY_Community 122|Community 122]]
 - [[_COMMUNITY_Community 124|Community 124]]
 - [[_COMMUNITY_Community 126|Community 126]]
-- [[_COMMUNITY_Community 128|Community 128]]
 - [[_COMMUNITY_Community 129|Community 129]]
 - [[_COMMUNITY_Community 130|Community 130]]
 - [[_COMMUNITY_Community 131|Community 131]]
@@ -185,7 +183,7 @@
 - **ERP Role-Based Access Control (Admin, Accountant, Staff)** — claude_md_role_admin, claude_md_role_accountant, claude_md_role_staff, claude_md_iron_session [EXTRACTED 1.00]
 - **Docker Services with Health-Checked DB Dependency** — docker_compose_db_service, docker_compose_app_service, docker_compose_backup_service [EXTRACTED 1.00]
 
-## Communities (143 total, 25 thin omitted)
+## Communities (141 total, 25 thin omitted)
 
 ### Community 0 - "PDF Rendering & Document Export"
 Cohesion: 0.16
@@ -236,8 +234,8 @@ Cohesion: 0.32
 Nodes (4): EditCustomerPage(), metadata, Props, Customer
 
 ### Community 12 - "Expense Tracking & Forms"
-Cohesion: 0.21
-Nodes (9): postExpense(), runPayrollAction(), RunPayrollInput, updateBaseSalaryAction(), AttendanceSummary, PayrollClient(), PayrollRun, Props (+1 more)
+Cohesion: 0.12
+Nodes (12): migrate(), runSqlFile(), postExpense(), pool, runPayrollAction(), RunPayrollInput, updateBaseSalaryAction(), AttendanceSummary (+4 more)
 
 ### Community 13 - "Design Portal Actions"
 Cohesion: 0.13
@@ -328,8 +326,8 @@ Cohesion: 0.12
 Nodes (20): createJournalEntryAction(), JournalSchema, LineSchema, Account, INIT, JournalLine, AccountBalance, AccountCode (+12 more)
 
 ### Community 35 - "Module Group 35"
-Cohesion: 0.09
-Nodes (22): CustomerDetailPage(), EditItemPage(), NewItemPage(), ItemsPage(), EditSchemePage(), Category, EditTailoringPage(), ItemRow (+14 more)
+Cohesion: 0.08
+Nodes (26): CustomerDetailPage(), EditItemPage(), NewItemPage(), ItemsPage(), EditSchemePage(), EditUserPage(), Props, Category (+18 more)
 
 ### Community 36 - "Module Group 36"
 Cohesion: 0.29
@@ -563,10 +561,6 @@ Nodes (5): metadata, createCreditNoteAction(), CreditNoteSchema, LineSchema, New
 Cohesion: 0.67
 Nodes (3): fmtInr(), GET(), S
 
-### Community 108 - "Community 108"
-Cohesion: 0.29
-Nodes (3): migrate(), runSqlFile(), pool
-
 ### Community 109 - "Community 109"
 Cohesion: 0.67
 Nodes (3): fmtInr(), GET(), S
@@ -602,10 +596,6 @@ Nodes (3): daysInMonth(), metadata, PayrollPage()
 ### Community 122 - "Community 122"
 Cohesion: 0.40
 Nodes (4): metadata, JournalEntryDetailPage(), JournalEntryRow, JournalLineRow
-
-### Community 128 - "Community 128"
-Cohesion: 0.40
-Nodes (4): EditUserPage(), Props, UserRow, Warehouse
 
 ### Community 130 - "Community 130"
 Cohesion: 0.50
@@ -643,7 +633,7 @@ Nodes (3): metadata, TailorRow, TailorsPage()
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `query()` connect `Invoice & Search API Routes` to `PDF Rendering & Document Export`, `Community 128`, `Community 130`, `Billing Import & Debit Note Forms`, `Warehouse Settings Management`, `Community 132`, `Purchase Listing & Search UI`, `CRM, Designs & Reminders`, `Community 136`, `AI Import Wizards`, `Community 138`, `Invoice Builder & Tailoring UI`, `Customer Detail & Edit Pages`, `Design Portal Actions`, `Community 140`, `Community 141`, `Inventory Item Management`, `Community 137`, `Community 142`, `Supplier Management Pages`, `Module Group 21`, `Module Group 25`, `Tailoring Order Flow`, `Module Group 27`, `Module Group 28`, `Module Group 30`, `Community 133`, `Module Group 33`, `Module Group 35`, `Module Group 36`, `Module Group 37`, `Module Group 38`, `Module Group 40`, `Module Group 42`, `Module Group 43`, `Module Group 44`, `Module Group 46`, `Module Group 47`, `Module Group 49`, `Module Group 50`, `Module Group 52`, `Module Group 53`, `Module Group 55`, `Module Group 56`, `Module Group 57`, `Module Group 58`, `Module Group 59`, `Module Group 63`, `Module Group 64`, `Module Group 65`, `Community 77`, `Community 78`, `Community 79`, `Community 80`, `Community 81`, `Community 82`, `Community 84`, `Community 86`, `Community 87`, `Community 88`, `Community 89`, `Community 91`, `Community 93`, `Community 94`, `Community 95`, `Community 98`, `Community 106`, `Community 107`, `Community 109`, `Community 111`, `Community 112`, `Community 114`, `Community 119`?**
+- **Why does `query()` connect `Invoice & Search API Routes` to `PDF Rendering & Document Export`, `Community 130`, `Billing Import & Debit Note Forms`, `Warehouse Settings Management`, `Community 132`, `Purchase Listing & Search UI`, `CRM, Designs & Reminders`, `Community 136`, `AI Import Wizards`, `Community 138`, `Invoice Builder & Tailoring UI`, `Customer Detail & Edit Pages`, `Design Portal Actions`, `Community 140`, `Community 141`, `Inventory Item Management`, `Community 137`, `Community 142`, `Supplier Management Pages`, `Module Group 21`, `Module Group 25`, `Tailoring Order Flow`, `Module Group 27`, `Module Group 28`, `Module Group 30`, `Community 133`, `Module Group 33`, `Module Group 35`, `Module Group 36`, `Module Group 37`, `Module Group 38`, `Module Group 40`, `Module Group 42`, `Module Group 43`, `Module Group 44`, `Module Group 46`, `Module Group 47`, `Module Group 49`, `Module Group 50`, `Module Group 52`, `Module Group 53`, `Module Group 55`, `Module Group 56`, `Module Group 57`, `Module Group 58`, `Module Group 59`, `Module Group 63`, `Module Group 64`, `Module Group 65`, `Community 77`, `Community 78`, `Community 79`, `Community 80`, `Community 81`, `Community 82`, `Community 84`, `Community 86`, `Community 87`, `Community 88`, `Community 89`, `Community 91`, `Community 93`, `Community 94`, `Community 95`, `Community 98`, `Community 106`, `Community 107`, `Community 109`, `Community 111`, `Community 112`, `Community 114`, `Community 119`?**
   _High betweenness centrality (0.229) - this node is a cross-community bridge._
 - **Why does `requireRole()` connect `CRM, Designs & Reminders` to `Community 130`, `Billing Import & Debit Note Forms`, `Warehouse Settings Management`, `Community 131`, `Community 134`, `Community 135`, `Purchase Listing & Search UI`, `AI Import Wizards`, `Community 138`, `Invoice Builder & Tailoring UI`, `Community 139`, `Customer Detail & Edit Pages`, `Design Portal Actions`, `Inventory & Supplier Import API`, `Inventory Item Management`, `Reports & Dashboard Pages`, `Expense Tracking & Forms`, `Community 140`, `Supplier Management Pages`, `Module Group 21`, `Module Group 22`, `Community 142`, `Module Group 24`, `Module Group 25`, `Module Group 26`, `Module Group 27`, `Module Group 28`, `Module Group 29`, `Module Group 30`, `Module Group 31`, `Tailoring Order Flow`, `Module Group 33`, `Module Group 34`, `Module Group 36`, `Module Group 37`, `Module Group 38`, `Module Group 39`, `Module Group 40`, `Module Group 42`, `Module Group 43`, `Module Group 44`, `Module Group 45`, `Module Group 46`, `Module Group 47`, `Community 136`, `Module Group 50`, `Community 137`, `Module Group 53`, `Module Group 55`, `Module Group 61`, `Module Group 65`, `Community 141`, `Community 79`, `Community 86`, `Community 88`, `Community 89`, `Community 91`, `Community 93`, `Community 96`, `Community 97`, `Community 98`, `Community 99`, `Community 101`, `Community 103`, `Community 104`, `Community 106`, `Community 107`, `Community 109`, `Community 111`, `Community 114`, `Community 115`, `Community 116`, `Community 119`, `Community 122`?**
   _High betweenness centrality (0.181) - this node is a cross-community bridge._
