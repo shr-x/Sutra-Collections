@@ -135,6 +135,9 @@ export default async function PurchaseDetailPage({ params }: { params: { id: str
           <div className="flex justify-between text-gray-500"><span>CGST</span><span>{formatInr(Number(pur.total_cgst))}</span></div>
           <div className="flex justify-between text-gray-500"><span>SGST</span><span>{formatInr(Number(pur.total_sgst))}</span></div>
           <div className="flex justify-between font-bold text-base border-t pt-2"><span>Grand Total</span><span className="text-purple-700">{formatInr(Number(pur.grand_total))}</span></div>
+          <div className="text-right text-xs text-gray-400">
+            {pur.is_tax_inclusive ? '(Tax Inclusive)' : '(Tax Exclusive)'}
+          </div>
         </div>
       </div>
 

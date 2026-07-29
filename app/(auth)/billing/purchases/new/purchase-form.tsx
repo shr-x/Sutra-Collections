@@ -95,6 +95,7 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
   const [purchaseDate, setPurchaseDate] = useState(today);
   const [supplierInvNum, setSupplierInvNum] = useState('');
   const [includeInGst, setIncludeInGst] = useState(true);
+  const [isTaxInclusive, setIsTaxInclusive] = useState(true);
   const [notes, setNotes] = useState('');
 
   // Mutable local copy of items — updated in-place when sizes/colours are added
@@ -473,7 +474,7 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
     setShowAddColor(false);
   }, [addItemId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const lineResults = lines.map((l) => calcLine({ quantity: l.quantity, rate: l.rate, gstRate: l.gst_rate }));
+  const lineResults = lines.map((l) => calcLine({ quantity: l.quantity, rate: l.rate, gstRate: l.gst_rate, isScheme: !isTaxInclusive }));
   const totals = calcInvoiceTotals(lineResults);
 
   const addLine = () => {
@@ -536,6 +537,7 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
       supplier_id: supplierId, warehouse_id: warehouseId,
       supplier_invoice_number: supplierInvNum || null,
       purchase_date: purchaseDate, include_in_gst: includeInGst,
+      is_tax_inclusive: isTaxInclusive,
       notes: notes || null,
       items: lines.map((l) => ({
         item_id: l.item_id, size_id: l.size_id, color_id: l.color_id,
@@ -560,6 +562,41 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
       {/* Purchase Details */}
       <div className="card">
         <h2 className="mb-4 font-semibold text-gray-900">Purchase Details</h2>
+
+        {/* Tax mode — applies to every line item, not set per-row */}
+        <div className="mb-4">
+          <label className="label mb-2">Rate Type</label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setIsTaxInclusive(false)}
+              className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors sm:flex-none sm:px-6 ${
+                !isTaxInclusive
+                  ? 'border-purple-600 bg-purple-600 text-white'
+                  : 'border-gray-300 bg-white text-gray-700 hover:border-purple-400'
+              }`}
+            >
+              Tax Exclusive
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsTaxInclusive(true)}
+              className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors sm:flex-none sm:px-6 ${
+                isTaxInclusive
+                  ? 'border-purple-600 bg-purple-600 text-white'
+                  : 'border-gray-300 bg-white text-gray-700 hover:border-purple-400'
+              }`}
+            >
+              Tax Inclusive
+            </button>
+          </div>
+          <p className="mt-1.5 text-xs text-gray-400">
+            {isTaxInclusive
+              ? 'Rate entered already includes GST — tax is back-calculated, line total equals rate × qty.'
+              : 'Rate entered is before GST — tax is added on top of rate × qty.'}
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <label className="label">Supplier *</label>

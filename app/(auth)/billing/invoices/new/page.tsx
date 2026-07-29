@@ -42,6 +42,7 @@ export default async function NewInvoicePage() {
       </div>
       <InvoiceBuilder
         action={createInvoiceAction}
+        showSendDialog
         items={itemsRes.rows as Parameters<typeof InvoiceBuilder>[0]['items']}
         customers={customersRes.rows as Parameters<typeof InvoiceBuilder>[0]['customers']}
         warehouses={warehousesRes.rows as Parameters<typeof InvoiceBuilder>[0]['warehouses']}

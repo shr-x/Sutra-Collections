@@ -180,12 +180,14 @@ export default async function ProductionBoardPage() {
                               currentTailorId={o.tailor_id}
                               currentTailorName={o.tailor_name}
                             />
-                            <RecordPaymentButton
-                              orderId={o.id}
-                              balanceDue={balance}
-                              label="+ Record Payment"
-                              className="w-full rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
-                            />
+                            {balance > 0 && (
+                              <RecordPaymentButton
+                                orderId={o.id}
+                                balanceDue={balance}
+                                label="+ Record Payment"
+                                className="w-full rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
+                              />
+                            )}
                           </>
                         )}
 
@@ -198,12 +200,14 @@ export default async function ProductionBoardPage() {
                               currentTailorId={o.tailor_id}
                               currentTailorName={o.tailor_name}
                             />
-                            <RecordPaymentButton
-                              orderId={o.id}
-                              balanceDue={balance}
-                              label="+ Record Payment"
-                              className="w-full rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
-                            />
+                            {balance > 0 && (
+                              <RecordPaymentButton
+                                orderId={o.id}
+                                balanceDue={balance}
+                                label="+ Record Payment"
+                                className="w-full rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
+                              />
+                            )}
                           </>
                         )}
 
@@ -218,12 +222,14 @@ export default async function ProductionBoardPage() {
                             </div>
                             <DeliveryActions orderId={o.id} balanceDue={balance} />
                             <div className="flex gap-2">
-                              <RecordPaymentButton
-                                orderId={o.id}
-                                balanceDue={balance}
-                                label="+ Payment"
-                                className="flex-1 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
-                              />
+                              {balance > 0 && (
+                                <RecordPaymentButton
+                                  orderId={o.id}
+                                  balanceDue={balance}
+                                  label="+ Payment"
+                                  className="flex-1 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
+                                />
+                              )}
                               <RequestAlterationButton
                                 orderId={o.id}
                                 label="+ Alteration"
@@ -236,12 +242,14 @@ export default async function ProductionBoardPage() {
                         {/* ── Delivered: residual payment + alteration only ── */}
                         {key === 'delivered' && (
                           <div className="flex gap-2">
-                            <RecordPaymentButton
-                              orderId={o.id}
-                              balanceDue={balance}
-                              label="+ Payment"
-                              className="flex-1 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
-                            />
+                            {balance > 0 && (
+                              <RecordPaymentButton
+                                orderId={o.id}
+                                balanceDue={balance}
+                                label="+ Payment"
+                                className="flex-1 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 transition-colors hover:bg-purple-100"
+                              />
+                            )}
                             <RequestAlterationButton
                               orderId={o.id}
                               label="+ Alteration"

@@ -479,6 +479,7 @@ export async function requestAlterationAction(data: {
   orderId: string;
   description: string;
   priceAdjustment: number;
+  measurements: Record<string, string>;
 }): Promise<ActionResult> {
   const session = await requireRole('admin', 'staff');
 
@@ -487,9 +488,10 @@ export async function requestAlterationAction(data: {
 
   const res = await query<{
     status: TailoringStatus; order_number: string; group_number: string | null;
+    customer_id: string; design_id: string;
     customer_name: string; customer_phone: string | null; design_name: string;
   }>(
-    `SELECT o.status, o.order_number, o.group_number,
+    `SELECT o.status, o.order_number, o.group_number, o.customer_id, o.design_id,
             c.name AS customer_name, c.phone AS customer_phone, d.name AS design_name
      FROM tailoring_orders o
      JOIN customers c ON c.id = o.customer_id
@@ -507,17 +509,41 @@ export async function requestAlterationAction(data: {
   try {
     await client.query('BEGIN');
 
+    // Alterations always log a fresh measurement version (never overwrite
+    // history), same convention as updateOrderAction's normal edit flow.
+    const vRes = await client.query<{ next_ver: string }>(
+      `SELECT COALESCE(MAX(version_number), 0) + 1 AS next_ver
+       FROM measurement_versions WHERE customer_id=$1 AND design_id=$2`,
+      [order.customer_id, order.design_id]
+    );
+    const versionNumber = Number(vRes.rows[0].next_ver);
+
+    const mvRes = await client.query<{ id: string }>(
+      `INSERT INTO measurement_versions (customer_id, design_id, version_number, taken_by)
+       VALUES ($1,$2,$3,$4) RETURNING id`,
+      [order.customer_id, order.design_id, versionNumber, session.userId]
+    );
+    const versionId = mvRes.rows[0].id;
+
+    for (const [fieldId, value] of Object.entries(data.measurements)) {
+      if (!value.trim()) continue;
+      await client.query(
+        `INSERT INTO measurement_values (version_id, field_id, value) VALUES ($1,$2,$3)`,
+        [versionId, fieldId, value.trim()]
+      );
+    }
+
     await client.query(
-      `INSERT INTO tailoring_alterations (tailoring_order_id, description, price_adjustment, requested_by)
-       VALUES ($1,$2,$3,$4)`,
-      [data.orderId, description, data.priceAdjustment, session.userId]
+      `INSERT INTO tailoring_alterations (tailoring_order_id, description, price_adjustment, requested_by, measurement_version_id)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [data.orderId, description, data.priceAdjustment, session.userId, versionId]
     );
 
     await client.query(
       `UPDATE tailoring_orders
-       SET status='in_progress', total_amount = total_amount + $1, updated_at=NOW()
-       WHERE id=$2`,
-      [data.priceAdjustment, data.orderId]
+       SET status='in_progress', total_amount = total_amount + $1, measurement_version_id=$2, updated_at=NOW()
+       WHERE id=$3`,
+      [data.priceAdjustment, versionId, data.orderId]
     );
 
     await client.query('COMMIT');

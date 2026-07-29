@@ -27,6 +27,7 @@ const PurchaseSchema = z.object({
   supplier_invoice_number: z.string().max(100).optional(),
   purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
   include_in_gst: z.boolean().default(true),
+  is_tax_inclusive: z.boolean().default(true),
   payment_mode: z.enum(['cash', 'card', 'upi', 'credit']).nullable().optional(),
   amount_paid: z.coerce.number().nonnegative().default(0),
   notes: z.string().max(500).nullable().optional(),
@@ -49,7 +50,7 @@ export async function createPurchaseInvoiceAction(
 
   const { items, ...header } = parsed;
   const lineResults = items.map((item) =>
-    calcLine({ quantity: item.quantity, rate: item.rate, gstRate: item.gst_rate })
+    calcLine({ quantity: item.quantity, rate: item.rate, gstRate: item.gst_rate, isScheme: !header.is_tax_inclusive })
   );
   const totals = calcInvoiceTotals(lineResults);
   const cappedAmountPaid = Math.min(header.amount_paid, totals.grandTotal);
@@ -64,11 +65,11 @@ export async function createPurchaseInvoiceAction(
       const res = await client.query<{ id: string }>(
         `INSERT INTO purchase_invoices (
            purchase_number, supplier_id, warehouse_id, supplier_invoice_number, purchase_date,
-           status, include_in_gst, payment_mode, amount_paid,
+           status, include_in_gst, is_tax_inclusive, payment_mode, amount_paid,
            subtotal, total_cgst, total_sgst, grand_total, notes, created_by
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
         [num, header.supplier_id, header.warehouse_id, header.supplier_invoice_number ?? null,
-         header.purchase_date, newStatus, header.include_in_gst,
+         header.purchase_date, newStatus, header.include_in_gst, header.is_tax_inclusive,
          header.payment_mode ?? null, cappedAmountPaid,
          totals.subtotal, totals.totalCgst, totals.totalSgst, totals.grandTotal,
          header.notes ?? null, session.userId]

@@ -93,6 +93,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     amountPaid:  Number(pur.amount_paid),
     paymentMode: pur.payment_mode,
     notes:       pur.notes,
+    taxModeLabel: pur.is_tax_inclusive ? '(Tax Inclusive)' : '(Tax Exclusive)',
   };
 
   const buffer = await renderInvoicePdf(data);

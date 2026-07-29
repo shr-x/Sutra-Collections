@@ -46,29 +46,28 @@ export default function DeliveryActions({ orderId, balanceDue }: Props) {
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
       )}
 
-      <button
-        type="button"
-        onClick={handlePaid}
-        disabled={isPending || !canMarkPaid}
-        title={!canMarkPaid ? `Balance of ${fmt(balanceDue)} still due` : undefined}
-        className="btn-primary w-full disabled:opacity-40"
-      >
-        {isPending ? 'Updating…' : 'Mark Delivered (Paid)'}
-      </button>
-
-      <button
-        type="button"
-        onClick={() => (balanceDue > 0 ? setConfirmCredit(true) : handleOnCredit())}
-        disabled={isPending}
-        className="w-full rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-40"
-      >
-        {isPending ? 'Updating…' : 'Mark Delivered (On Credit)'}
-      </button>
+      {/* Each delivery action is only rendered when it's actually usable —
+          no disabled/grayed buttons cluttering the card. */}
+      {canMarkPaid && (
+        <button
+          type="button"
+          onClick={handlePaid}
+          disabled={isPending}
+          className="btn-primary w-full disabled:opacity-40"
+        >
+          {isPending ? 'Updating…' : 'Mark Delivered (Paid)'}
+        </button>
+      )}
 
       {!canMarkPaid && (
-        <p className="text-xs text-gray-400">
-          Balance due {fmt(balanceDue)} — collect payment, or deliver on credit to push it to the customer's dues.
-        </p>
+        <button
+          type="button"
+          onClick={() => setConfirmCredit(true)}
+          disabled={isPending}
+          className="w-full rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 disabled:opacity-40"
+        >
+          {isPending ? 'Updating…' : 'Mark Delivered (On Credit)'}
+        </button>
       )}
 
       <ConfirmDialog

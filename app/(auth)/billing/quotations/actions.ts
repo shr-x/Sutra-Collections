@@ -118,8 +118,13 @@ export async function convertQuotationToInvoiceAction(id: string, _fd?: FormData
     })),
   }));
 
-  // createInvoiceAction calls redirect() on success (which throws NEXT_REDIRECT)
-  // so we mark converted first, then let the redirect propagate
+  // createInvoiceAction no longer redirects itself (the invoice creation page
+  // shows a WhatsApp send dialog before navigating) — it now returns the new
+  // invoice's id instead, so we redirect here.
   await query(`UPDATE quotations SET status='converted' WHERE id=$1`, [id]);
-  await createInvoiceAction({ success: false }, fd);
+  const result = await createInvoiceAction({ success: false }, fd);
+  if (!result.success || !result.data?.invoiceId) {
+    throw new Error(result.error ?? 'Failed to create invoice from quotation');
+  }
+  redirect(`/billing/invoices/${result.data.invoiceId}`);
 }

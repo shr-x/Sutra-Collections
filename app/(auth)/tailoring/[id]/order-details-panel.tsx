@@ -12,6 +12,14 @@ interface Field {
   unit: string | null;
 }
 
+interface VersionHistoryEntry {
+  id: string;
+  version_number: number;
+  created_at: string;
+  taken_by_name: string | null;
+  values: Array<{ field_id: string; value: string }>;
+}
+
 export interface OrderDetailsPanelProps {
   orderId: string;
   status: string;
@@ -58,6 +66,24 @@ export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
   const [amount, setAmount]             = useState(String(totalAmount));
   const [error, setError]               = useState<string | null>(null);
   const [isPending, startTrans]         = useTransition();
+
+  const [showHistory, setShowHistory]   = useState(false);
+  const [history, setHistory]           = useState<VersionHistoryEntry[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  function toggleHistory() {
+    if (showHistory) { setShowHistory(false); return; }
+    setShowHistory(true);
+    if (history.length > 0) return; // already loaded
+    setLoadingHistory(true);
+    fetch(`/api/tailoring/measurement-history?customer_id=${customerId}&design_id=${designId}`)
+      .then((r) => r.json() as Promise<{ versions?: VersionHistoryEntry[] }>)
+      .then((d) => setHistory(d.versions ?? []))
+      .catch(() => setHistory([]))
+      .finally(() => setLoadingHistory(false));
+  }
+
+  const fieldById = Object.fromEntries(fields.map((f) => [f.id, f]));
 
   function cancelEdit() {
     setEditing(false);
@@ -217,12 +243,64 @@ export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
 
       {/* ── Measurements ── */}
       <div className="card">
-        <h2 className="mb-3 text-sm font-semibold text-gray-700">
-          Measurements
-          {currentVersionNumber && (
-            <span className="ml-2 text-xs font-normal text-gray-400">Version {currentVersionNumber}</span>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-700">
+            Measurements
+            {currentVersionNumber && (
+              <span className="ml-2 text-xs font-normal text-gray-400">Version {currentVersionNumber} (current)</span>
+            )}
+          </h2>
+          {currentVersionNumber && currentVersionNumber > 1 && (
+            <button
+              type="button"
+              onClick={toggleHistory}
+              className="text-xs text-purple-600 hover:underline"
+            >
+              {showHistory ? 'Hide history' : 'View history'}
+            </button>
           )}
-        </h2>
+        </div>
+
+        {showHistory && (
+          <div className="mb-4 space-y-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
+            {loadingHistory ? (
+              <p className="text-xs text-gray-400">Loading history…</p>
+            ) : history.length === 0 ? (
+              <p className="text-xs text-gray-400">No version history found.</p>
+            ) : (
+              history.map((v) => (
+                <div key={v.id} className="rounded-md border border-gray-200 bg-white px-3 py-2">
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-700">
+                      Version {v.version_number}
+                      {v.version_number === currentVersionNumber && (
+                        <span className="ml-1.5 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">current</span>
+                      )}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(v.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {v.taken_by_name ? ` · ${v.taken_by_name}` : ''}
+                    </span>
+                  </div>
+                  {v.values.length === 0 ? (
+                    <p className="text-xs text-gray-400">No values recorded.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                      {v.values.map((val) => (
+                        <div key={val.field_id} className="text-xs">
+                          <span className="text-gray-500">{fieldById[val.field_id]?.field_name ?? '—'}: </span>
+                          <span className="font-medium text-gray-800">
+                            {val.value}{fieldById[val.field_id]?.unit ? ` ${fieldById[val.field_id].unit}` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
 
         {fields.length === 0 ? (
           <p className="py-2 text-sm text-gray-400">No measurement fields defined for this design.</p>

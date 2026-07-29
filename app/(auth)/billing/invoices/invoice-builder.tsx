@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useTransition, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { useFormState } from 'react-dom';
 import { calcLine, calcInvoiceTotals, formatInr } from '@/lib/gst';
 import type { ActionResult, LineItemDraft, DiscountType } from '@/types';
@@ -8,6 +9,7 @@ import ItemPickerModal, { type PickerAddEvent } from '@/components/item-picker-m
 import ConfirmDialog from '@/components/confirm-dialog';
 import DatePicker from '@/components/date-picker';
 import { quickCreateCustomerAction } from '@/app/(auth)/customers/actions';
+import { sendInvoiceWhatsAppAction } from './actions';
 
 interface ItemOption {
   id: string;
@@ -46,7 +48,7 @@ interface DiscountScheme {
 }
 
 interface InvoiceBuilderProps {
-  action: (prev: ActionResult, fd: FormData) => Promise<ActionResult>;
+  action: (prev: ActionResult, fd: FormData) => Promise<ActionResult<any>>; // eslint-disable-line @typescript-eslint/no-explicit-any
   items?: ItemOption[];
   customers: CustomerOption[];
   warehouses: WarehouseOption[];
@@ -54,6 +56,10 @@ interface InvoiceBuilderProps {
   isScheme?: boolean;
   loyaltyRedemptionRate?: number;
   discountSchemes?: DiscountScheme[];
+  // Only the invoice CREATION flow shows the post-save "Send Invoice" WhatsApp
+  // format dialog — the edit flow reuses this same component but redirects
+  // itself, so it never sets this.
+  showSendDialog?: boolean;
   initialData?: {
     customer_id?: string;
     warehouse_id?: string;
@@ -106,10 +112,56 @@ export default function InvoiceBuilder({
   // for backward compatibility with the page that passes it.
   discountSchemes = [],
   initialData,
+  showSendDialog = false,
 }: InvoiceBuilderProps) {
+  const router = useRouter();
   const [state, formAction] = useFormState<ActionResult, FormData>(action, { success: false });
   const [, startTransition] = useTransition();
   const [isPending, setIsPending] = useState(false);
+
+  // ── Post-save "Send Invoice" WhatsApp format dialog (create flow only) ──────
+  const [sendDialogOrderId, setSendDialogOrderId] = useState<string | null>(null);
+  const [sendFormat, setSendFormat] = useState<'thermal' | 'a4'>('thermal');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const handledStateRef = useRef<ActionResult | null>(null);
+
+  useEffect(() => {
+    if (!showSendDialog) return;
+    if (state === handledStateRef.current) return;
+    handledStateRef.current = state;
+    const invoiceId = (state.data as { invoiceId?: string } | undefined)?.invoiceId;
+    if (state.success && invoiceId) {
+      setSendDialogOrderId(invoiceId);
+    }
+  }, [state, showSendDialog]);
+
+  function closeSendDialog(navigate = true) {
+    const invoiceId = sendDialogOrderId;
+    setSendDialogOrderId(null);
+    setSendError(null);
+    if (navigate && invoiceId) router.push(`/billing/invoices/${invoiceId}`);
+  }
+
+  function handleSendInvoice() {
+    if (!sendDialogOrderId) return;
+    setSending(true);
+    setSendError(null);
+    const invoiceId = sendDialogOrderId;
+    sendInvoiceWhatsAppAction(invoiceId, sendFormat)
+      .then((res) => {
+        setSending(false);
+        if (res.success) {
+          closeSendDialog(true);
+        } else {
+          setSendError(res.error ?? 'Failed to send WhatsApp message.');
+        }
+      })
+      .catch(() => {
+        setSending(false);
+        setSendError('Failed to send WhatsApp message.');
+      });
+  }
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -509,6 +561,7 @@ export default function InvoiceBuilder({
   const selectedWarehouse = warehouses.find((w) => w.id === warehouseId);
 
   return (
+    <>
     <form onSubmit={handleSubmit} className="space-y-4 overflow-x-hidden">
       {/* BOGO scheme toast (#2) — top-center, auto-dismiss after 3s */}
       {bogoToast && (
@@ -1121,5 +1174,67 @@ export default function InvoiceBuilder({
         </div>
       </div>
     </form>
+
+    {sendDialogOrderId && (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/40" />
+        <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+          <h3 className="mb-1 text-base font-semibold text-gray-900">Send Invoice</h3>
+          <p className="mb-4 text-xs text-gray-500">Invoice saved. Send it to the customer over WhatsApp?</p>
+
+          {sendError && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{sendError}</div>
+          )}
+
+          <div className="mb-5">
+            <p className="label text-xs mb-2">Format</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setSendFormat('thermal')}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  sendFormat === 'thermal'
+                    ? 'border-purple-600 bg-purple-600 text-white'
+                    : 'border-gray-300 bg-white text-gray-700 hover:border-purple-400'
+                }`}
+              >
+                Thermal Receipt
+              </button>
+              <button
+                type="button"
+                onClick={() => setSendFormat('a4')}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                  sendFormat === 'a4'
+                    ? 'border-purple-600 bg-purple-600 text-white'
+                    : 'border-gray-300 bg-white text-gray-700 hover:border-purple-400'
+                }`}
+              >
+                A4 Invoice
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => closeSendDialog(true)}
+              disabled={sending}
+              className="flex-1 btn-secondary text-sm disabled:opacity-50"
+            >
+              Skip
+            </button>
+            <button
+              type="button"
+              onClick={handleSendInvoice}
+              disabled={sending}
+              className="flex-1 rounded-xl bg-green-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-green-700 disabled:opacity-50"
+            >
+              {sending ? 'Sending…' : 'Send via WhatsApp'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

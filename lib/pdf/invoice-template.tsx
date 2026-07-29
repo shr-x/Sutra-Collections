@@ -219,6 +219,8 @@ export interface PdfInvoiceData {
   paymentMode?: string;
   notes?: string;
   isScheme?: boolean;
+  // Shown as a small label near the totals — e.g. purchase invoices' "(Tax Inclusive)" / "(Tax Exclusive)".
+  taxModeLabel?: string;
   upiVpa?: string;
   upiQrDataUrl?: string;
   // Scheme (BOGO) and loyalty redemption shown as their own discount lines
@@ -480,6 +482,9 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                 <Text style={S.grandLabel}>GRAND TOTAL</Text>
                 <Text style={S.grandValue}>{fmt(data.grandTotal)}</Text>
               </View>
+              {data.taxModeLabel && (
+                <Text style={[S.totalsLabel, { textAlign: 'right', marginTop: 2 }]}>{data.taxModeLabel}</Text>
+              )}
               {/* #3: no "Paid" line for cash/UPI. Show Payment Due only on invoices
                   with an outstanding balance (never on credit/debit notes). */}
               {data.docType === 'INVOICE' && balance > 0 && (

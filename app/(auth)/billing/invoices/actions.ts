@@ -10,7 +10,7 @@ import { postSalesInvoice, postPaymentReceived, postJournalEntry } from '@/lib/a
 import { sendWhatsAppText, interpolateTemplate, sendWhatsAppTemplate } from '@/lib/whatsapp';
 import { getLoyaltyRates, earnPoints, redeemPointsInTransaction } from '@/lib/loyalty';
 import { logAudit } from '@/lib/audit';
-import { generateThermalInvoicePdf } from '@/lib/pdf-generator';
+import { generateThermalInvoicePdf, generateInvoicePdf } from '@/lib/pdf-generator';
 import { checkLowStockForItems } from '@/lib/low-stock';
 import type { ActionResult } from '@/types';
 
@@ -53,7 +53,7 @@ const InvoiceSchema = z.object({
 export async function createInvoiceAction(
   _prev: ActionResult,
   formData: FormData
-): Promise<ActionResult> {
+): Promise<ActionResult<{ invoiceId: string }>> {
   const session = await requireRole('admin', 'staff');
 
   let parsed: z.infer<typeof InvoiceSchema>;
@@ -364,58 +364,75 @@ export async function createInvoiceAction(
     return { success: false, error: 'Failed to save invoice. Please try again.' };
   }
 
-  // Generate thermal PDF for WhatsApp (fire-and-forget, non-blocking)
-  const pdfPath = await generateThermalInvoicePdf(invoiceId!).catch(() => null);
-
   // Low-stock check after stock deductions (fire-and-forget)
   const soldItemIds = parsed.items.map((i) => i.item_id);
   checkLowStockForItems(soldItemIds).catch(() => {});
 
-  // WhatsApp notification — sutra_invoice_notification with PDF attached
-  // {{1}}=name {{2}}=invoice# {{3}}=amount (template body already reads "Amount: Rs.{{3}}" — send the bare number)
-  let waResult: 'sent' | 'failed' | 'skip' = 'skip';
-  let waError = '';
-  if (header.customer_id) {
+  // Credit invoices: send a UPI pay-link text reminder immediately — this is a
+  // separate supplementary message, unaffected by the WhatsApp format choice
+  // dialog shown client-side after save (see sendInvoiceWhatsAppAction below).
+  if (header.customer_id && header.payment_mode === 'credit') {
     try {
-      const custRes = await query<{ name: string; phone: string | null }>(
-        'SELECT name, phone FROM customers WHERE id=$1', [header.customer_id]
+      const custRes = await query<{ phone: string | null }>(
+        'SELECT phone FROM customers WHERE id=$1', [header.customer_id]
       );
-      const cust = custRes.rows[0];
-      const phone = cust?.phone;
+      const phone = custRes.rows[0]?.phone;
       if (phone) {
-        const amount = totals.grandTotal.toFixed(2);
-        const waSent = await sendWhatsAppTemplate(
+        const upiVpa = process.env.UPI_VPA ?? 'sutra@upi';
+        const due = (totals.grandTotal - effectiveAmountPaid).toFixed(2);
+        sendWhatsAppText(
           phone,
-          'sutra_invoice_notification',
-          [cust.name ?? 'Customer', invoiceNumber, amount],
-          pdfPath
-        );
-        waResult = waSent.success ? 'sent' : 'failed';
-        if (!waSent.success) {
-          waError = waSent.error ?? 'unknown error';
-          console.warn(`[WhatsApp] Send failed for ${invoiceNumber}: ${waError}`);
-        }
-
-        // Credit invoices: append a UPI pay link text
-        if (header.payment_mode === 'credit') {
-          const upiVpa = process.env.UPI_VPA ?? 'sutra@upi';
-          const due = (totals.grandTotal - effectiveAmountPaid).toFixed(2);
-          sendWhatsAppText(
-            phone,
-            `Payment due: Rs.${due}. Pay here: upi://pay?pa=${upiVpa}&am=${due}&tn=${invoiceNumber}`
-          ).catch(() => {});
-        }
+          `Payment due: Rs.${due}. Pay here: upi://pay?pa=${upiVpa}&am=${due}&tn=${invoiceNumber}`
+        ).catch(() => {});
       }
     } catch (err) {
-      waResult = 'failed';
-      waError = (err as Error).message ?? 'unknown error';
+      console.error('[createInvoiceAction] credit UPI text failed:', err);
     }
   }
 
-  const waQuery = waResult === 'failed' && waError
-    ? `?wa=failed&reason=${encodeURIComponent(waError)}`
-    : `?wa=${waResult}`;
-  redirect(`/billing/invoices/${invoiceId!}${waQuery}`);
+  return { success: true, data: { invoiceId: invoiceId! } };
+}
+
+// ─── Send Invoice via WhatsApp (post-save format choice dialog) ───────────────
+// Only used by the invoice creation flow's "Send Invoice" dialog — the manual
+// resend/download buttons on the invoice detail page are untouched.
+
+export async function sendInvoiceWhatsAppAction(
+  invoiceId: string,
+  format: 'thermal' | 'a4'
+): Promise<{ success: boolean; error?: string }> {
+  await requireRole('admin', 'staff');
+
+  const res = await query<{ invoice_number: string; grand_total: string; name: string | null; phone: string | null }>(
+    `SELECT i.invoice_number, i.grand_total, c.name, c.phone
+     FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
+     WHERE i.id = $1`,
+    [invoiceId]
+  );
+  const inv = res.rows[0];
+  if (!inv) return { success: false, error: 'Invoice not found' };
+  if (!inv.phone) return { success: false, error: 'Customer has no phone number on file' };
+
+  try {
+    const pdfPath = format === 'thermal'
+      ? await generateThermalInvoicePdf(invoiceId).catch(() => null)
+      : await generateInvoicePdf(invoiceId).catch(() => null);
+
+    const amount = Number(inv.grand_total).toFixed(2);
+    const result = await sendWhatsAppTemplate(
+      inv.phone,
+      'sutra_invoice_notification',
+      [inv.name ?? 'Customer', inv.invoice_number, amount],
+      pdfPath
+    );
+    if (!result.success) {
+      console.warn(`[sendInvoiceWhatsAppAction] Send failed for ${inv.invoice_number}: ${result.error}`);
+      return { success: false, error: result.error ?? 'unknown error' };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message ?? 'Failed to send' };
+  }
 }
 
 // ─── Update (1-hour grace window) ─────────────────────────────────────────────
