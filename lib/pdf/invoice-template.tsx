@@ -203,7 +203,7 @@ export interface PdfLineItem {
 }
 
 export interface PdfInvoiceData {
-  docType: 'INVOICE' | 'QUOTATION' | 'PURCHASE' | 'CREDIT NOTE' | 'DEBIT NOTE' | 'PROFORMA';
+  docType: 'INVOICE' | 'QUOTATION' | 'PURCHASE' | 'CREDIT NOTE' | 'DEBIT NOTE' | 'PROFORMA' | 'ORDER_CONFIRMATION';
   invoiceNumber: string;
   invoiceDate: string;
   dueDate?: string;
@@ -256,6 +256,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
   const isCreditNote = data.docType === 'CREDIT NOTE';
   const isDebitNote  = data.docType === 'DEBIT NOTE';
   const isProforma   = data.docType === 'PROFORMA';
+  const isOrderConfirmation = data.docType === 'ORDER_CONFIRMATION';
   const isReturnDoc  = isCreditNote || isDebitNote;
   const accent       = isCreditNote ? '#DC2626' : isDebitNote ? '#EA580C' : BLACK;
   const accentBg     = isCreditNote ? '#FEF2F2' : isDebitNote ? '#FFF7ED' : undefined;
@@ -318,6 +319,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                 : data.docType === 'CREDIT NOTE' ? 'CREDIT NOTE'
                 : data.docType === 'DEBIT NOTE' ? 'DEBIT NOTE'
                 : data.docType === 'PROFORMA' ? 'PROFORMA INVOICE'
+                : data.docType === 'ORDER_CONFIRMATION' ? 'ORDER CONFIRMATION'
                 : 'TAX INVOICE'}
             </Text>
             {isReturnDoc ? (
@@ -328,6 +330,11 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
             {isProforma ? (
               <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#B45309', marginTop: 2 }}>
                 {data.proformaSubtitle ?? 'ESTIMATE ONLY — NOT A GST TAX INVOICE'}
+              </Text>
+            ) : null}
+            {isOrderConfirmation ? (
+              <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#B45309', marginTop: 2 }}>
+                NOT A GST TAX INVOICE
               </Text>
             ) : null}
             <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6, gap: 4 }}>
@@ -391,6 +398,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                   : data.docType === 'CREDIT NOTE' ? 'CREDIT NOTE COPY'
                   : data.docType === 'DEBIT NOTE' ? 'DEBIT NOTE COPY'
                   : data.docType === 'PROFORMA' ? 'PROFORMA COPY'
+                  : data.docType === 'ORDER_CONFIRMATION' ? 'CUSTOMER COPY'
                   : 'ORIGINAL FOR RECIPIENT'}
               </Text>
             </View>
@@ -569,20 +577,12 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
             </View>
           </View>
 
-          {/* ── Terms ── */}
-          <View style={S.termsBox}>
-            <Text style={[S.sectionLabel, { marginBottom: 3 }]}>Terms &amp; Conditions</Text>
-            <Text style={S.termsText}>
-              1. Goods once sold will not be taken back or exchanged.{'\n'}
-              2. All disputes are subject to local jurisdiction only.{'\n'}
-              3. E. &amp; O.E. — subject to realisation of cheque/payment.{'\n'}
-              4. Interest @ 18% p.a. will be charged on overdue payments.
-            </Text>
-          </View>
-
+          {/* ── Terms — client-editable Store Terms only (settings.terms_and_conditions).
+              No hardcoded boilerplate: if the client hasn't set any terms, this
+              section is omitted entirely rather than showing generic filler text. ── */}
           {data.customTerms && data.customTerms.length > 0 && (
-            <View style={[S.termsBox, { marginTop: 6 }]}>
-              <Text style={[S.sectionLabel, { marginBottom: 3 }]}>Store Terms</Text>
+            <View style={S.termsBox}>
+              <Text style={[S.sectionLabel, { marginBottom: 3 }]}>Terms &amp; Conditions</Text>
               {data.customTerms.map((line, i) => (
                 // One Text node per line (not one joined block) so a long
                 // individual line wraps naturally within the page width

@@ -10,7 +10,7 @@ import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import {
   generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf,
-  generateTailoringProformaPdf, generateTailoringCreditDuePdf,
+  generateTailoringProformaPdf, generateTailoringCreditDuePdf, generateTailoringOrderConfirmationPdf,
 } from '@/lib/pdf-generator';
 import { createTailoringInvoice, syncTailoringInvoiceAfterAlteration } from '@/lib/tailoring-invoice';
 import { logAudit } from '@/lib/audit';
@@ -79,6 +79,9 @@ async function sendDeliveredWhatsApp(orderId: string): Promise<void> {
 // Sends the ready-for-pickup notification, honoring batch holds. Branches
 // between sutra_order_ready (first time) and sutra_order_alteration_completed
 // (if this order has any alteration history) — same threshold-gating as delivery.
+// Only ONE message total is sent here — the proforma-style "balance update"
+// PDF (item/GST breakdown + Advance Paid/Balance Due) is attached directly to
+// whichever template fires, rather than following up with a second message.
 async function sendReadyForPickupWhatsApp(orderId: string): Promise<void> {
   try {
     const { rows } = await query<{
@@ -110,10 +113,10 @@ async function sendReadyForPickupWhatsApp(orderId: string): Promise<void> {
     const balanceDueLine = `Balance due: ₹${balance.toFixed(2)}.`;
 
     const doSend = async (ref: string) => {
+      const pdfPath = await generateTailoringProformaPdf(orderId, { variant: 'balance_update' }).catch(() => null);
       if (hasAlterations) {
-        await sendWhatsAppTemplate(r.phone!, 'sutra_order_alteration_completed', [r.name, ref, r.design_name, balanceDueLine]);
+        await sendWhatsAppTemplate(r.phone!, 'sutra_order_alteration_completed', [r.name, ref, r.design_name, balanceDueLine], pdfPath);
       } else {
-        const pdfPath = await generateTailoringCustomerPdf(orderId).catch(() => null);
         await sendWhatsAppTemplate(r.phone!, 'sutra_order_ready', [r.name, ref], pdfPath);
       }
     };
@@ -290,10 +293,20 @@ export async function createTailoringOrder(raw: unknown): Promise<{
         : 'TBD';
       const _groupNumber = groupNumber;
       Promise.resolve().then(async () => {
-        const pdfPath = await generateTailoringCustomerPdf(newOrderId).catch(() => null);
+        const pdfPath = await generateTailoringOrderConfirmationPdf(newOrderId).catch(() => null);
         sendWhatsAppTemplate(customerPhone, 'sutra_order_confirmation', [
           customerName, _groupNumber, dueDateFormatted,
         ], pdfPath).catch((e) => console.error('[createTailoringOrder] WhatsApp failed:', e));
+
+        // Proforma (estimate) — separate message, not a real tax invoice, no
+        // ledger entry. Reuses the generic invoice-notification template since
+        // no Meta-approved "proforma" template exists.
+        const proformaPath = await generateTailoringProformaPdf(newOrderId).catch(() => null);
+        if (proformaPath) {
+          sendWhatsAppTemplate(customerPhone, 'sutra_invoice_notification', [
+            customerName, `${_groupNumber} (Proforma)`, price.toFixed(2),
+          ], proformaPath).catch((e) => console.error('[createTailoringOrder] proforma WhatsApp failed:', e));
+        }
       });
     }
 
@@ -330,12 +343,30 @@ export async function sendBatchConfirmationAction(batchId: string): Promise<void
       ? `${first.due_date.slice(8, 10)}/${first.due_date.slice(5, 7)}/${first.due_date.slice(0, 4)}`
       : 'TBD';
 
-    // grouped PDF — generateTailoringCustomerPdf auto-collects all group siblings
-    const pdfPath = await generateTailoringCustomerPdf(first.id).catch(() => null);
+    // grouped PDF — generateTailoringOrderConfirmationPdf auto-collects all group siblings
+    const pdfPath = await generateTailoringOrderConfirmationPdf(first.id).catch(() => null);
     const displayRef = first.group_number ?? first.order_number;
     await sendWhatsAppTemplate(first.phone, 'sutra_order_confirmation', [
       first.name, displayRef, dueDateFormatted,
     ], pdfPath);
+
+    // Proforma (estimate) for the whole batch — every item in a batch is
+    // created with suppressWhatsApp:true (see order-wizard.tsx), so this is
+    // the ONLY place a multi-item booking's proforma gets sent. Reuses the
+    // same grouped-aware generator as the solo-order path in
+    // createTailoringOrder, which combines all batch siblings into one
+    // document with a single combined total instead of showing just one item.
+    const proformaPath = await generateTailoringProformaPdf(first.id).catch(() => null);
+    if (proformaPath) {
+      const totalRes = await query<{ total: string }>(
+        `SELECT COALESCE(SUM(total_amount), 0)::text AS total FROM tailoring_orders WHERE batch_id=$1`,
+        [batchId]
+      );
+      const batchTotal = Number(totalRes.rows[0]?.total ?? 0);
+      await sendWhatsAppTemplate(first.phone, 'sutra_invoice_notification', [
+        first.name, `${displayRef} (Proforma)`, batchTotal.toFixed(2),
+      ], proformaPath).catch((e) => console.error('[sendBatchConfirmationAction] proforma WA failed:', e));
+    }
   } catch (e) {
     console.error('[sendBatchConfirmationAction] failed:', e);
   }
@@ -401,23 +432,19 @@ export async function advanceStatusAction(
   // If the order was later altered and is returning to ready_for_pickup again,
   // amend the existing invoice in place (if still within the edit grace window)
   // rather than creating a second one — see lib/tailoring-invoice.ts for the
-  // full amend/lock rules.
-  let newOrAmendedInvoice: { invoiceId: string; invoiceNumber: string } | null = null;
+  // full amend/lock rules. This invoice is purely a backend accounting record
+  // (proper numbering, journal entries, viewable in Billing > Invoices) — it
+  // does not drive what's sent over WhatsApp below, which is a single combined
+  // "ready for pickup" message with the proforma-style balance PDF attached
+  // (see sendReadyForPickupWhatsApp).
   if (newStatus === 'ready_for_pickup') {
     const invRes = await query<{ invoice_id: string | null }>(
       `SELECT invoice_id FROM tailoring_orders WHERE id=$1`, [orderId]
     );
     if (!invRes.rows[0]?.invoice_id) {
-      newOrAmendedInvoice = await createTailoringInvoice(orderId, session.userId);
+      await createTailoringInvoice(orderId, session.userId);
     } else {
-      // Both 'amended_in_place' (in-window correction) and
-      // 'supplementary_invoice_created' (locked root -> new delta-only
-      // invoice) carry a real invoice to send over WhatsApp below.
-      // 'unchanged' / 'locked_flagged' / 'no_invoice' send nothing extra.
-      const sync = await syncTailoringInvoiceAfterAlteration(orderId, session.userId);
-      if ((sync.action === 'amended_in_place' || sync.action === 'supplementary_invoice_created') && sync.invoiceId && sync.invoiceNumber) {
-        newOrAmendedInvoice = { invoiceId: sync.invoiceId, invoiceNumber: sync.invoiceNumber };
-      }
+      await syncTailoringInvoiceAfterAlteration(orderId, session.userId);
     }
   }
 
@@ -430,44 +457,6 @@ export async function advanceStatusAction(
   }
 
   await sendReadyForPickupWhatsApp(orderId);
-
-  // Separate message — only sent when a new invoice was just created or an
-  // existing one was just amended/supplemented. The REAL GST tax invoice is
-  // still created/amended in the backend exactly as before (viewable as
-  // normal in Billing > Invoices, with proper numbering + journal entries) —
-  // but what's actually pushed to the customer here is a proforma-style
-  // "balance update" document (same template as the order-creation proforma,
-  // showing the item/price breakdown, advance paid, and remaining balance),
-  // not the internal GST invoice PDF or its invoice number.
-  if (newOrAmendedInvoice) {
-    const custRes = await query<{ name: string }>(
-      `SELECT c.name FROM tailoring_orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=$1`,
-      [orderId]
-    );
-    if (custRes.rows[0]) {
-      const orderRes = await query<{ group_number: string | null; order_number: string; total_amount: string; amount_paid: string }>(
-        `SELECT group_number, order_number, total_amount::text, amount_paid::text FROM tailoring_orders WHERE id=$1`,
-        [orderId]
-      );
-      const od = orderRes.rows[0];
-      const displayRef = od.group_number ?? od.order_number;
-      const odAmountPaid = Number(od.amount_paid);
-      const odBalance = Math.max(0, Math.round((Number(od.total_amount) - odAmountPaid) * 100) / 100);
-      const pdfPath = await generateTailoringProformaPdf(orderId, { variant: 'balance_update' }).catch(() => null);
-      // The {{3}} slot is a single fixed placeholder in the approved
-      // sutra_invoice_notification template body (worded around one amount,
-      // same as every other call site of this template) — there's no second
-      // placeholder available for a truly separate "Advance Paid" line here.
-      // Leading with the balance keeps the value reading naturally regardless
-      // of the template's exact fixed wording (e.g. "...ready. Amount: ₹{{3}}"
-      // still reads correctly), with the advance appended as a clearly
-      // labeled parenthetical so both figures are distinct on the same line.
-      sendWhatsAppTemplate(rows[0].phone!, 'sutra_invoice_notification', [
-        custRes.rows[0].name, `${displayRef} (Balance Update)`,
-        `${odBalance.toFixed(2)} (Advance Paid: ₹${odAmountPaid.toFixed(2)})`,
-      ], pdfPath).catch((e) => console.error('[advanceStatusAction] balance-update WhatsApp failed:', e));
-    }
-  }
 
   return { success: true, waStatus: 'sent', message: '✅ Status updated. WhatsApp sent to customer.' };
 }
@@ -687,8 +676,8 @@ export async function recordTailoringPaymentAction(data: {
 
   if (!(data.amount > 0)) return { success: false, error: 'Enter an amount greater than zero.' };
 
-  const res = await query<{ order_number: string }>(
-    `SELECT order_number FROM tailoring_orders WHERE id=$1`, [data.orderId]
+  const res = await query<{ order_number: string; customer_id: string }>(
+    `SELECT order_number, customer_id FROM tailoring_orders WHERE id=$1`, [data.orderId]
   );
   if (!res.rows[0]) return { success: false, error: 'Order not found.' };
 
@@ -702,8 +691,18 @@ export async function recordTailoringPaymentAction(data: {
       [data.orderId, data.amount, data.paymentMode, session.userId]
     );
 
+    // A payment against an order that still has an outstanding credit_amount
+    // (from "Mark Delivered On Credit") pays down that due — floored at 0 so
+    // a payment larger than the outstanding credit never goes negative.
+    // Without this, credit_amount would stay frozen at its original value
+    // forever, and the customer dues report / customer profile would keep
+    // showing it as owed even after the customer actually paid it off.
     await client.query(
-      `UPDATE tailoring_orders SET amount_paid = amount_paid + $1, updated_at=NOW() WHERE id=$2`,
+      `UPDATE tailoring_orders
+       SET amount_paid = amount_paid + $1,
+           credit_amount = GREATEST(0, credit_amount - $1),
+           updated_at=NOW()
+       WHERE id=$2`,
       [data.amount, data.orderId]
     );
 
@@ -723,6 +722,8 @@ export async function recordTailoringPaymentAction(data: {
 
   revalidatePath(`/tailoring/${data.orderId}`);
   revalidatePath('/tailoring');
+  revalidatePath('/reports/customer-dues');
+  revalidatePath(`/customers/${res.rows[0].customer_id}`);
 
   return { success: true };
 }

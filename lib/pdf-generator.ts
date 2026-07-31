@@ -140,11 +140,11 @@ export async function generateInvoicePdf(invoiceId: string): Promise<string | nu
 // Receipt reuses invoice PDF (same data, payment is already recorded)
 export const generateReceiptPdf = generateInvoicePdf;
 
-// ─── Tailoring Proforma (order creation AND ready-for-pickup balance update —
-// NEITHER is a real tax invoice) ──────────────────────────────────────────────
-// Sourced directly from tailoring_orders (never from invoices/invoice_items —
-// the real GST invoice lives separately, see lib/tailoring-invoice.ts, and this
-// function never posts to accounting).
+// ─── Shared: grouped tailoring order data (proforma + order-confirmation) ────
+// Both generateTailoringProformaPdf and generateTailoringOrderConfirmationPdf
+// source from tailoring_orders (never invoices/invoice_items — the real GST
+// invoice lives separately, see lib/tailoring-invoice.ts) and never post to
+// accounting.
 //
 // Group-aware: if the order was booked together with others under the same
 // group_number (a multi-item booking session), ALL sibling orders are combined
@@ -152,66 +152,74 @@ export const generateReceiptPdf = generateInvoicePdf;
 // same convention as generateTailoringCustomerPdf. This matters because the
 // wizard suppresses the per-order WhatsApp send for every item in a batch and
 // fires this once for the whole group instead (see sendBatchConfirmationAction
-// in app/(auth)/tailoring/actions.ts) — a single-item proforma would only have
+// in app/(auth)/tailoring/actions.ts) — a single-item document would only have
 // shown one of several booked items with an incomplete total.
+async function fetchGroupedTailoringData(orderId: string) {
+  const { rows: anchorRows } = await query<{
+    order_number: string; group_number: string | null;
+    customer_name: string; customer_address: string | null; customer_gstin: string | null; customer_phone: string | null;
+  }>(
+    `SELECT o.order_number, o.group_number,
+            c.name AS customer_name, c.address AS customer_address, c.gstin AS customer_gstin, c.phone AS customer_phone
+     FROM tailoring_orders o JOIN customers c ON c.id = o.customer_id
+     WHERE o.id=$1`,
+    [orderId]
+  );
+  const anchor = anchorRows[0];
+  if (!anchor) return null;
+
+  let siblingIds = [orderId];
+  if (anchor.group_number) {
+    const groupRes = await query<{ id: string }>(
+      `SELECT id FROM tailoring_orders WHERE group_number=$1 ORDER BY suffix ASC, created_at ASC`,
+      [anchor.group_number]
+    );
+    if (groupRes.rows.length > 0) siblingIds = groupRes.rows.map((r) => r.id);
+  }
+
+  const { rows: siblings } = await query<{
+    total_amount: string; amount_paid: string; gst_rate: string; created_at: string;
+    notes: string | null; design_name: string; order_number: string; suffix: string | null;
+  }>(
+    `SELECT o.total_amount::text, o.amount_paid::text, o.gst_rate::text, o.created_at::text,
+            o.notes, o.order_number, o.suffix, d.name AS design_name
+     FROM tailoring_orders o JOIN designs d ON d.id = o.design_id
+     WHERE o.id = ANY($1::uuid[])
+     ORDER BY o.suffix ASC, o.created_at ASC`,
+    [siblingIds]
+  );
+  if (!siblings.length) return null;
+
+  const lineResults = siblings.map((s) => calcLine({
+    quantity: 1, rate: Number(s.total_amount), gstRate: Number(s.gst_rate), isScheme: false,
+  }));
+  const totals = calcInvoiceTotals(lineResults);
+  const amountPaid = siblings.reduce((sum, s) => sum + Number(s.amount_paid), 0);
+  const displayRef = anchor.group_number ?? anchor.order_number;
+
+  // Real order notes/special-instructions — never an auto-generated
+  // "Reference: <order_number>"-style placeholder. Omitted entirely if no
+  // sibling has one filled in. Multi-item bookings prefix each note with
+  // its design name so staff/customer can tell which item it applies to.
+  const notesEntries = siblings
+    .filter((s) => s.notes?.trim())
+    .map((s) => (siblings.length > 1 ? `${s.design_name}: ${s.notes!.trim()}` : s.notes!.trim()));
+  const combinedNotes = notesEntries.length > 0 ? notesEntries.join('\n') : undefined;
+
+  return { anchor, siblings, lineResults, totals, amountPaid, displayRef, combinedNotes };
+}
+
+// ─── Tailoring Proforma (order creation AND ready-for-pickup balance update) ─
 export async function generateTailoringProformaPdf(
   orderId: string,
   opts?: { variant?: 'initial' | 'balance_update' }
 ): Promise<string | null> {
   try {
     const variant = opts?.variant ?? 'initial';
-
-    const { rows: anchorRows } = await query<{
-      order_number: string; group_number: string | null;
-      customer_name: string; customer_address: string | null; customer_gstin: string | null; customer_phone: string | null;
-    }>(
-      `SELECT o.order_number, o.group_number,
-              c.name AS customer_name, c.address AS customer_address, c.gstin AS customer_gstin, c.phone AS customer_phone
-       FROM tailoring_orders o JOIN customers c ON c.id = o.customer_id
-       WHERE o.id=$1`,
-      [orderId]
-    );
-    const anchor = anchorRows[0];
-    if (!anchor) return null;
+    const data = await fetchGroupedTailoringData(orderId);
+    if (!data) return null;
+    const { anchor, siblings, lineResults, totals, amountPaid, displayRef, combinedNotes } = data;
     const co = await getCompany();
-
-    let siblingIds = [orderId];
-    if (anchor.group_number) {
-      const groupRes = await query<{ id: string }>(
-        `SELECT id FROM tailoring_orders WHERE group_number=$1 ORDER BY suffix ASC, created_at ASC`,
-        [anchor.group_number]
-      );
-      if (groupRes.rows.length > 0) siblingIds = groupRes.rows.map((r) => r.id);
-    }
-
-    const { rows: siblings } = await query<{
-      total_amount: string; amount_paid: string; gst_rate: string; created_at: string;
-      notes: string | null; design_name: string; order_number: string; suffix: string | null;
-    }>(
-      `SELECT o.total_amount::text, o.amount_paid::text, o.gst_rate::text, o.created_at::text,
-              o.notes, o.order_number, o.suffix, d.name AS design_name
-       FROM tailoring_orders o JOIN designs d ON d.id = o.design_id
-       WHERE o.id = ANY($1::uuid[])
-       ORDER BY o.suffix ASC, o.created_at ASC`,
-      [siblingIds]
-    );
-    if (!siblings.length) return null;
-
-    const lineResults = siblings.map((s) => calcLine({
-      quantity: 1, rate: Number(s.total_amount), gstRate: Number(s.gst_rate), isScheme: false,
-    }));
-    const totals = calcInvoiceTotals(lineResults);
-    const amountPaid = siblings.reduce((sum, s) => sum + Number(s.amount_paid), 0);
-    const displayRef = anchor.group_number ?? anchor.order_number;
-
-    // Real order notes/special-instructions (#3) — never an auto-generated
-    // "Reference: <order_number>"-style placeholder. Omitted entirely if no
-    // sibling has one filled in. Multi-item bookings prefix each note with
-    // its design name so staff/customer can tell which item it applies to.
-    const notesEntries = siblings
-      .filter((s) => s.notes?.trim())
-      .map((s) => (siblings.length > 1 ? `${s.design_name}: ${s.notes!.trim()}` : s.notes!.trim()));
-    const combinedNotes = notesEntries.length > 0 ? notesEntries.join('\n') : undefined;
 
     const proformaSubtitle = variant === 'balance_update'
       ? 'PROFORMA — BALANCE UPDATE (NOT A GST TAX INVOICE)'
@@ -254,6 +262,61 @@ export async function generateTailoringProformaPdf(
     return filePath;
   } catch (err) {
     console.error('[pdf-generator] generateTailoringProformaPdf failed:', err);
+    return null;
+  }
+}
+
+// ─── Tailoring Order Confirmation (order creation — GST-style breakdown,
+// total only, no advance/balance) ─────────────────────────────────────────────
+// Sent alongside the Proforma at order creation (see createTailoringOrder /
+// sendBatchConfirmationAction in app/(auth)/tailoring/actions.ts). Same
+// underlying GST-table layout as the Proforma/real invoice, but deliberately
+// omits amountPaid so the Advance Paid/Balance Due lines never render (that
+// block is gated on docType === 'PROFORMA' in invoice-template.tsx) — this
+// document just confirms what was ordered and its total cost, not payment
+// status. Not a real tax invoice; never posts to accounting.
+export async function generateTailoringOrderConfirmationPdf(orderId: string): Promise<string | null> {
+  try {
+    const data = await fetchGroupedTailoringData(orderId);
+    if (!data) return null;
+    const { anchor, siblings, lineResults, totals, displayRef, combinedNotes } = data;
+    const co = await getCompany();
+
+    const buffer = await renderInvoicePdf({
+      docType: 'ORDER_CONFIRMATION',
+      invoiceNumber: displayRef,
+      invoiceDate: fmtDate(siblings[0].created_at),
+      company: {
+        name: co.name, gstin: co.gstin, address: co.address,
+        state: co.state, phone: co.phone, email: co.email, logoAbsPath: co.logoAbsPath,
+      },
+      customer: {
+        name: anchor.customer_name,
+        address: anchor.customer_address ?? '',
+        gstin: anchor.customer_gstin ?? undefined,
+        phone: anchor.customer_phone || undefined,
+      },
+      items: siblings.map((s, i) => ({
+        description: s.design_name, hsn: '9988', qty: 1, unit: 'pcs',
+        rate: Number(s.total_amount), discountAmount: 0, gstRate: Number(s.gst_rate),
+        taxableValue: lineResults[i].taxableValue, cgst: lineResults[i].cgstAmount,
+        sgst: lineResults[i].sgstAmount, total: lineResults[i].totalAmount,
+      })),
+      invoiceDiscountAmount: 0,
+      subtotal: totals.subtotal,
+      totalCgst: totals.totalCgst,
+      totalSgst: totals.totalSgst,
+      grandTotal: totals.grandTotal,
+      notes: combinedNotes,
+      customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
+    });
+
+    const safe = `${displayRef}_confirmation`.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/order_confirmation_${safe}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateTailoringOrderConfirmationPdf failed:', err);
     return null;
   }
 }
