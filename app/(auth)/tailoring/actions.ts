@@ -10,7 +10,7 @@ import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import {
   generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf,
-  generateTailoringProformaPdf, generateInvoicePdf,
+  generateTailoringProformaPdf,
 } from '@/lib/pdf-generator';
 import { createTailoringInvoice, syncTailoringInvoiceAfterAlteration } from '@/lib/tailoring-invoice';
 import { logAudit } from '@/lib/audit';
@@ -346,6 +346,24 @@ export async function sendBatchConfirmationAction(batchId: string): Promise<void
     await sendWhatsAppTemplate(first.phone, 'sutra_order_confirmation', [
       first.name, displayRef, dueDateFormatted,
     ], pdfPath);
+
+    // Proforma (estimate) for the whole batch — every item in a batch is
+    // created with suppressWhatsApp:true (see order-wizard.tsx), so this is
+    // the ONLY place a multi-item booking's proforma gets sent. Reuses the
+    // same grouped-aware generator as the solo-order path in
+    // createTailoringOrder, which combines all batch siblings into one
+    // document with a single combined total instead of showing just one item.
+    const proformaPath = await generateTailoringProformaPdf(first.id).catch(() => null);
+    if (proformaPath) {
+      const totalRes = await query<{ total: string }>(
+        `SELECT COALESCE(SUM(total_amount), 0)::text AS total FROM tailoring_orders WHERE batch_id=$1`,
+        [batchId]
+      );
+      const batchTotal = Number(totalRes.rows[0]?.total ?? 0);
+      await sendWhatsAppTemplate(first.phone, 'sutra_invoice_notification', [
+        first.name, `${displayRef} (Proforma)`, batchTotal.toFixed(2),
+      ], proformaPath).catch((e) => console.error('[sendBatchConfirmationAction] proforma WA failed:', e));
+    }
   } catch (e) {
     console.error('[sendBatchConfirmationAction] failed:', e);
   }
@@ -441,18 +459,30 @@ export async function advanceStatusAction(
 
   await sendReadyForPickupWhatsApp(orderId);
 
-  // Separate message carrying the actual GST tax invoice PDF — only sent when
-  // a new invoice was just created or an existing one was just amended.
+  // Separate message — only sent when a new invoice was just created or an
+  // existing one was just amended/supplemented. The REAL GST tax invoice is
+  // still created/amended in the backend exactly as before (viewable as
+  // normal in Billing > Invoices, with proper numbering + journal entries) —
+  // but what's actually pushed to the customer here is a proforma-style
+  // "balance update" document (same template as the order-creation proforma,
+  // showing the item/price breakdown, advance paid, and remaining balance),
+  // not the internal GST invoice PDF or its invoice number.
   if (newOrAmendedInvoice) {
-    const custRes = await query<{ name: string; grand_total: string }>(
-      `SELECT c.name, i.grand_total::text FROM invoices i JOIN customers c ON c.id=i.customer_id WHERE i.id=$1`,
-      [newOrAmendedInvoice.invoiceId]
+    const custRes = await query<{ name: string }>(
+      `SELECT c.name FROM tailoring_orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=$1`,
+      [orderId]
     );
     if (custRes.rows[0]) {
-      const pdfPath = await generateInvoicePdf(newOrAmendedInvoice.invoiceId).catch(() => null);
+      const orderRes = await query<{ group_number: string | null; order_number: string; total_amount: string }>(
+        `SELECT group_number, order_number, total_amount::text FROM tailoring_orders WHERE id=$1`,
+        [orderId]
+      );
+      const od = orderRes.rows[0];
+      const displayRef = od.group_number ?? od.order_number;
+      const pdfPath = await generateTailoringProformaPdf(orderId, { variant: 'balance_update' }).catch(() => null);
       sendWhatsAppTemplate(rows[0].phone!, 'sutra_invoice_notification', [
-        custRes.rows[0].name, newOrAmendedInvoice.invoiceNumber, Number(custRes.rows[0].grand_total).toFixed(2),
-      ], pdfPath).catch((e) => console.error('[advanceStatusAction] invoice WhatsApp failed:', e));
+        custRes.rows[0].name, `${displayRef} (Balance Update)`, Number(od.total_amount).toFixed(2),
+      ], pdfPath).catch((e) => console.error('[advanceStatusAction] balance-update WhatsApp failed:', e));
     }
   }
 

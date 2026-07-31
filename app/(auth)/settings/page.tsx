@@ -27,7 +27,7 @@ export default async function SettingsPage() {
        'company_email','upi_vpa','company_logo_path',
        'company_state','company_state_code',
        'loyalty_earn_rate','loyalty_redemption_rate',
-       'shop_anniversary_date'
+       'shop_anniversary_date','terms_and_conditions'
      )`
   );
   const settings = Object.fromEntries(rows.map((r) => [r.key, r.value]));

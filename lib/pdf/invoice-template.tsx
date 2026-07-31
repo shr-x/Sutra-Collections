@@ -233,6 +233,11 @@ export interface PdfInvoiceData {
   // Client-editable Terms & Conditions (settings.terms_and_conditions), split
   // into one bullet per line. Omitted entirely when empty.
   customTerms?: string[];
+  // Overrides the small orange subtitle shown under "PROFORMA INVOICE"
+  // (docType 'PROFORMA' only). Defaults to the initial-estimate wording below
+  // if not set — used to distinguish the order-creation proforma from the
+  // ready-for-pickup "balance update" proforma variant.
+  proformaSubtitle?: string;
 }
 
 function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
@@ -316,7 +321,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
             ) : null}
             {isProforma ? (
               <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#B45309', marginTop: 2 }}>
-                ESTIMATE ONLY — NOT A GST TAX INVOICE
+                {data.proformaSubtitle ?? 'ESTIMATE ONLY — NOT A GST TAX INVOICE'}
               </Text>
             ) : null}
             <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6, gap: 4 }}>

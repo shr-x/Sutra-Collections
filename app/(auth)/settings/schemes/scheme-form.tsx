@@ -30,10 +30,21 @@ export default function SchemeForm({ action, items, categories = [], initialData
   const [schemeName, setSchemeName] = useState(initialData?.name ?? '');
   const [scopedItemIds, setScopedItemIds] = useState<string[]>(initialData?.item_ids ?? []);
   const [scopedCategoryIds, setScopedCategoryIds] = useState<string[]>(initialData?.category_ids ?? []);
+  const [scopeTab, setScopeTab] = useState<'items' | 'categories'>('items');
+  const [scopeSearch, setScopeSearch] = useState('');
 
   const toggleId = (list: string[], setList: (v: string[]) => void, id: string) => {
     setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
   };
+
+  const activeOptions = scopeTab === 'items' ? items : categories;
+  const activeSelectedIds = scopeTab === 'items' ? scopedItemIds : scopedCategoryIds;
+  const setActiveSelectedIds = scopeTab === 'items' ? setScopedItemIds : setScopedCategoryIds;
+  const filteredOptions = activeOptions.filter((o) =>
+    o.name.toLowerCase().includes(scopeSearch.trim().toLowerCase())
+  );
+  const selectedOptions = activeOptions.filter((o) => activeSelectedIds.includes(o.id));
+  const totalScoped = scopedItemIds.length + scopedCategoryIds.length;
 
   return (
     <form action={formAction} className="space-y-6">
@@ -110,48 +121,92 @@ export default function SchemeForm({ action, items, categories = [], initialData
       <div className="card">
         <h2 className="mb-1 font-semibold text-gray-900">Applies To</h2>
         <p className="mb-3 text-xs text-gray-500">
-          Restrict this scheme to specific items or categories. Leave both empty to apply it to all items.
+          Restrict this scheme to specific items or categories. Leave empty to apply it to <strong>all items</strong>.
         </p>
         {scopedItemIds.map((id) => <input key={id} type="hidden" name="item_ids" value={id} />)}
         {scopedCategoryIds.map((id) => <input key={id} type="hidden" name="category_ids" value={id} />)}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label className="label">Specific Items</label>
-            <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 p-2 space-y-1">
-              {items.length === 0 ? (
-                <p className="text-xs text-gray-400">No items available.</p>
-              ) : items.map((i) => (
-                <label key={i.id} className="flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={scopedItemIds.includes(i.id)}
-                    onChange={() => toggleId(scopedItemIds, setScopedItemIds, i.id)}
-                    className="h-3.5 w-3.5"
-                  />
-                  {i.name}
-                </label>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="label">Categories</label>
-            <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 p-2 space-y-1">
-              {categories.length === 0 ? (
-                <p className="text-xs text-gray-400">No categories available.</p>
-              ) : categories.map((c) => (
-                <label key={c.id} className="flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={scopedCategoryIds.includes(c.id)}
-                    onChange={() => toggleId(scopedCategoryIds, setScopedCategoryIds, c.id)}
-                    className="h-3.5 w-3.5"
-                  />
-                  {c.name}
-                </label>
-              ))}
-            </div>
-          </div>
+
+        {/* Tabs */}
+        <div className="mb-3 flex gap-1 border-b border-gray-200">
+          {(['items', 'categories'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => { setScopeTab(tab); setScopeSearch(''); }}
+              className={`flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+                scopeTab === tab
+                  ? 'border-purple-600 text-purple-700'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {tab === 'items' ? 'Items' : 'Categories'}
+              {(tab === 'items' ? scopedItemIds.length : scopedCategoryIds.length) > 0 && (
+                <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-xs font-semibold text-purple-700">
+                  {tab === 'items' ? scopedItemIds.length : scopedCategoryIds.length}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
+
+        {/* Selected chips (active tab) */}
+        {selectedOptions.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {selectedOptions.map((o) => (
+              <span
+                key={o.id}
+                className="inline-flex items-center gap-1.5 rounded-full bg-purple-100 py-1 pl-2.5 pr-1.5 text-xs font-medium text-purple-700"
+              >
+                {o.name}
+                <button
+                  type="button"
+                  onClick={() => toggleId(activeSelectedIds, setActiveSelectedIds, o.id)}
+                  className="rounded-full text-purple-400 hover:text-purple-800"
+                  aria-label={`Remove ${o.name}`}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* Search */}
+        <input
+          type="text"
+          value={scopeSearch}
+          onChange={(e) => setScopeSearch(e.target.value)}
+          placeholder={`Search ${scopeTab}…`}
+          className="input mb-2 text-sm"
+          autoComplete="off"
+        />
+
+        {/* Filtered list */}
+        <div className="max-h-48 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-50">
+          {activeOptions.length === 0 ? (
+            <p className="p-3 text-center text-xs text-gray-400">No {scopeTab} available.</p>
+          ) : filteredOptions.length === 0 ? (
+            <p className="p-3 text-center text-xs text-gray-400">No {scopeTab} match &quot;{scopeSearch}&quot;.</p>
+          ) : (
+            filteredOptions.map((o) => (
+              <label key={o.id} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                <input
+                  type="checkbox"
+                  checked={activeSelectedIds.includes(o.id)}
+                  onChange={() => toggleId(activeSelectedIds, setActiveSelectedIds, o.id)}
+                  className="h-3.5 w-3.5"
+                />
+                {o.name}
+              </label>
+            ))
+          )}
+        </div>
+
+        {totalScoped === 0 && (
+          <p className="mt-2 text-xs font-medium text-amber-600">
+            ⚠ No items or categories selected — this scheme applies to ALL items.
+          </p>
+        )}
       </div>
 
       <div className="flex gap-3 justify-end">

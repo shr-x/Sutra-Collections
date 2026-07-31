@@ -96,12 +96,13 @@ interface TailoringOrderRow {
   invoice_id: string | null;
   design_name: string;
   created_by: string | null;
+  notes: string | null;
 }
 
 const ORDER_SELECT = `
   SELECT o.id, o.order_number, o.group_number, o.customer_id, o.warehouse_id,
          o.total_amount::text, o.amount_paid::text, o.gst_rate::text,
-         o.invoice_id, d.name AS design_name, o.created_by
+         o.invoice_id, d.name AS design_name, o.created_by, o.notes
   FROM tailoring_orders o JOIN designs d ON d.id = o.design_id
   WHERE o.id=$1
 `;
@@ -156,7 +157,10 @@ export async function createTailoringInvoice(
       [
         invoiceNumber, status, order.customer_id, order.warehouse_id, invoiceDate,
         amountPaid, lr.totalAmount, lr.cgstAmount, lr.sgstAmount, lr.totalAmount,
-        `Tailoring order ${order.group_number ?? order.order_number}`,
+        // Real order notes/special-instructions (#3), not an auto-generated
+        // "Tailoring order X" reference — null omits the Notes box on the PDF
+        // entirely rather than showing an empty one.
+        order.notes?.trim() || null,
         order.created_by ?? actingUserId,
       ]
     );
