@@ -18,6 +18,7 @@ interface ItemOption {
   gst_rate: number;
   hsn_code: string | null;
   item_type: string;
+  category_id?: string | null;
   sale_price?: number | null;
   variants: { id: string; size: string | null; color: string | null; sku: string | null }[];
 }
@@ -45,6 +46,9 @@ interface DiscountScheme {
   discount_value: number | null;
   min_order_value?: number | null;
   name: string;
+  // Item/category scoping (#discount-scoping): empty on both = applies to all items.
+  item_ids?: string[];
+  category_ids?: string[];
 }
 
 interface InvoiceBuilderProps {
@@ -338,21 +342,65 @@ export default function InvoiceBuilder({
       return total + disc;
     }, 0);
 
-  // Auto-apply flat (₹) and percent (%) discount schemes when cart meets min_order_value
+  // Auto-apply flat (₹) / percent (%) / seasonal discount schemes at the CART
+  // level — but only ones with NO item/category scoping (empty scoping = applies
+  // to all items, the backward-compatible default every scheme had before item/
+  // category scoping existed). Scoped schemes are applied PER LINE ITEM instead
+  // (see itemLineDiscount below) so they only affect the items/categories they
+  // target, not the whole cart.
+  const isUnscoped = (s: DiscountScheme) => !(s.item_ids?.length) && !(s.category_ids?.length);
   const cartSubtotal = totals.grandTotal;
   const computedFlatPct = discountSchemes
-    .filter((s) => s.scheme_type === 'flat' || s.scheme_type === 'percent')
+    .filter((s) => (s.scheme_type === 'flat' || s.scheme_type === 'percent' || s.scheme_type === 'seasonal') && isUnscoped(s))
     .reduce((sum, scheme) => {
       const minOrder = Number(scheme.min_order_value) || 0;
       if (cartSubtotal < minOrder) return sum;
       const discVal = Number(scheme.discount_value) || 0;
-      if (scheme.scheme_type === 'percent') {
-        return sum + Math.round(cartSubtotal * discVal / 100 * 100) / 100;
+      if (scheme.scheme_type === 'flat') {
+        return sum + discVal;
       }
-      return sum + discVal;
+      return sum + Math.round(cartSubtotal * discVal / 100 * 100) / 100;
     }, 0);
 
-  const totalComputedSchemeDiscount = computedBogo + computedFlatPct;
+  // Per-line scoped discounts (#discount-scoping): a scheme with item_ids/
+  // category_ids scopes itself to only those lines. Multiple matching schemes
+  // on the same line STACK additively — mirrors the existing cart-level
+  // behavior above (which already sums multiple qualifying schemes rather than
+  // picking a single "best" one), so this preserves that precedent instead of
+  // introducing a different rule for scoped schemes.
+  const itemLineDiscount = useCallback((itemId: string, categoryId: string | null | undefined, grossAmount: number) => {
+    let amount = 0;
+    const labels: string[] = [];
+    for (const s of discountSchemes) {
+      if (s.scheme_type !== 'flat' && s.scheme_type !== 'percent' && s.scheme_type !== 'seasonal') continue;
+      if (isUnscoped(s)) continue;
+      const matchesItem = s.item_ids?.includes(itemId);
+      const matchesCategory = categoryId != null && s.category_ids?.includes(categoryId);
+      if (!matchesItem && !matchesCategory) continue;
+      const minOrder = Number(s.min_order_value) || 0;
+      if (cartSubtotal < minOrder) continue;
+      const discVal = Number(s.discount_value) || 0;
+      if (discVal <= 0) continue;
+      const disc = s.scheme_type === 'flat' ? discVal : Math.round(grossAmount * discVal / 100 * 100) / 100;
+      amount += disc;
+      labels.push(`${s.name} -${s.scheme_type === 'flat' ? formatInr(discVal) : `${discVal}%`}`);
+    }
+    return { amount, label: labels.join(', ') };
+  }, [discountSchemes, cartSubtotal]);
+
+  const itemCategoryMap: Record<string, string | null> = {};
+  for (const it of items ?? []) itemCategoryMap[it.id] = it.category_id ?? null;
+
+  // Sum of per-line scoped discounts across the cart — folded into the same
+  // "Scheme Discount" total as BOGO/unscoped flat/percent schemes below (kept
+  // as one aggregate the way the rest of this component already treats scheme
+  // discounts: subtracted from the payable total, not from the taxable/GST base).
+  const computedScopedItemDiscount = lines.reduce(
+    (sum, l) => sum + itemLineDiscount(l.item_id, itemCategoryMap[l.item_id], l.rate * l.quantity).amount,
+    0
+  );
+
+  const totalComputedSchemeDiscount = computedBogo + computedFlatPct + computedScopedItemDiscount;
 
   // On edit (#3): reload the saved scheme discount until the user touches the
   // line items. Once items change, the live recomputation above takes over.
@@ -536,7 +584,12 @@ export default function InvoiceBuilder({
       amount_paid:             amountPaid,
       invoice_discount_type:   invDiscType || null,
       invoice_discount_value:  invDiscValue || null,
-      bogo_discount_amount:    computedBogo,
+      // NOTE: was `computedBogo` (BOGO only) — that silently dropped the
+      // cart-level flat/percent/seasonal scheme discount (and now the new
+      // per-item scoped discount) from the saved invoice total, even though
+      // both were already shown to the cashier/customer on screen. Sending
+      // the full aggregate here is what actually persists them.
+      bogo_discount_amount:    bogoDiscountAmount,
       is_recurring:            isRecurring,
       recurring_frequency:     recurringFreq || null,
       notes:                   notes || null,
@@ -855,12 +908,18 @@ export default function InvoiceBuilder({
             <tbody className="divide-y divide-gray-100">
               {lines.map((line, i) => {
                 const lr = lineResults[i];
+                const scopedDisc = itemLineDiscount(line.item_id, itemCategoryMap[line.item_id], line.rate * line.quantity);
                 return (
                   <tr key={line.key} className="hover:bg-gray-50">
                     <td className="px-3 py-2">
                       <div className="font-medium">{line.item_name}</div>
                       {lr.discountAmount > 0 && (
                         <div className="text-xs text-red-500">-{formatInr(lr.discountAmount)} disc.</div>
+                      )}
+                      {scopedDisc.amount > 0 && (
+                        <div className="text-xs text-red-500" title={scopedDisc.label}>
+                          -{formatInr(scopedDisc.amount)} · {scopedDisc.label}
+                        </div>
                       )}
                       {(() => {
                         const parts = [line.color_label, line.size_label]

@@ -8,11 +8,18 @@ export const metadata: Metadata = { title: 'New Discount Scheme' };
 
 export default async function NewSchemePage() {
   await requireRole('admin');
-  const itemsRes = await query('SELECT id, name FROM items WHERE is_active=TRUE ORDER BY name');
+  const [itemsRes, categoriesRes] = await Promise.all([
+    query('SELECT id, name FROM items WHERE is_active=TRUE ORDER BY name'),
+    query('SELECT id, name FROM item_categories ORDER BY name'),
+  ]);
   return (
     <div>
       <div className="page-header"><h1 className="page-title">New Discount Scheme</h1></div>
-      <SchemeForm action={createSchemeAction} items={itemsRes.rows as { id: string; name: string }[]} />
+      <SchemeForm
+        action={createSchemeAction}
+        items={itemsRes.rows as { id: string; name: string }[]}
+        categories={categoriesRes.rows as { id: string; name: string }[]}
+      />
     </div>
   );
 }

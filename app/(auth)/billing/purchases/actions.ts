@@ -2,7 +2,7 @@
 
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-import { pool } from '@/lib/db';
+import { pool, query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
@@ -49,6 +49,17 @@ export async function createPurchaseInvoiceAction(
   }
 
   const { items, ...header } = parsed;
+
+  if (header.supplier_invoice_number?.trim()) {
+    const dupe = await query<{ id: string }>(
+      `SELECT id FROM purchase_invoices WHERE supplier_id=$1 AND supplier_invoice_number=$2`,
+      [header.supplier_id, header.supplier_invoice_number.trim()]
+    );
+    if (dupe.rows[0]) {
+      return { success: false, error: 'This invoice number already exists for this supplier.' };
+    }
+  }
+
   const lineResults = items.map((item) =>
     calcLine({ quantity: item.quantity, rate: item.rate, gstRate: item.gst_rate, isScheme: !header.is_tax_inclusive })
   );

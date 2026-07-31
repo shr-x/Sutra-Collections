@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import QRCode from 'qrcode';
 import { query } from '@/lib/db';
+import { calcLine } from '@/lib/gst';
 import { renderInvoicePdf } from '@/lib/pdf/invoice-template';
 import type { PdfCompany, PdfInvoiceData } from '@/lib/pdf/invoice-template';
 import { renderThermalPdf } from '@/lib/pdf/thermal-template';
@@ -19,7 +20,7 @@ import {
 const fmtDate = (d: string | Date | null): string =>
   d ? new Date(d).toLocaleDateString('en-IN') : '';
 
-async function getCompany(): Promise<PdfCompany & { upiVpa: string }> {
+async function getCompany(): Promise<PdfCompany & { upiVpa: string; termsAndConditions: string[] }> {
   const { rows } = await query<{ key: string; value: string }>('SELECT key, value FROM settings');
   const s = Object.fromEntries(rows.map((r) => [r.key, r.value]));
 
@@ -31,6 +32,11 @@ async function getCompany(): Promise<PdfCompany & { upiVpa: string }> {
       })()
     : undefined;
 
+  const termsAndConditions = (s.terms_and_conditions ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
   return {
     name: s.company_name ?? 'Sutra Collections',
     gstin: s.company_gstin ?? '',
@@ -40,6 +46,7 @@ async function getCompany(): Promise<PdfCompany & { upiVpa: string }> {
     email: s.company_email || undefined,
     logoAbsPath,
     upiVpa: s.upi_vpa ?? '',
+    termsAndConditions,
   };
 }
 
@@ -55,7 +62,7 @@ export async function generateInvoicePdf(invoiceId: string): Promise<string | nu
         [invoiceId]
       ),
       query(
-        `SELECT ii.*, it.name AS item_name, it.unit,
+        `SELECT ii.*, COALESCE(ii.description_override, it.name) AS item_name, it.unit,
                 isz.size_name, ic.color_name
          FROM invoice_items ii
          JOIN items it ON it.id=ii.item_id
@@ -117,6 +124,7 @@ export async function generateInvoicePdf(invoiceId: string): Promise<string | nu
       schemeDiscount: Number(inv.scheme_discount_amount ?? 0),
       loyaltyDiscount: Number(inv.loyalty_discount_amount ?? 0),
       loyaltyPoints: Number(inv.loyalty_points_redeemed ?? 0),
+      customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
     });
 
     const safe = inv.invoice_number.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -132,6 +140,76 @@ export async function generateInvoicePdf(invoiceId: string): Promise<string | nu
 // Receipt reuses invoice PDF (same data, payment is already recorded)
 export const generateReceiptPdf = generateInvoicePdf;
 
+// ─── Tailoring Proforma (order creation — NOT a real tax invoice) ────────────
+// Sourced directly from tailoring_orders (no invoices/invoice_items row exists
+// yet at this point — the real GST invoice is only created at ready_for_pickup,
+// see lib/tailoring-invoice.ts). Never posts to accounting.
+export async function generateTailoringProformaPdf(orderId: string): Promise<string | null> {
+  try {
+    const { rows } = await query<{
+      order_number: string; group_number: string | null; total_amount: string;
+      amount_paid: string; gst_rate: string; created_at: string;
+      customer_name: string; customer_address: string | null; customer_gstin: string | null; customer_phone: string | null;
+      design_name: string;
+    }>(
+      `SELECT o.order_number, o.group_number, o.total_amount::text, o.amount_paid::text,
+              o.gst_rate::text, o.created_at::text,
+              c.name AS customer_name, c.address AS customer_address, c.gstin AS customer_gstin, c.phone AS customer_phone,
+              d.name AS design_name
+       FROM tailoring_orders o
+       JOIN customers c ON c.id = o.customer_id
+       JOIN designs d ON d.id = o.design_id
+       WHERE o.id=$1`,
+      [orderId]
+    );
+    const order = rows[0];
+    if (!order) return null;
+    const co = await getCompany();
+
+    const grandTotal = Number(order.total_amount);
+    const gstRate = Number(order.gst_rate);
+    const amountPaid = Number(order.amount_paid);
+    const lr = calcLine({ quantity: 1, rate: grandTotal, gstRate, isScheme: false });
+    const displayRef = order.group_number ?? order.order_number;
+
+    const buffer = await renderInvoicePdf({
+      docType: 'PROFORMA',
+      invoiceNumber: displayRef,
+      invoiceDate: fmtDate(order.created_at),
+      company: {
+        name: co.name, gstin: co.gstin, address: co.address,
+        state: co.state, phone: co.phone, email: co.email, logoAbsPath: co.logoAbsPath,
+      },
+      customer: {
+        name: order.customer_name,
+        address: order.customer_address ?? '',
+        gstin: order.customer_gstin ?? undefined,
+        phone: order.customer_phone || undefined,
+      },
+      items: [{
+        description: order.design_name, hsn: '9988', qty: 1, unit: 'pcs',
+        rate: grandTotal, discountAmount: 0, gstRate,
+        taxableValue: lr.taxableValue, cgst: lr.cgstAmount, sgst: lr.sgstAmount, total: lr.totalAmount,
+      }],
+      invoiceDiscountAmount: 0,
+      subtotal: lr.totalAmount,
+      totalCgst: lr.cgstAmount,
+      totalSgst: lr.sgstAmount,
+      grandTotal: lr.totalAmount,
+      amountPaid,
+      notes: 'This is a pre-stitching estimate. The final GST tax invoice will be issued when your order is ready for pickup.',
+    });
+
+    const safe = displayRef.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/proforma_${safe}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateTailoringProformaPdf failed:', err);
+    return null;
+  }
+}
+
 // ─── Thermal Invoice (for WhatsApp sends — narrow, single-page, B&W) ─────────
 
 export async function generateThermalInvoicePdf(invoiceId: string): Promise<string | null> {
@@ -144,7 +222,7 @@ export async function generateThermalInvoicePdf(invoiceId: string): Promise<stri
         [invoiceId]
       ),
       query(
-        `SELECT ii.*, it.name AS item_name, it.unit,
+        `SELECT ii.*, COALESCE(ii.description_override, it.name) AS item_name, it.unit,
                 isz.size_name, ic.color_name
          FROM invoice_items ii
          JOIN items it ON it.id=ii.item_id
@@ -208,6 +286,7 @@ export async function generateThermalInvoicePdf(invoiceId: string): Promise<stri
       schemeDiscount: Number(inv.scheme_discount_amount ?? 0),
       loyaltyDiscount: Number(inv.loyalty_discount_amount ?? 0),
       loyaltyPoints: Number(inv.loyalty_points_redeemed ?? 0),
+      customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
     };
 
     const buffer = await renderThermalPdf(data, logoDataUrl);

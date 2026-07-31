@@ -9,9 +9,12 @@ export const metadata: Metadata = { title: 'Edit Scheme' };
 
 export default async function EditSchemePage({ params }: { params: { id: string } }) {
   await requireRole('admin');
-  const [schemeRes, itemsRes] = await Promise.all([
+  const [schemeRes, itemsRes, categoriesRes, scopedItemsRes, scopedCategoriesRes] = await Promise.all([
     query('SELECT * FROM discount_schemes WHERE id=$1', [params.id]),
     query('SELECT id, name FROM items WHERE is_active=TRUE ORDER BY name'),
+    query('SELECT id, name FROM item_categories ORDER BY name'),
+    query('SELECT item_id FROM discount_scheme_items WHERE scheme_id=$1', [params.id]),
+    query('SELECT category_id FROM discount_scheme_categories WHERE scheme_id=$1', [params.id]),
   ]);
   if (!schemeRes.rows[0]) notFound();
   const s = schemeRes.rows[0];
@@ -23,6 +26,7 @@ export default async function EditSchemePage({ params }: { params: { id: string 
       <SchemeForm
         action={action}
         items={itemsRes.rows as { id: string; name: string }[]}
+        categories={categoriesRes.rows as { id: string; name: string }[]}
         initialData={{
           name: s.name, scheme_type: s.scheme_type,
           buy_item_id: s.buy_item_id, buy_quantity: s.buy_quantity ? Number(s.buy_quantity) : undefined,
@@ -31,6 +35,8 @@ export default async function EditSchemePage({ params }: { params: { id: string 
           min_order_value: s.min_order_value ? Number(s.min_order_value) : undefined,
           valid_from: s.valid_from?.toISOString?.()?.slice(0, 10),
           valid_until: s.valid_until?.toISOString?.()?.slice(0, 10),
+          item_ids: scopedItemsRes.rows.map((r) => r.item_id as string),
+          category_ids: scopedCategoriesRes.rows.map((r) => r.category_id as string),
         }}
       />
     </div>

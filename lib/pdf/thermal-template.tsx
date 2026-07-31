@@ -210,6 +210,14 @@ function ThermalDoc({ data }: { data: ThermalData }) {
           <Text style={[S.center, { fontSize: 7, marginTop: 2 }]}>
             Goods once sold are not returnable.
           </Text>
+          {data.customTerms && data.customTerms.length > 0 && (
+            <>
+              <Text style={S.sep}>{SEP}</Text>
+              {data.customTerms.map((line, i) => (
+                <Text key={i} style={[S.center, { fontSize: 6.5 }]}>{line}</Text>
+              ))}
+            </>
+          )}
           <Text style={[S.center, { fontSize: 6.5, marginTop: 1 }]}>
             Computer generated receipt.
           </Text>

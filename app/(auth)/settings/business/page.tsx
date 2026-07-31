@@ -10,6 +10,7 @@ const SETTING_KEYS = [
   'company_name', 'company_gstin', 'company_address', 'company_state',
   'company_state_code', 'company_phone', 'company_email', 'upi_vpa',
   'company_logo_path', 'loyalty_earn_rate', 'loyalty_redemption_rate',
+  'terms_and_conditions',
 ];
 
 export default async function BusinessProfilePage() {

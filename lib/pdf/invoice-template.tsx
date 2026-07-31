@@ -203,7 +203,7 @@ export interface PdfLineItem {
 }
 
 export interface PdfInvoiceData {
-  docType: 'INVOICE' | 'QUOTATION' | 'PURCHASE' | 'CREDIT NOTE' | 'DEBIT NOTE';
+  docType: 'INVOICE' | 'QUOTATION' | 'PURCHASE' | 'CREDIT NOTE' | 'DEBIT NOTE' | 'PROFORMA';
   invoiceNumber: string;
   invoiceDate: string;
   dueDate?: string;
@@ -230,6 +230,9 @@ export interface PdfInvoiceData {
   // Credit-note specific
   originalInvoiceNumber?: string;
   refundMode?: string;
+  // Client-editable Terms & Conditions (settings.terms_and_conditions), split
+  // into one bullet per line. Omitted entirely when empty.
+  customTerms?: string[];
 }
 
 function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
@@ -241,6 +244,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
   // are never mistaken for a normal tax invoice. Credit note = red, debit = orange.
   const isCreditNote = data.docType === 'CREDIT NOTE';
   const isDebitNote  = data.docType === 'DEBIT NOTE';
+  const isProforma   = data.docType === 'PROFORMA';
   const isReturnDoc  = isCreditNote || isDebitNote;
   const accent       = isCreditNote ? '#DC2626' : isDebitNote ? '#EA580C' : BLACK;
   const accentBg     = isCreditNote ? '#FEF2F2' : isDebitNote ? '#FFF7ED' : undefined;
@@ -302,11 +306,17 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                 : data.docType === 'PURCHASE' ? 'PURCHASE INVOICE'
                 : data.docType === 'CREDIT NOTE' ? 'CREDIT NOTE'
                 : data.docType === 'DEBIT NOTE' ? 'DEBIT NOTE'
+                : data.docType === 'PROFORMA' ? 'PROFORMA INVOICE'
                 : 'TAX INVOICE'}
             </Text>
             {isReturnDoc ? (
               <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: accent, marginTop: 2 }}>
                 {isCreditNote ? 'SALES RETURN / REFUND' : 'PURCHASE RETURN'}
+              </Text>
+            ) : null}
+            {isProforma ? (
+              <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#B45309', marginTop: 2 }}>
+                ESTIMATE ONLY — NOT A GST TAX INVOICE
               </Text>
             ) : null}
             <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6, gap: 4 }}>
@@ -369,6 +379,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                   : data.docType === 'PURCHASE' ? 'PURCHASE RECORD'
                   : data.docType === 'CREDIT NOTE' ? 'CREDIT NOTE COPY'
                   : data.docType === 'DEBIT NOTE' ? 'DEBIT NOTE COPY'
+                  : data.docType === 'PROFORMA' ? 'PROFORMA COPY'
                   : 'ORIGINAL FOR RECIPIENT'}
               </Text>
             </View>
@@ -467,7 +478,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
               {/* Scheme + loyalty discounts shown between subtotal and grand total (#1) */}
               {schemeDisc > 0 && (
                 <View style={S.totalsLine}>
-                  <Text style={[S.totalsLabel, { color: '#B91C1C' }]}>Scheme Discount (Buy 1 Get 1)</Text>
+                  <Text style={[S.totalsLabel, { color: '#B91C1C' }]}>Scheme Discount</Text>
                   <Text style={[S.totalsValue, { color: '#B91C1C' }]}>-{fmt(schemeDisc)}</Text>
                 </View>
               )}
@@ -487,7 +498,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
               )}
               {/* #3: no "Paid" line for cash/UPI. Show Payment Due only on invoices
                   with an outstanding balance (never on credit/debit notes). */}
-              {data.docType === 'INVOICE' && balance > 0 && (
+              {(data.docType === 'INVOICE' || isProforma) && balance > 0 && (
                 <View style={[S.totalsLine, { marginTop: 4 }]}>
                   <Text style={[S.totalsLabel, { color: '#B91C1C' }]}>Payment Due</Text>
                   <Text style={[S.totalsValue, { color: '#B91C1C' }]}>{fmt(balance)}</Text>
@@ -541,6 +552,15 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
               4. Interest @ 18% p.a. will be charged on overdue payments.
             </Text>
           </View>
+
+          {data.customTerms && data.customTerms.length > 0 && (
+            <View style={[S.termsBox, { marginTop: 6 }]}>
+              <Text style={[S.sectionLabel, { marginBottom: 3 }]}>Store Terms</Text>
+              <Text style={S.termsText}>
+                {data.customTerms.map((line, i) => `${i > 0 ? '\n' : ''}${line}`).join('')}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* ── Page Footer ── */}

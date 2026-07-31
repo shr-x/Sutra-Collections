@@ -210,6 +210,20 @@ export default function BusinessForm({ defaults }: Props) {
         </div>
       </div>
 
+      <div className="card space-y-4">
+        <h2 className="font-semibold text-gray-900">Terms &amp; Conditions</h2>
+        <p className="text-xs text-gray-500">
+          Printed near the bottom of every invoice PDF (A4 and thermal). One line per bullet — leave empty to print nothing.
+        </p>
+        <textarea
+          name="terms_and_conditions"
+          defaultValue={defaults.terms_and_conditions ?? ''}
+          rows={5}
+          className="input w-full"
+          placeholder={'e.g.\nExchange within 7 days with receipt.\nAlterations are free within 30 days.'}
+        />
+      </div>
+
       <div className="flex justify-end">
         <SubmitBtn />
       </div>

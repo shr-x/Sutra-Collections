@@ -2,9 +2,30 @@
 
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
-import { query } from '@/lib/db';
+import { pool, query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import type { ActionResult } from '@/types';
+
+async function saveSchemeScope(schemeId: string, itemIds: string[], categoryIds: string[]): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM discount_scheme_items WHERE scheme_id=$1', [schemeId]);
+    await client.query('DELETE FROM discount_scheme_categories WHERE scheme_id=$1', [schemeId]);
+    for (const itemId of itemIds) {
+      await client.query('INSERT INTO discount_scheme_items (scheme_id, item_id) VALUES ($1,$2)', [schemeId, itemId]);
+    }
+    for (const categoryId of categoryIds) {
+      await client.query('INSERT INTO discount_scheme_categories (scheme_id, category_id) VALUES ($1,$2)', [schemeId, categoryId]);
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
 const SchemeSchema = z.object({
   name: z.string().min(1).max(255),
@@ -49,6 +70,8 @@ export async function createSchemeAction(
      d.min_order_value ?? null, d.valid_from ?? null, d.valid_until ?? null]
   );
 
+  await saveSchemeScope(res.rows[0].id, formData.getAll('item_ids') as string[], formData.getAll('category_ids') as string[]);
+
   redirect(`/settings/schemes`);
 }
 
@@ -73,6 +96,8 @@ export async function updateSchemeAction(id: string, _prev: ActionResult, formDa
      d.get_item_id ?? null, d.get_quantity ?? null, d.discount_value ?? null,
      d.min_order_value ?? null, d.valid_from ?? null, d.valid_until ?? null, id]
   );
+
+  await saveSchemeScope(id, formData.getAll('item_ids') as string[], formData.getAll('category_ids') as string[]);
 
   redirect('/settings/schemes');
 }

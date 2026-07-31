@@ -8,7 +8,11 @@ import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
-import { generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf } from '@/lib/pdf-generator';
+import {
+  generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf,
+  generateTailoringProformaPdf, generateInvoicePdf,
+} from '@/lib/pdf-generator';
+import { createTailoringInvoice, syncTailoringInvoiceAfterAlteration } from '@/lib/tailoring-invoice';
 import { logAudit } from '@/lib/audit';
 import type { ActionResult, TailoringStatus, TailoringPaymentMode } from '@/types';
 
@@ -175,6 +179,17 @@ export async function createTailoringOrder(raw: unknown): Promise<{
   const customerPhone = custRes.rows[0].phone!;
   const customerName  = custRes.rows[0].name;
 
+  // Tailoring orders don't have a warehouse picker in the wizard — resolve one
+  // server-side (needed so the real GST invoice created later has a valid
+  // invoices.warehouse_id, which is NOT NULL).
+  let orderWarehouseId = session.role === 'staff' ? session.warehouseId : null;
+  if (!orderWarehouseId) {
+    const whRes = await query<{ id: string }>(
+      `SELECT id FROM warehouses WHERE is_active=TRUE ORDER BY name ASC LIMIT 1`
+    );
+    orderWarehouseId = whRes.rows[0]?.id ?? null;
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -237,8 +252,8 @@ export async function createTailoringOrder(raw: unknown): Promise<{
          (order_number, customer_id, design_id, measurement_version_id,
           color_fabric, price, total_amount, due_date, notes, created_by, invoice_id,
           customer_name_snapshot, customer_phone_snapshot, batch_id,
-          group_number, suffix)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+          group_number, suffix, warehouse_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
       [
         orderNumber, customerId, designId, versionId,
         colorFabric || null, price, price,
@@ -246,7 +261,7 @@ export async function createTailoringOrder(raw: unknown): Promise<{
         invoiceId || null,
         customerName, customerPhone,
         batchId || null,
-        groupNumber, suffix,
+        groupNumber, suffix, orderWarehouseId,
       ]
     );
 
@@ -279,6 +294,16 @@ export async function createTailoringOrder(raw: unknown): Promise<{
         sendWhatsAppTemplate(customerPhone, 'sutra_order_confirmation', [
           customerName, _groupNumber, dueDateFormatted,
         ], pdfPath).catch((e) => console.error('[createTailoringOrder] WhatsApp failed:', e));
+
+        // Proforma (estimate) — separate message, not a real tax invoice, no
+        // ledger entry. Reuses the generic invoice-notification template since
+        // no Meta-approved "proforma" template exists.
+        const proformaPath = await generateTailoringProformaPdf(newOrderId).catch(() => null);
+        if (proformaPath) {
+          sendWhatsAppTemplate(customerPhone, 'sutra_invoice_notification', [
+            customerName, `${_groupNumber} (Proforma)`, price.toFixed(2),
+          ], proformaPath).catch((e) => console.error('[createTailoringOrder] proforma WhatsApp failed:', e));
+        }
       });
     }
 
@@ -364,7 +389,7 @@ export async function advanceStatusAction(
   orderId: string,
   newStatus: TailoringStatus
 ): Promise<{ success: boolean; waStatus: 'sent' | 'skipped' | 'failed'; message: string; error?: string }> {
-  await requireRole('admin', 'staff');
+  const session = await requireRole('admin', 'staff');
 
   const curRes = await query<{ status: TailoringStatus }>(
     `SELECT status FROM tailoring_orders WHERE id=$1`, [orderId]
@@ -382,6 +407,30 @@ export async function advanceStatusAction(
   revalidatePath('/tailoring/production');
   revalidatePath('/tailoring');
 
+  // Real GST tax invoice: created once, on the FIRST arrival at ready_for_pickup.
+  // If the order was later altered and is returning to ready_for_pickup again,
+  // amend the existing invoice in place (if still within the edit grace window)
+  // rather than creating a second one — see lib/tailoring-invoice.ts for the
+  // full amend/lock rules.
+  let newOrAmendedInvoice: { invoiceId: string; invoiceNumber: string } | null = null;
+  if (newStatus === 'ready_for_pickup') {
+    const invRes = await query<{ invoice_id: string | null }>(
+      `SELECT invoice_id FROM tailoring_orders WHERE id=$1`, [orderId]
+    );
+    if (!invRes.rows[0]?.invoice_id) {
+      newOrAmendedInvoice = await createTailoringInvoice(orderId, session.userId);
+    } else {
+      // Both 'amended_in_place' (in-window correction) and
+      // 'supplementary_invoice_created' (locked root -> new delta-only
+      // invoice) carry a real invoice to send over WhatsApp below.
+      // 'unchanged' / 'locked_flagged' / 'no_invoice' send nothing extra.
+      const sync = await syncTailoringInvoiceAfterAlteration(orderId, session.userId);
+      if ((sync.action === 'amended_in_place' || sync.action === 'supplementary_invoice_created') && sync.invoiceId && sync.invoiceNumber) {
+        newOrAmendedInvoice = { invoiceId: sync.invoiceId, invoiceNumber: sync.invoiceNumber };
+      }
+    }
+  }
+
   const { rows } = await query<{ phone: string | null }>(
     `SELECT c.phone FROM tailoring_orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=$1`,
     [orderId]
@@ -391,6 +440,22 @@ export async function advanceStatusAction(
   }
 
   await sendReadyForPickupWhatsApp(orderId);
+
+  // Separate message carrying the actual GST tax invoice PDF — only sent when
+  // a new invoice was just created or an existing one was just amended.
+  if (newOrAmendedInvoice) {
+    const custRes = await query<{ name: string; grand_total: string }>(
+      `SELECT c.name, i.grand_total::text FROM invoices i JOIN customers c ON c.id=i.customer_id WHERE i.id=$1`,
+      [newOrAmendedInvoice.invoiceId]
+    );
+    if (custRes.rows[0]) {
+      const pdfPath = await generateInvoicePdf(newOrAmendedInvoice.invoiceId).catch(() => null);
+      sendWhatsAppTemplate(rows[0].phone!, 'sutra_invoice_notification', [
+        custRes.rows[0].name, newOrAmendedInvoice.invoiceNumber, Number(custRes.rows[0].grand_total).toFixed(2),
+      ], pdfPath).catch((e) => console.error('[advanceStatusAction] invoice WhatsApp failed:', e));
+    }
+  }
+
   return { success: true, waStatus: 'sent', message: '✅ Status updated. WhatsApp sent to customer.' };
 }
 
