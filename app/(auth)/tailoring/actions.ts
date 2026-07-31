@@ -10,7 +10,7 @@ import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import {
   generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf,
-  generateTailoringProformaPdf,
+  generateTailoringProformaPdf, generateTailoringCreditDuePdf,
 } from '@/lib/pdf-generator';
 import { createTailoringInvoice, syncTailoringInvoiceAfterAlteration } from '@/lib/tailoring-invoice';
 import { logAudit } from '@/lib/audit';
@@ -294,16 +294,6 @@ export async function createTailoringOrder(raw: unknown): Promise<{
         sendWhatsAppTemplate(customerPhone, 'sutra_order_confirmation', [
           customerName, _groupNumber, dueDateFormatted,
         ], pdfPath).catch((e) => console.error('[createTailoringOrder] WhatsApp failed:', e));
-
-        // Proforma (estimate) — separate message, not a real tax invoice, no
-        // ledger entry. Reuses the generic invoice-notification template since
-        // no Meta-approved "proforma" template exists.
-        const proformaPath = await generateTailoringProformaPdf(newOrderId).catch(() => null);
-        if (proformaPath) {
-          sendWhatsAppTemplate(customerPhone, 'sutra_invoice_notification', [
-            customerName, `${_groupNumber} (Proforma)`, price.toFixed(2),
-          ], proformaPath).catch((e) => console.error('[createTailoringOrder] proforma WhatsApp failed:', e));
-        }
       });
     }
 
@@ -346,24 +336,6 @@ export async function sendBatchConfirmationAction(batchId: string): Promise<void
     await sendWhatsAppTemplate(first.phone, 'sutra_order_confirmation', [
       first.name, displayRef, dueDateFormatted,
     ], pdfPath);
-
-    // Proforma (estimate) for the whole batch — every item in a batch is
-    // created with suppressWhatsApp:true (see order-wizard.tsx), so this is
-    // the ONLY place a multi-item booking's proforma gets sent. Reuses the
-    // same grouped-aware generator as the solo-order path in
-    // createTailoringOrder, which combines all batch siblings into one
-    // document with a single combined total instead of showing just one item.
-    const proformaPath = await generateTailoringProformaPdf(first.id).catch(() => null);
-    if (proformaPath) {
-      const totalRes = await query<{ total: string }>(
-        `SELECT COALESCE(SUM(total_amount), 0)::text AS total FROM tailoring_orders WHERE batch_id=$1`,
-        [batchId]
-      );
-      const batchTotal = Number(totalRes.rows[0]?.total ?? 0);
-      await sendWhatsAppTemplate(first.phone, 'sutra_invoice_notification', [
-        first.name, `${displayRef} (Proforma)`, batchTotal.toFixed(2),
-      ], proformaPath).catch((e) => console.error('[sendBatchConfirmationAction] proforma WA failed:', e));
-    }
   } catch (e) {
     console.error('[sendBatchConfirmationAction] failed:', e);
   }
@@ -473,15 +445,26 @@ export async function advanceStatusAction(
       [orderId]
     );
     if (custRes.rows[0]) {
-      const orderRes = await query<{ group_number: string | null; order_number: string; total_amount: string }>(
-        `SELECT group_number, order_number, total_amount::text FROM tailoring_orders WHERE id=$1`,
+      const orderRes = await query<{ group_number: string | null; order_number: string; total_amount: string; amount_paid: string }>(
+        `SELECT group_number, order_number, total_amount::text, amount_paid::text FROM tailoring_orders WHERE id=$1`,
         [orderId]
       );
       const od = orderRes.rows[0];
       const displayRef = od.group_number ?? od.order_number;
+      const odAmountPaid = Number(od.amount_paid);
+      const odBalance = Math.max(0, Math.round((Number(od.total_amount) - odAmountPaid) * 100) / 100);
       const pdfPath = await generateTailoringProformaPdf(orderId, { variant: 'balance_update' }).catch(() => null);
+      // The {{3}} slot is a single fixed placeholder in the approved
+      // sutra_invoice_notification template body (worded around one amount,
+      // same as every other call site of this template) — there's no second
+      // placeholder available for a truly separate "Advance Paid" line here.
+      // Leading with the balance keeps the value reading naturally regardless
+      // of the template's exact fixed wording (e.g. "...ready. Amount: ₹{{3}}"
+      // still reads correctly), with the advance appended as a clearly
+      // labeled parenthetical so both figures are distinct on the same line.
       sendWhatsAppTemplate(rows[0].phone!, 'sutra_invoice_notification', [
-        custRes.rows[0].name, `${displayRef} (Balance Update)`, Number(od.total_amount).toFixed(2),
+        custRes.rows[0].name, `${displayRef} (Balance Update)`,
+        `${odBalance.toFixed(2)} (Advance Paid: ₹${odAmountPaid.toFixed(2)})`,
       ], pdfPath).catch((e) => console.error('[advanceStatusAction] balance-update WhatsApp failed:', e));
     }
   }
@@ -527,8 +510,8 @@ export async function markDeliveredPaidAction(orderId: string): Promise<ActionRe
 export async function markDeliveredOnCreditAction(orderId: string): Promise<ActionResult> {
   const session = await requireRole('admin', 'staff');
 
-  const res = await query<{ status: TailoringStatus; total_amount: string; amount_paid: string; order_number: string; customer_id: string }>(
-    `SELECT status, total_amount, amount_paid, order_number, customer_id FROM tailoring_orders WHERE id=$1`, [orderId]
+  const res = await query<{ status: TailoringStatus; total_amount: string; amount_paid: string; order_number: string; group_number: string | null; customer_id: string }>(
+    `SELECT status, total_amount, amount_paid, order_number, group_number, customer_id FROM tailoring_orders WHERE id=$1`, [orderId]
   );
   const order = res.rows[0];
   if (!order) return { success: false, error: 'Order not found.' };
@@ -564,6 +547,27 @@ export async function markDeliveredOnCreditAction(orderId: string): Promise<Acti
   revalidatePath('/reports/customer-dues');
 
   sendDeliveredWhatsApp(orderId).catch(() => {});
+
+  // Credit-due notice — separate message, only sent when a balance was
+  // actually pushed to the customer's dues. Reuses the credit-note visual
+  // template (see generateTailoringCreditDuePdf) but is NOT a real accounting
+  // credit note, and reuses the generic invoice-notification template since
+  // sutra_refund_issued is specifically worded for refunds (the opposite
+  // direction — money owed to the customer, not by them).
+  if (balance > 0) {
+    Promise.resolve().then(async () => {
+      const custRes = await query<{ name: string; phone: string | null }>(
+        `SELECT name, phone FROM customers WHERE id=$1`, [order.customer_id]
+      );
+      const cust = custRes.rows[0];
+      if (!cust?.phone) return;
+      const pdfPath = await generateTailoringCreditDuePdf(orderId).catch(() => null);
+      const displayRef = order.group_number ?? order.order_number;
+      sendWhatsAppTemplate(cust.phone, 'sutra_invoice_notification', [
+        cust.name, `${displayRef} (Credit Due)`, balance.toFixed(2),
+      ], pdfPath).catch((e) => console.error('[markDeliveredOnCreditAction] credit-due WhatsApp failed:', e));
+    });
+  }
 
   return { success: true };
 }

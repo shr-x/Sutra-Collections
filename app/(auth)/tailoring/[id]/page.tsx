@@ -38,6 +38,7 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
             o.credited_at, o.delivered_at,
             o.due_date::text, o.notes,
             o.color_fabric, o.created_at, o.updated_at, o.tailor_id, o.batch_id,
+            o.invoice_id,
             c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone,
             d.id AS design_id, d.name AS design_name, d.category AS design_category,
             d.photo_path AS design_photo,
@@ -55,6 +56,25 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
   );
   if (!res.rows[0]) notFound();
   const order = res.rows[0];
+
+  // Real GST invoice(s) for this order — the root invoice created at first
+  // ready_for_pickup, plus any supplementary invoices created for later
+  // alteration deltas once the root was locked. Excluded from the general
+  // Billing > Invoices list (source='tailoring'), but always viewable here.
+  interface OrderInvoiceRow { id: string; invoice_number: string; grand_total: string; status: string; is_supplementary: boolean }
+  const orderInvoices: OrderInvoiceRow[] = [];
+  if (order.invoice_id) {
+    const invRes = await query<OrderInvoiceRow>(
+      `SELECT id, invoice_number, grand_total::text, status, FALSE AS is_supplementary
+       FROM invoices WHERE id=$1
+       UNION ALL
+       SELECT id, invoice_number, grand_total::text, status, TRUE AS is_supplementary
+       FROM invoices WHERE supplementary_of_invoice_id=$1
+       ORDER BY is_supplementary ASC`,
+      [order.invoice_id]
+    );
+    orderInvoices.push(...invRes.rows);
+  }
 
   const [fieldsRes, paymentsRes, alterationsRes] = await Promise.all([
     query<{ id: string; field_name: string; field_type: 'number' | 'text'; unit: string | null }>(
@@ -282,6 +302,32 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
             creditAmount={creditAmount}
             payments={payments}
           />
+
+          {/* GST Invoices — the real, filed accounting document(s) for this
+              order. Kept out of the general Billing > Invoices list but always
+              viewable here. */}
+          {orderInvoices.length > 0 && (
+            <div className="card">
+              <h2 className="mb-3 text-sm font-semibold text-gray-700">GST Invoice{orderInvoices.length > 1 ? 's' : ''}</h2>
+              <ul className="space-y-2">
+                {orderInvoices.map((inv) => (
+                  <li key={inv.id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                    <div>
+                      <Link href={`/billing/invoices/${inv.id}`} className="font-mono text-xs font-bold text-purple-700 hover:underline">
+                        {inv.invoice_number}
+                      </Link>
+                      {inv.is_supplementary && (
+                        <span className="ml-1.5 text-xs italic text-gray-400">supplementary</span>
+                      )}
+                    </div>
+                    <span className="text-xs font-semibold text-gray-700">
+                      ₹{Number(inv.grand_total).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Batch siblings */}
           {order.batch_id && (

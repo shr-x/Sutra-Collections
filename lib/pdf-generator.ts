@@ -245,6 +245,7 @@ export async function generateTailoringProformaPdf(
       grandTotal: totals.grandTotal,
       amountPaid,
       notes: combinedNotes,
+      customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
     });
 
     const safe = `${displayRef}_${variant}`.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -253,6 +254,76 @@ export async function generateTailoringProformaPdf(
     return filePath;
   } catch (err) {
     console.error('[pdf-generator] generateTailoringProformaPdf failed:', err);
+    return null;
+  }
+}
+
+// ─── Tailoring "Credit Due" notice (Mark Delivered On Credit) ────────────────
+// Reuses the CREDIT NOTE visual template for consistency with the rest of the
+// app's document styling — but this is NOT a real accounting credit note and
+// never touches the credit_notes table or postCreditNote(): a real credit note
+// is specifically a DECREASE (refund/sales-return), whereas this represents
+// the OPPOSITE — an amount now owed BY the customer (added to their dues) when
+// a tailoring order is delivered before it's fully paid. Inserting this into
+// credit_notes would incorrectly reduce recognised sales revenue in GSTR-1/
+// accounting reports for revenue that was already correctly recognised via the
+// order's real GST invoice. The creditNoteSubtitle override makes sure the
+// printed document doesn't claim to be a refund.
+export async function generateTailoringCreditDuePdf(orderId: string): Promise<string | null> {
+  try {
+    const { rows } = await query<{
+      order_number: string; group_number: string | null; credit_amount: string;
+      customer_name: string; customer_address: string | null; customer_gstin: string | null; customer_phone: string | null;
+    }>(
+      `SELECT o.order_number, o.group_number, o.credit_amount::text,
+              c.name AS customer_name, c.address AS customer_address, c.gstin AS customer_gstin, c.phone AS customer_phone
+       FROM tailoring_orders o JOIN customers c ON c.id = o.customer_id
+       WHERE o.id=$1`,
+      [orderId]
+    );
+    const order = rows[0];
+    if (!order) return null;
+    const creditAmount = Number(order.credit_amount);
+    if (creditAmount <= 0) return null;
+    const co = await getCompany();
+    const displayRef = order.group_number ?? order.order_number;
+
+    const buffer = await renderInvoicePdf({
+      docType: 'CREDIT NOTE',
+      creditNoteSubtitle: 'ADDED TO CUSTOMER DUES — NOT A REFUND',
+      invoiceNumber: `${displayRef}-CR`,
+      invoiceDate: fmtDate(new Date()),
+      originalInvoiceNumber: displayRef,
+      company: {
+        name: co.name, gstin: co.gstin, address: co.address,
+        state: co.state, phone: co.phone, email: co.email, logoAbsPath: co.logoAbsPath,
+      },
+      customer: {
+        name: order.customer_name,
+        address: order.customer_address ?? '',
+        gstin: order.customer_gstin ?? undefined,
+        phone: order.customer_phone || undefined,
+      },
+      items: [{
+        description: `Balance carried to dues — Tailoring Order ${displayRef}`,
+        hsn: '', qty: 1, unit: 'pcs', rate: creditAmount, discountAmount: 0, gstRate: 0,
+        taxableValue: creditAmount, cgst: 0, sgst: 0, total: creditAmount,
+      }],
+      invoiceDiscountAmount: 0,
+      subtotal: creditAmount,
+      totalCgst: 0,
+      totalSgst: 0,
+      grandTotal: creditAmount,
+      notes: `This amount has been added to your outstanding dues for order ${displayRef}. Please clear at your earliest convenience.`,
+      customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
+    });
+
+    const safe = `${displayRef}-CR`.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/tailoring_credit_${safe}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateTailoringCreditDuePdf failed:', err);
     return null;
   }
 }
@@ -577,6 +648,7 @@ export async function generateTailoringCustomerPdf(orderId: string): Promise<str
           measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
         }],
         gstRate: order.gst_rate ? Number(order.gst_rate) : undefined,
+        customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
       });
     } else {
       // Grouped booking — ONE page with items table and combined total
@@ -606,6 +678,7 @@ export async function generateTailoringCustomerPdf(orderId: string): Promise<str
         customer:    { name: firstValid.customer_name, phone: firstValid.customer_phone ?? undefined },
         items:       pdfItems,
         gstRate:     firstValid.gst_rate ? Number(firstValid.gst_rate) : undefined,
+        customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
       });
     }
 

@@ -109,6 +109,10 @@ const S = StyleSheet.create({
   measBold:   { fontSize: 9, fontFamily: 'Helvetica-Bold', color: DARK },
   measMuted:  { fontSize: 9, color: MUTED },
 
+  // ── Store Terms (customer copy only) ──────────────────────────────────────
+  termsBox:  { marginTop: 4, marginBottom: 14, borderTopWidth: 0.5, borderTopColor: RULE, paddingTop: 8 },
+  termsText: { fontSize: 7, color: MUTED, lineHeight: 1.5 },
+
   // ── Footer ────────────────────────────────────────────────────────────────
   footer:    { borderTopWidth: 0.5, borderTopColor: RULE, paddingTop: 8 },
   footerTx:  { fontSize: 8, color: MUTED, textAlign: 'center' },
@@ -116,7 +120,7 @@ const S = StyleSheet.create({
 });
 
 const fmtMoney = (n: number) =>
-  `Rs. ${new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(n)}`;
+  `Rs. ${new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -142,6 +146,9 @@ export interface TailoringPdfInput {
   customer: { name: string; phone?: string };
   items: TailoringLineItem[];
   gstRate?: number;
+  // Client-editable Terms & Conditions (settings.terms_and_conditions), one
+  // bullet per line — customer copy only, omitted entirely when empty.
+  customTerms?: string[];
 }
 
 export type GroupedTailoringPdfInput = TailoringPdfInput;
@@ -434,6 +441,21 @@ function PageFooter({ company, isCustomer }: { company: TailoringPdfInput['compa
   );
 }
 
+function StoreTerms({ lines }: { lines: string[] }) {
+  return (
+    <View style={S.termsBox}>
+      <SectionDivider label="Terms" />
+      {lines.map((line, i) => (
+        // One Text node per line so a long individual line wraps naturally
+        // within the page width instead of overflowing or being cut off.
+        <Text key={i} style={[S.termsText, { marginBottom: i < lines.length - 1 ? 2 : 0 }]}>
+          {line}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 function TailoringPage({ data }: { data: TailoringPdfInput }) {
@@ -455,6 +477,9 @@ function TailoringPage({ data }: { data: TailoringPdfInput }) {
       )}
 
       <View style={{ flexGrow: 1 }} />
+      {isCustomer && data.customTerms && data.customTerms.length > 0 && (
+        <StoreTerms lines={data.customTerms} />
+      )}
       <PageFooter company={data.company} isCustomer={isCustomer} />
     </Page>
   );

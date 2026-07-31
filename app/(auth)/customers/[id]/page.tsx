@@ -32,9 +32,15 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
        ORDER BY invoice_date DESC LIMIT 5`,
       [params.id]
     ),
+    // source='pos' excludes tailoring-generated invoices — their balance is
+    // tracked separately via tailoring_orders.credit_amount (shown below as
+    // its own "Tailoring Credit Due" card), so including them here would
+    // double-count the same debt, and their amount_paid goes stale the moment
+    // a post-delivery payment is recorded (recordTailoringPaymentAction never
+    // syncs it back to the invoice).
     query<{ outstanding: string }>(
       `SELECT COALESCE(SUM(grand_total - amount_paid), 0) AS outstanding
-       FROM invoices WHERE customer_id=$1 AND status IN ('issued','partially_paid')`,
+       FROM invoices WHERE customer_id=$1 AND status IN ('issued','partially_paid') AND source='pos'`,
       [params.id]
     ),
     query(

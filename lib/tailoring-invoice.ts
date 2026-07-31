@@ -151,8 +151,8 @@ export async function createTailoringInvoice(
       `INSERT INTO invoices (
          invoice_number, invoice_type, status, customer_id, warehouse_id,
          invoice_date, is_scheme_invoice, payment_mode, amount_paid,
-         subtotal, total_cgst, total_sgst, grand_total, notes, created_by
-       ) VALUES ($1,'gst',$2,$3,$4,$5,FALSE,NULL,$6,$7,$8,$9,$10,$11,$12)
+         subtotal, total_cgst, total_sgst, grand_total, notes, created_by, source
+       ) VALUES ($1,'gst',$2,$3,$4,$5,FALSE,NULL,$6,$7,$8,$9,$10,$11,$12,'tailoring')
        RETURNING id`,
       [
         invoiceNumber, status, order.customer_id, order.warehouse_id, invoiceDate,
@@ -247,8 +247,8 @@ async function createSupplementaryInvoice(
          invoice_number, invoice_type, status, customer_id, warehouse_id,
          invoice_date, is_scheme_invoice, payment_mode, amount_paid,
          subtotal, total_cgst, total_sgst, grand_total, notes, created_by,
-         supplementary_of_invoice_id
-       ) VALUES ($1,'gst','issued',$2,$3,$4,FALSE,NULL,0,$5,$6,$7,$8,$9,$10,$11)
+         supplementary_of_invoice_id, source
+       ) VALUES ($1,'gst','issued',$2,$3,$4,FALSE,NULL,0,$5,$6,$7,$8,$9,$10,$11,'tailoring')
        RETURNING id`,
       [
         invoiceNumber, order.customer_id, order.warehouse_id, invoiceDate,

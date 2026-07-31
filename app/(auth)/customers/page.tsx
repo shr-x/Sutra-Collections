@@ -22,11 +22,28 @@ export default async function CustomersPage({
   const deletedFilter = showDeleted ? 'c.deleted_at IS NOT NULL' : 'c.deleted_at IS NULL';
   const searchFilter = q ? `AND (c.name ILIKE $1 OR c.phone ILIKE $1)` : '';
 
+  // "outstanding" combines regular invoice dues AND tailoring credit dues
+  // (tailoring_orders.credit_amount, set by "Mark Delivered (On Credit)") —
+  // previously this only summed invoices, so a customer with ZERO invoice
+  // dues but an outstanding tailoring credit balance showed no due amount
+  // at all on this list.
+  //
+  // The invoice-balance side excludes source='tailoring' invoices deliberately:
+  // recordTailoringPaymentAction (payments collected after delivery, against
+  // the order's dues) only updates tailoring_orders.amount_paid — it never
+  // syncs the linked invoice's own amount_paid — so a tailoring invoice's
+  // balance goes stale the moment any post-delivery payment is recorded.
+  // tailoring_orders.credit_amount is the authoritative figure for tailoring
+  // dues; summing both would double-count the same debt.
   const { rows: customers } = await query<Customer & { outstanding: string }>(
     `SELECT c.id, c.name, c.phone, c.address, c.gstin, c.created_at,
-            COALESCE((SELECT SUM(grand_total - amount_paid) FROM invoices
-                      WHERE customer_id = c.id AND status IN ('issued','partially_paid')
-                        AND grand_total > amount_paid), 0)::numeric AS outstanding
+            (
+              COALESCE((SELECT SUM(grand_total - amount_paid) FROM invoices
+                        WHERE customer_id = c.id AND status IN ('issued','partially_paid')
+                          AND grand_total > amount_paid AND source = 'pos'), 0)
+              + COALESCE((SELECT SUM(credit_amount) FROM tailoring_orders
+                          WHERE customer_id = c.id AND credit_amount > 0), 0)
+            )::numeric AS outstanding
      FROM customers c
      WHERE ${deletedFilter} ${searchFilter}
      ORDER BY c.name LIMIT 200`,

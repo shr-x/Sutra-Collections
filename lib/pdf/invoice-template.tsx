@@ -238,6 +238,12 @@ export interface PdfInvoiceData {
   // if not set — used to distinguish the order-creation proforma from the
   // ready-for-pickup "balance update" proforma variant.
   proformaSubtitle?: string;
+  // Overrides the small subtitle shown under "CREDIT NOTE" (default:
+  // "SALES RETURN / REFUND"). Used for the tailoring "credit due" notice,
+  // which reuses this doc's visual template but represents the OPPOSITE
+  // direction (an amount added to the customer's dues, not a refund) — see
+  // generateTailoringCreditDuePdf in lib/pdf-generator.ts.
+  creditNoteSubtitle?: string;
 }
 
 function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
@@ -316,7 +322,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
             </Text>
             {isReturnDoc ? (
               <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: accent, marginTop: 2 }}>
-                {isCreditNote ? 'SALES RETURN / REFUND' : 'PURCHASE RETURN'}
+                {isCreditNote ? (data.creditNoteSubtitle ?? 'SALES RETURN / REFUND') : 'PURCHASE RETURN'}
               </Text>
             ) : null}
             {isProforma ? (
@@ -503,11 +509,27 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
               )}
               {/* #3: no "Paid" line for cash/UPI. Show Payment Due only on invoices
                   with an outstanding balance (never on credit/debit notes). */}
-              {(data.docType === 'INVOICE' || isProforma) && balance > 0 && (
+              {data.docType === 'INVOICE' && balance > 0 && (
                 <View style={[S.totalsLine, { marginTop: 4 }]}>
                   <Text style={[S.totalsLabel, { color: '#B91C1C' }]}>Payment Due</Text>
                   <Text style={[S.totalsValue, { color: '#B91C1C' }]}>{fmt(balance)}</Text>
                 </View>
+              )}
+              {/* Proforma (both the initial estimate and the ready-for-pickup
+                  balance-update variant): always show Advance Paid AND Balance
+                  Due as two distinct labeled lines, even when zero, so it's
+                  never ambiguous how much has already been collected. */}
+              {isProforma && (
+                <>
+                  <View style={[S.totalsLine, { marginTop: 4 }]}>
+                    <Text style={[S.totalsLabel, { color: '#15803D' }]}>Advance Paid</Text>
+                    <Text style={[S.totalsValue, { color: '#15803D' }]}>{fmt(data.amountPaid ?? 0)}</Text>
+                  </View>
+                  <View style={S.totalsLine}>
+                    <Text style={[S.totalsLabel, { color: '#B91C1C' }]}>Balance Due</Text>
+                    <Text style={[S.totalsValue, { color: '#B91C1C' }]}>{fmt(balance)}</Text>
+                  </View>
+                </>
               )}
             </View>
           </View>
@@ -561,9 +583,14 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
           {data.customTerms && data.customTerms.length > 0 && (
             <View style={[S.termsBox, { marginTop: 6 }]}>
               <Text style={[S.sectionLabel, { marginBottom: 3 }]}>Store Terms</Text>
-              <Text style={S.termsText}>
-                {data.customTerms.map((line, i) => `${i > 0 ? '\n' : ''}${line}`).join('')}
-              </Text>
+              {data.customTerms.map((line, i) => (
+                // One Text node per line (not one joined block) so a long
+                // individual line wraps naturally within the page width
+                // instead of being measured/laid out alongside its neighbours.
+                <Text key={i} style={[S.termsText, { marginBottom: i < data.customTerms!.length - 1 ? 2 : 0 }]}>
+                  {line}
+                </Text>
+              ))}
             </View>
           )}
         </View>

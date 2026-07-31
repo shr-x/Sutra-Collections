@@ -24,7 +24,12 @@ export default async function InvoicesPage({
 }) {
   await requireRole('admin', 'staff');
 
-  const conditions: string[] = [];
+  // Tailoring-generated GST invoices (created automatically for accounting/GST
+  // purposes at ready_for_pickup) are excluded from this general list by
+  // default — they still exist and are viewable from the tailoring order's
+  // own detail page, they just don't belong mixed in with regular counter
+  // sales invoices here.
+  const conditions: string[] = [`i.source = 'pos'`];
   const params: unknown[] = [];
 
   if (searchParams.q) {
