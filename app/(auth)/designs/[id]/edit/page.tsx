@@ -11,11 +11,12 @@ export default async function EditDesignPage({ params }: { params: { id: string 
   await requireRole('admin');
 
   const { rows } = await query(
-    'SELECT id, name, category, description, photo_path FROM designs WHERE id=$1',
+    'SELECT id, name, category, description, photo_path, gst_rate::numeric AS gst_rate FROM designs WHERE id=$1',
     [params.id]
   );
   if (!rows[0]) notFound();
-  const d = rows[0] as { id: string; name: string; category: string | null; description: string | null; photo_path: string | null };
+  const raw = rows[0] as { id: string; name: string; category: string | null; description: string | null; photo_path: string | null; gst_rate: string };
+  const d = { ...raw, gst_rate: Number(raw.gst_rate) };
 
   return (
     <div>

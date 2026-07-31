@@ -182,6 +182,14 @@ export async function createTailoringOrder(raw: unknown): Promise<{
   const customerPhone = custRes.rows[0].phone!;
   const customerName  = custRes.rows[0].name;
 
+  // GST rate is fixed per design (set in the Design Catalog) and copied onto
+  // the order at creation time — orders never had this set before, so every
+  // order silently defaulted to tailoring_orders.gst_rate's DB default of 0%.
+  const designRes = await query<{ gst_rate: string }>(
+    'SELECT gst_rate::text FROM designs WHERE id=$1', [designId]
+  );
+  const designGstRate = Number(designRes.rows[0]?.gst_rate ?? 0);
+
   // Tailoring orders don't have a warehouse picker in the wizard — resolve one
   // server-side (needed so the real GST invoice created later has a valid
   // invoices.warehouse_id, which is NOT NULL).
@@ -255,8 +263,8 @@ export async function createTailoringOrder(raw: unknown): Promise<{
          (order_number, customer_id, design_id, measurement_version_id,
           color_fabric, price, total_amount, due_date, notes, created_by, invoice_id,
           customer_name_snapshot, customer_phone_snapshot, batch_id,
-          group_number, suffix, warehouse_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+          group_number, suffix, warehouse_id, gst_rate)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,
       [
         orderNumber, customerId, designId, versionId,
         colorFabric || null, price, price,
@@ -264,7 +272,7 @@ export async function createTailoringOrder(raw: unknown): Promise<{
         invoiceId || null,
         customerName, customerPhone,
         batchId || null,
-        groupNumber, suffix, orderWarehouseId,
+        groupNumber, suffix, orderWarehouseId, designGstRate,
       ]
     );
 

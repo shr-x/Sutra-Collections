@@ -13,7 +13,7 @@ function SubmitBtn() {
 }
 
 interface Props {
-  design: { id: string; name: string; category: string | null; description: string | null; photo_path: string | null };
+  design: { id: string; name: string; category: string | null; description: string | null; photo_path: string | null; gst_rate: number };
 }
 
 export default function EditDesignForm({ design }: Props) {
@@ -61,6 +61,18 @@ export default function EditDesignForm({ design }: Props) {
           defaultValue={design.description ?? ''}
           className="input w-full"
         />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">GST Rate</label>
+        <select name="gst_rate" defaultValue={String(design.gst_rate)} className="input w-full">
+          <option value="0">0%</option>
+          <option value="5">5%</option>
+          <option value="12">12%</option>
+          <option value="18">18%</option>
+          <option value="28">28%</option>
+        </select>
+        <p className="mt-1 text-xs text-gray-400">Used for GST calculation on tailoring orders for this design</p>
       </div>
 
       <div>
