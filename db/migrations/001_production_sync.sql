@@ -213,7 +213,7 @@ BEGIN
   LOOP
     SELECT id INTO canonical_id FROM items
     WHERE LOWER(TRIM(name)) = norm_name
-    ORDER BY created_at ASC LIMIT 1;
+    ORDER BY id ASC LIMIT 1;
 
     FOR dup_id IN
       SELECT id FROM items
@@ -263,8 +263,16 @@ BEGIN
       UPDATE stock SET item_id = canonical_id WHERE item_id = dup_id;
 
       -- invoice references
-      UPDATE invoice_items          SET item_id = canonical_id WHERE item_id = dup_id;
+      UPDATE invoice_items SET item_id = canonical_id WHERE item_id = dup_id;
       UPDATE purchase_invoice_items SET item_id = canonical_id WHERE item_id = dup_id;
+      UPDATE stock_movements SET item_id = canonical_id WHERE item_id = dup_id;
+      UPDATE sticker_codes SET item_id = canonical_id WHERE item_id = dup_id;
+      UPDATE quotation_items SET item_id = canonical_id WHERE item_id = dup_id;
+      UPDATE credit_note_items SET item_id = canonical_id WHERE item_id = dup_id;
+      UPDATE debit_note_items SET item_id = canonical_id WHERE item_id = dup_id;
+      UPDATE discount_schemes SET buy_item_id = canonical_id WHERE buy_item_id = dup_id;
+      UPDATE discount_schemes SET get_item_id = canonical_id WHERE get_item_id = dup_id;
+      UPDATE sa_stock_adjustments SET item_id = canonical_id WHERE item_id = dup_id;
 
       DELETE FROM items WHERE id = dup_id;
     END LOOP;
