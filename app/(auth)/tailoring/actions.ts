@@ -79,7 +79,7 @@ async function sendDeliveredWhatsApp(orderId: string): Promise<void> {
 // Sends the ready-for-pickup notification, honoring batch holds. Branches
 // between sutra_order_ready (first time) and sutra_order_alteration_completed
 // (if this order has any alteration history) — same threshold-gating as delivery.
-// Only ONE message total is sent here — the proforma-style "balance update"
+// Only ONE message total is sent here — the customer "balance update" invoice
 // PDF (item/GST breakdown + Advance Paid/Balance Due) is attached directly to
 // whichever template fires, rather than following up with a second message.
 async function sendReadyForPickupWhatsApp(orderId: string): Promise<void> {
@@ -306,14 +306,14 @@ export async function createTailoringOrder(raw: unknown): Promise<{
           customerName, _groupNumber, dueDateFormatted,
         ], pdfPath).catch((e) => console.error('[createTailoringOrder] WhatsApp failed:', e));
 
-        // Proforma (estimate) — separate message, not a real tax invoice, no
-        // ledger entry. Reuses the generic invoice-notification template since
-        // no Meta-approved "proforma" template exists.
-        const proformaPath = await generateTailoringProformaPdf(newOrderId).catch(() => null);
-        if (proformaPath) {
+        // Customer invoice — separate message. Customer-facing labeling only;
+        // the accounting GST invoice is a separate internal record created at
+        // ready_for_pickup (lib/tailoring-invoice.ts), unaffected by this send.
+        const invoicePath = await generateTailoringProformaPdf(newOrderId).catch(() => null);
+        if (invoicePath) {
           sendWhatsAppTemplate(customerPhone, 'sutra_invoice_notification', [
-            customerName, `${_groupNumber} (Proforma)`, price.toFixed(2),
-          ], proformaPath).catch((e) => console.error('[createTailoringOrder] proforma WhatsApp failed:', e));
+            customerName, `${_groupNumber} (Invoice)`, price.toFixed(2),
+          ], invoicePath).catch((e) => console.error('[createTailoringOrder] invoice WhatsApp failed:', e));
         }
       });
     }
@@ -358,22 +358,22 @@ export async function sendBatchConfirmationAction(batchId: string): Promise<void
       first.name, displayRef, dueDateFormatted,
     ], pdfPath);
 
-    // Proforma (estimate) for the whole batch — every item in a batch is
-    // created with suppressWhatsApp:true (see order-wizard.tsx), so this is
-    // the ONLY place a multi-item booking's proforma gets sent. Reuses the
-    // same grouped-aware generator as the solo-order path in
-    // createTailoringOrder, which combines all batch siblings into one
-    // document with a single combined total instead of showing just one item.
-    const proformaPath = await generateTailoringProformaPdf(first.id).catch(() => null);
-    if (proformaPath) {
+    // Customer invoice for the whole batch — every item in a batch is created
+    // with suppressWhatsApp:true (see order-wizard.tsx), so this is the ONLY
+    // place a multi-item booking's invoice gets sent. Reuses the same
+    // grouped-aware generator as the solo-order path in createTailoringOrder,
+    // which combines all batch siblings into one document with a single
+    // combined total instead of showing just one item.
+    const invoicePath = await generateTailoringProformaPdf(first.id).catch(() => null);
+    if (invoicePath) {
       const totalRes = await query<{ total: string }>(
         `SELECT COALESCE(SUM(total_amount), 0)::text AS total FROM tailoring_orders WHERE batch_id=$1`,
         [batchId]
       );
       const batchTotal = Number(totalRes.rows[0]?.total ?? 0);
       await sendWhatsAppTemplate(first.phone, 'sutra_invoice_notification', [
-        first.name, `${displayRef} (Proforma)`, batchTotal.toFixed(2),
-      ], proformaPath).catch((e) => console.error('[sendBatchConfirmationAction] proforma WA failed:', e));
+        first.name, `${displayRef} (Invoice)`, batchTotal.toFixed(2),
+      ], invoicePath).catch((e) => console.error('[sendBatchConfirmationAction] invoice WA failed:', e));
     }
   } catch (e) {
     console.error('[sendBatchConfirmationAction] failed:', e);
@@ -443,7 +443,7 @@ export async function advanceStatusAction(
   // full amend/lock rules. This invoice is purely a backend accounting record
   // (proper numbering, journal entries, viewable in Billing > Invoices) — it
   // does not drive what's sent over WhatsApp below, which is a single combined
-  // "ready for pickup" message with the proforma-style balance PDF attached
+  // "ready for pickup" message with the customer balance invoice PDF attached
   // (see sendReadyForPickupWhatsApp).
   if (newStatus === 'ready_for_pickup') {
     const invRes = await query<{ invoice_id: string | null }>(
@@ -730,6 +730,16 @@ export async function recordTailoringPaymentAction(data: {
 
   revalidatePath(`/tailoring/${data.orderId}`);
   revalidatePath('/tailoring');
+  // The Production Board (/tailoring/production) shows balance-derived UI for
+  // this order — the red "Balance Due" figure, the conditionally-rendered
+  // "+ Record Payment" button (only shown while balance > 0), and (on the
+  // orders list) the payment-status badge. Every OTHER tailoring mutation
+  // (advanceStatus, markDelivered*, assignTailor) revalidates this path;
+  // recordTailoringPaymentAction was the sole exception, so a payment recorded
+  // from a board card left the board rendering stale data until a *second*
+  // action forced a refetch. Adding it here makes all those indicators update
+  // immediately after a single payment.
+  revalidatePath('/tailoring/production');
   revalidatePath('/reports/customer-dues');
   revalidatePath(`/customers/${res.rows[0].customer_id}`);
 

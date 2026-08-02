@@ -140,7 +140,7 @@ export async function generateInvoicePdf(invoiceId: string): Promise<string | nu
 // Receipt reuses invoice PDF (same data, payment is already recorded)
 export const generateReceiptPdf = generateInvoicePdf;
 
-// ─── Shared: grouped tailoring order data (proforma + order-confirmation) ────
+// ─── Shared: grouped tailoring order data (customer invoice + order-confirmation) ─
 // Both generateTailoringProformaPdf and generateTailoringOrderConfirmationPdf
 // source from tailoring_orders (never invoices/invoice_items — the real GST
 // invoice lives separately, see lib/tailoring-invoice.ts) and never post to
@@ -209,7 +209,13 @@ async function fetchGroupedTailoringData(orderId: string) {
   return { anchor, siblings, lineResults, totals, amountPaid, displayRef, combinedNotes };
 }
 
-// ─── Tailoring Proforma (order creation AND ready-for-pickup balance update) ─
+// ─── Tailoring customer INVOICE (order creation AND ready-for-pickup balance
+// update) ─────────────────────────────────────────────────────────────────────
+// Customer-facing document labeled simply "INVOICE" (docType 'PROFORMA' is kept
+// purely as the internal layout discriminator that shows the Advance Paid /
+// Balance Due lines). This is NOT the accounting GST invoice — that's a separate
+// internal record created at ready_for_pickup (see lib/tailoring-invoice.ts) and
+// is unaffected by this document.
 export async function generateTailoringProformaPdf(
   orderId: string,
   opts?: { variant?: 'initial' | 'balance_update' }
@@ -221,13 +227,8 @@ export async function generateTailoringProformaPdf(
     const { anchor, siblings, lineResults, totals, amountPaid, displayRef, combinedNotes } = data;
     const co = await getCompany();
 
-    const proformaSubtitle = variant === 'balance_update'
-      ? 'PROFORMA — BALANCE UPDATE (NOT A GST TAX INVOICE)'
-      : undefined; // falls back to the template's default initial-estimate wording
-
     const buffer = await renderInvoicePdf({
       docType: 'PROFORMA',
-      proformaSubtitle,
       invoiceNumber: displayRef,
       invoiceDate: fmtDate(siblings[0].created_at),
       company: {
@@ -256,8 +257,10 @@ export async function generateTailoringProformaPdf(
       customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
     });
 
+    // Filename is customer-visible — WhatsApp shows path.basename() as the
+    // document name — so it must not say "proforma".
     const safe = `${displayRef}_${variant}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filePath = `/tmp/proforma_${safe}.pdf`;
+    const filePath = `/tmp/tailoring_invoice_${safe}.pdf`;
     fs.writeFileSync(filePath, buffer);
     return filePath;
   } catch (err) {
@@ -268,13 +271,14 @@ export async function generateTailoringProformaPdf(
 
 // ─── Tailoring Order Confirmation (order creation — GST-style breakdown,
 // total only, no advance/balance) ─────────────────────────────────────────────
-// Sent alongside the Proforma at order creation (see createTailoringOrder /
-// sendBatchConfirmationAction in app/(auth)/tailoring/actions.ts). Same
-// underlying GST-table layout as the Proforma/real invoice, but deliberately
-// omits amountPaid so the Advance Paid/Balance Due lines never render (that
-// block is gated on docType === 'PROFORMA' in invoice-template.tsx) — this
-// document just confirms what was ordered and its total cost, not payment
-// status. Not a real tax invoice; never posts to accounting.
+// Sent alongside the customer invoice at order creation (see
+// createTailoringOrder / sendBatchConfirmationAction in
+// app/(auth)/tailoring/actions.ts). Same underlying GST-table layout as the
+// customer invoice, but deliberately omits amountPaid so the Advance Paid/
+// Balance Due lines never render (that block is gated on docType === 'PROFORMA'
+// in invoice-template.tsx) — this document just confirms what was ordered and
+// its total cost, not payment status. Not the accounting GST invoice; never
+// posts to accounting.
 export async function generateTailoringOrderConfirmationPdf(orderId: string): Promise<string | null> {
   try {
     const data = await fetchGroupedTailoringData(orderId);

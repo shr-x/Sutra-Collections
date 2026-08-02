@@ -233,11 +233,6 @@ export interface PdfInvoiceData {
   // Client-editable Terms & Conditions (settings.terms_and_conditions), split
   // into one bullet per line. Omitted entirely when empty.
   customTerms?: string[];
-  // Overrides the small orange subtitle shown under "PROFORMA INVOICE"
-  // (docType 'PROFORMA' only). Defaults to the initial-estimate wording below
-  // if not set — used to distinguish the order-creation proforma from the
-  // ready-for-pickup "balance update" proforma variant.
-  proformaSubtitle?: string;
   // Overrides the small subtitle shown under "CREDIT NOTE" (default:
   // "SALES RETURN / REFUND"). Used for the tailoring "credit due" notice,
   // which reuses this doc's visual template but represents the OPPOSITE
@@ -256,7 +251,6 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
   const isCreditNote = data.docType === 'CREDIT NOTE';
   const isDebitNote  = data.docType === 'DEBIT NOTE';
   const isProforma   = data.docType === 'PROFORMA';
-  const isOrderConfirmation = data.docType === 'ORDER_CONFIRMATION';
   const isReturnDoc  = isCreditNote || isDebitNote;
   const accent       = isCreditNote ? '#DC2626' : isDebitNote ? '#EA580C' : BLACK;
   const accentBg     = isCreditNote ? '#FEF2F2' : isDebitNote ? '#FFF7ED' : undefined;
@@ -318,7 +312,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                 : data.docType === 'PURCHASE' ? 'PURCHASE INVOICE'
                 : data.docType === 'CREDIT NOTE' ? 'CREDIT NOTE'
                 : data.docType === 'DEBIT NOTE' ? 'DEBIT NOTE'
-                : data.docType === 'PROFORMA' ? 'PROFORMA INVOICE'
+                : data.docType === 'PROFORMA' ? 'INVOICE'
                 : data.docType === 'ORDER_CONFIRMATION' ? 'ORDER CONFIRMATION'
                 : 'TAX INVOICE'}
             </Text>
@@ -327,16 +321,12 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                 {isCreditNote ? (data.creditNoteSubtitle ?? 'SALES RETURN / REFUND') : 'PURCHASE RETURN'}
               </Text>
             ) : null}
-            {isProforma ? (
-              <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#B45309', marginTop: 2 }}>
-                {data.proformaSubtitle ?? 'ESTIMATE ONLY — NOT A GST TAX INVOICE'}
-              </Text>
-            ) : null}
-            {isOrderConfirmation ? (
-              <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#B45309', marginTop: 2 }}>
-                NOT A GST TAX INVOICE
-              </Text>
-            ) : null}
+            {/* Tailoring customer documents (the order-creation / ready-for-pickup
+                "INVOICE" formerly labeled Proforma, and the order-confirmation)
+                deliberately print NO "estimate" / "not a GST tax invoice"
+                disclaimer — per client request they read as plain invoices. The
+                real GST tax invoice used for accounting/filing is a separate
+                internal record (see lib/tailoring-invoice.ts), unchanged. */}
             <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6, gap: 4 }}>
               <Text style={S.docMeta}>#</Text>
               <Text style={[S.docMeta, S.docMetaVal]}>{data.invoiceNumber}</Text>
@@ -397,7 +387,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                   : data.docType === 'PURCHASE' ? 'PURCHASE RECORD'
                   : data.docType === 'CREDIT NOTE' ? 'CREDIT NOTE COPY'
                   : data.docType === 'DEBIT NOTE' ? 'DEBIT NOTE COPY'
-                  : data.docType === 'PROFORMA' ? 'PROFORMA COPY'
+                  : data.docType === 'PROFORMA' ? 'INVOICE COPY'
                   : data.docType === 'ORDER_CONFIRMATION' ? 'CUSTOMER COPY'
                   : 'ORIGINAL FOR RECIPIENT'}
               </Text>
@@ -523,10 +513,11 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                   <Text style={[S.totalsValue, { color: '#B91C1C' }]}>{fmt(balance)}</Text>
                 </View>
               )}
-              {/* Proforma (both the initial estimate and the ready-for-pickup
-                  balance-update variant): always show Advance Paid AND Balance
-                  Due as two distinct labeled lines, even when zero, so it's
-                  never ambiguous how much has already been collected. */}
+              {/* Tailoring INVOICE (docType 'PROFORMA' internally — both the
+                  order-creation and ready-for-pickup balance-update variants):
+                  always show Advance Paid AND Balance Due as two distinct
+                  labeled lines, even when zero, so it's never ambiguous how
+                  much has already been collected. */}
               {isProforma && (
                 <>
                   <View style={[S.totalsLine, { marginTop: 4 }]}>
