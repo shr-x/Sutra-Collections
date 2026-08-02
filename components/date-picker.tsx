@@ -32,6 +32,13 @@ function fmtDisplay(iso: string): string {
 function parseIsoYear(iso: string) { return parseInt(iso.slice(0, 4)); }
 function parseIsoMonth(iso: string) { return parseInt(iso.slice(5, 7)) - 1; }
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+// Guards against a malformed value/defaultValue (e.g. not a real "YYYY-MM-DD")
+// silently producing a NaN-driven, un-clickable empty calendar grid.
+function safeIso(iso: string): string {
+  return ISO_DATE_RE.test(iso) ? iso : '';
+}
+
 export default function DatePicker({
   name,
   value,
@@ -42,8 +49,8 @@ export default function DatePicker({
   className,
 }: DatePickerProps) {
   const controlled = value !== undefined;
-  const [internal, setInternal] = useState(defaultValue ?? '');
-  const current = controlled ? (value ?? '') : internal;
+  const [internal, setInternal] = useState(safeIso(defaultValue ?? ''));
+  const current = safeIso(controlled ? (value ?? '') : internal);
 
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'cal' | 'my'>('cal');

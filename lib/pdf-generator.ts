@@ -800,6 +800,85 @@ export async function generateTailoringTailorPdf(orderId: string): Promise<strin
 }
 
 /**
+ * Tailor-facing ALTERATION document. Contains NO customer name/phone and NO
+ * pricing/GST — only the alteration reference, the reason (description), and the
+ * "changed to" measurements captured with the alteration. Meant to be sent to
+ * the assigned tailor so they know exactly what to rework.
+ */
+export async function generateAlterationTailorPdf(alterationId: string): Promise<string | null> {
+  try {
+    const { rows } = await query<{
+      description: string; requested_at: string; measurement_version_id: string | null;
+      order_number: string; group_number: string | null; suffix: string | null; due_date: string | null;
+      color_fabric: string | null;
+      design_name: string; design_category: string | null; design_photo: string | null;
+      seq: string;
+    }>(
+      `SELECT a.description, a.requested_at::text, a.measurement_version_id,
+              o.order_number, o.group_number, o.suffix, o.due_date::text, o.color_fabric,
+              d.name AS design_name, d.category AS design_category, d.photo_path AS design_photo,
+              (SELECT COUNT(*) FROM tailoring_alterations a2
+               WHERE a2.tailoring_order_id = a.tailoring_order_id
+                 AND a2.requested_at <= a.requested_at)::text AS seq
+       FROM tailoring_alterations a
+       JOIN tailoring_orders o ON o.id = a.tailoring_order_id
+       JOIN designs d ON d.id = o.design_id
+       WHERE a.id = $1`,
+      [alterationId]
+    );
+    const alt = rows[0];
+    if (!alt) return null;
+    const co = await getCompany();
+
+    const measRes = alt.measurement_version_id
+      ? await query<{ field_name: string; value: string; unit: string | null }>(
+          `SELECT f.field_name, mv.value, f.unit
+           FROM measurement_values mv
+           JOIN design_measurement_fields f ON f.id = mv.field_id
+           WHERE mv.version_id = $1
+           ORDER BY f.sort_order, f.field_name`,
+          [alt.measurement_version_id]
+        )
+      : { rows: [] as Array<{ field_name: string; value: string; unit: string | null }> };
+
+    const photoAbsPath = (() => {
+      if (!alt.design_photo) return undefined;
+      const abs = path.join(process.cwd(), 'public', alt.design_photo);
+      return fs.existsSync(abs) ? abs : undefined;
+    })();
+
+    const altRef = `${alt.order_number} · ALT-${alt.seq}`;
+
+    const buffer = await renderTailoringPdf({
+      docType:     'ALTERATION',
+      orderNumber: altRef,
+      orderDate:   fmtDate(alt.requested_at),
+      dueDate:     alt.due_date ? fmtDate(alt.due_date) : undefined,
+      company:     { name: co.name, gstin: co.gstin, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
+      // Tailor document — customer block is not rendered for non-'TAILORING ORDER' docTypes.
+      customer:    { name: '' },
+      items: [{
+        designName:   alt.design_name,
+        colorFabric:  alt.color_fabric ?? undefined,
+        photoAbsPath,
+        qty:          1,
+        price:        0, // not rendered on tailor docs
+        notes:        `Reason for alteration: ${alt.description}`,
+        measurements: measRes.rows.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
+      }],
+    });
+
+    const safe = altRef.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/alteration_${safe}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateAlterationTailorPdf failed:', err);
+    return null;
+  }
+}
+
+/**
  * Kept for backward compatibility — delegates to generateTailoringCustomerPdf on the first order.
  * generateTailoringCustomerPdf now auto-collects all group siblings, so this is equivalent.
  */

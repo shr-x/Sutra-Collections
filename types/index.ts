@@ -47,6 +47,7 @@ export interface Customer {
   address: string;
   gstin: string | null;
   whatsapp_opt_out: boolean;
+  marketing_opt_in: boolean;
   credit_limit: number;
   created_at: Date;
 }

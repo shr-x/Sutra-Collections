@@ -37,6 +37,9 @@ export default async function EditSchemePage({ params }: { params: { id: string 
           valid_until: s.valid_until?.toISOString?.()?.slice(0, 10),
           item_ids: scopedItemsRes.rows.map((r) => r.item_id as string),
           category_ids: scopedCategoriesRes.rows.map((r) => r.category_id as string),
+          is_active: s.is_active,
+          offer_image_path: s.offer_image_path ?? null,
+          broadcast_sent_at: s.broadcast_sent_at ? s.broadcast_sent_at.toISOString?.() ?? String(s.broadcast_sent_at) : null,
         }}
       />
     </div>

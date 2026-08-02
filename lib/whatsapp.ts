@@ -6,11 +6,39 @@
 
 import fs from 'fs';
 import path from 'path';
+import { pool } from '@/lib/db';
 
 export interface WaSendResult {
   success: boolean;
   messageId?: string;
   error?: string;
+  skipped?: boolean;
+}
+
+/**
+ * Consent gate for NON-transactional (marketing) messages — birthday/anniversary
+ * greetings and offer broadcasts. A customer must satisfy BOTH DPDP consent AND
+ * the marketing opt-in toggle (and not have globally opted out of WhatsApp, and
+ * not be soft-deleted) before any marketing message goes out. Transactional
+ * messages (invoices, order updates, payment reminders) never pass a
+ * marketingCustomerId and are therefore never gated here.
+ */
+export async function canSendMarketing(customerId: string): Promise<boolean> {
+  try {
+    const { rows } = await pool.query<{ ok: boolean }>(
+      `SELECT (dpdp_consent = 'given'
+               AND marketing_opt_in = TRUE
+               AND whatsapp_opt_out = FALSE
+               AND deleted_at IS NULL) AS ok
+       FROM customers WHERE id = $1`,
+      [customerId],
+    );
+    return rows[0]?.ok === true;
+  } catch (err) {
+    // Fail closed for marketing — never send if consent can't be verified.
+    console.error('[WA] canSendMarketing check failed:', err);
+    return false;
+  }
 }
 
 export function interpolateTemplate(
@@ -159,6 +187,11 @@ const URL_BUTTON_CONFIG: Record<string, { index: string; url: string }> = {};
  *   template has only one header slot.
  * buttonUrl: override URL for the "Visit website" button. Defaults to the
  *   per-template entry in URL_BUTTON_CONFIG. Pass null to suppress.
+ * opts.marketingCustomerId: mark this as a MARKETING send for the given customer.
+ *   When set, the DPDP + marketing-opt-in consent gate (canSendMarketing) is
+ *   enforced here before anything is sent to Meta; if the customer hasn't
+ *   consented the send is skipped (returns { success:false, skipped:true }).
+ *   Transactional sends omit this and are never gated.
  */
 export async function sendWhatsAppTemplate(
   toPhone: string,
@@ -166,9 +199,20 @@ export async function sendWhatsAppTemplate(
   parameters: string[],
   pdfPath?: string | null,
   headerImageUrl?: string | null,
-  buttonUrl?: string | null
+  buttonUrl?: string | null,
+  opts?: { marketingCustomerId?: string | null }
 ): Promise<WaSendResult> {
   console.log(`[WA] sendWhatsAppTemplate: template="${templateName}" params=${parameters.length} pdf=${pdfPath ? 'yes' : 'none'}`);
+
+  // Marketing consent gate — enforced centrally so no marketing send can bypass
+  // it regardless of call site.
+  if (opts?.marketingCustomerId) {
+    const allowed = await canSendMarketing(opts.marketingCustomerId);
+    if (!allowed) {
+      console.log(`[WA] Skipped marketing "${templateName}" — customer ${opts.marketingCustomerId} not consented/opted-in`);
+      return { success: false, skipped: true, error: 'Customer not opted in to marketing messages' };
+    }
+  }
 
   // Body component is always present
   const components: object[] = [

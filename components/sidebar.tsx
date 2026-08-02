@@ -18,6 +18,7 @@ const BILLING_CHILDREN = [
   { href: '/billing/credit-notes', label: 'Refunds' },
   { href: '/billing/purchases',   label: 'Purchases' },
   { href: '/billing/debit-notes', label: 'Debit Notes' },
+  { href: '/settings/schemes',    label: 'Discount Schemes' },
 ];
 
 const BILLING_CHILDREN_STAFF = [

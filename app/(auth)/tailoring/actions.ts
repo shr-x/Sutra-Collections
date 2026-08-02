@@ -11,6 +11,7 @@ import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import {
   generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf,
   generateTailoringProformaPdf, generateTailoringCreditDuePdf, generateTailoringOrderConfirmationPdf,
+  generateAlterationTailorPdf,
 } from '@/lib/pdf-generator';
 import { createTailoringInvoice, syncTailoringInvoiceAfterAlteration } from '@/lib/tailoring-invoice';
 import { postPaymentReceived } from '@/lib/accounting';
@@ -637,6 +638,60 @@ export async function markDeliveredOnCreditAction(orderId: string): Promise<Acti
 // a tailor already assigned lands directly in "In Production" (not "Unassigned")
 // on the board — that split is driven purely by tailor_id presence.
 
+// Sends the tailor-facing ALTERATION document (no customer/money data) to the
+// assigned tailor, and stamps tailor_notified_at so requestAlteration and
+// assignTailor never both notify for the same alteration. No-op without a phone.
+// Reuses the sutra_tailor_assignment template (a tailor-facing template with a
+// document header); the attached PDF carries the full alteration detail.
+async function notifyTailorOfAlteration(alterationId: string, tailorPhone: string | null): Promise<void> {
+  try {
+    if (!tailorPhone) return;
+    const refRes = await query<{ order_number: string; design_name: string; due_date: string | null }>(
+      `SELECT o.order_number, d.name AS design_name, o.due_date::text
+       FROM tailoring_alterations a
+       JOIN tailoring_orders o ON o.id = a.tailoring_order_id
+       JOIN designs d ON d.id = o.design_id
+       WHERE a.id = $1`,
+      [alterationId]
+    );
+    const r = refRes.rows[0];
+    if (!r) return;
+    const dueStr = r.due_date
+      ? new Date(r.due_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+      : 'TBD';
+    const pdfPath = await generateAlterationTailorPdf(alterationId).catch(() => null);
+    await sendWhatsAppTemplate(
+      tailorPhone,
+      'sutra_tailor_assignment',
+      [`${r.order_number} (Alteration)`, r.design_name, dueStr],
+      pdfPath ?? null,
+    );
+    await query(`UPDATE tailoring_alterations SET tailor_notified_at = NOW() WHERE id = $1`, [alterationId]);
+  } catch (e) {
+    console.error('[notifyTailorOfAlteration] failed:', e);
+  }
+}
+
+// When a tailor is assigned/changed, notify them of any alteration that is still
+// pending (order in the rework cycle: status='in_progress') and hasn't already
+// had its tailor document sent. Covers the case where an alteration was
+// requested while the order had no tailor assigned yet.
+async function notifyPendingAlterationTailor(orderId: string, tailorPhone: string | null): Promise<void> {
+  if (!tailorPhone) return;
+  const res = await query<{ id: string }>(
+    `SELECT a.id
+     FROM tailoring_alterations a
+     JOIN tailoring_orders o ON o.id = a.tailoring_order_id
+     WHERE a.tailoring_order_id = $1
+       AND a.tailor_notified_at IS NULL
+       AND o.status = 'in_progress'
+     ORDER BY a.requested_at DESC
+     LIMIT 1`,
+    [orderId]
+  );
+  if (res.rows[0]) await notifyTailorOfAlteration(res.rows[0].id, tailorPhone);
+}
+
 export async function requestAlterationAction(data: {
   orderId: string;
   description: string;
@@ -650,14 +705,16 @@ export async function requestAlterationAction(data: {
 
   const res = await query<{
     status: TailoringStatus; order_number: string; group_number: string | null;
-    customer_id: string; design_id: string;
+    customer_id: string; design_id: string; tailor_id: string | null; tailor_phone: string | null;
     customer_name: string; customer_phone: string | null; design_name: string;
   }>(
     `SELECT o.status, o.order_number, o.group_number, o.customer_id, o.design_id,
+            o.tailor_id, t.phone AS tailor_phone,
             c.name AS customer_name, c.phone AS customer_phone, d.name AS design_name
      FROM tailoring_orders o
      JOIN customers c ON c.id = o.customer_id
      JOIN designs d ON d.id = o.design_id
+     LEFT JOIN tailors t ON t.id = o.tailor_id
      WHERE o.id=$1`,
     [data.orderId]
   );
@@ -667,6 +724,7 @@ export async function requestAlterationAction(data: {
     return { success: false, error: 'Alterations can only be requested once stitching is done.' };
   }
 
+  let newAlterationId: string | null = null;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -695,11 +753,12 @@ export async function requestAlterationAction(data: {
       );
     }
 
-    await client.query(
+    const altRes = await client.query<{ id: string }>(
       `INSERT INTO tailoring_alterations (tailoring_order_id, description, price_adjustment, requested_by, measurement_version_id)
-       VALUES ($1,$2,$3,$4,$5)`,
+       VALUES ($1,$2,$3,$4,$5) RETURNING id`,
       [data.orderId, description, data.priceAdjustment, session.userId, versionId]
     );
+    newAlterationId = altRes.rows[0].id;
 
     await client.query(
       `UPDATE tailoring_orders
@@ -727,6 +786,14 @@ export async function requestAlterationAction(data: {
     sendWhatsAppTemplate(order.customer_phone, 'sutra_order_alteration_started', [
       order.customer_name, displayRef, order.design_name,
     ]).catch((e) => console.error('[requestAlterationAction] alteration-started WA failed:', e));
+  }
+
+  // Tailor-facing alteration document — separate, additional send. Fires now if
+  // the order already has an assigned tailor (the common case, since alterations
+  // keep the existing tailor). If unassigned, it's sent later by assignTailor.
+  if (order.tailor_id && newAlterationId) {
+    const altId = newAlterationId;
+    notifyTailorOfAlteration(altId, order.tailor_phone).catch((e) => console.error('[requestAlterationAction] tailor WA failed:', e));
   }
 
   revalidatePath(`/tailoring/${data.orderId}`);
@@ -906,6 +973,10 @@ export async function assignTailorAction(
           tailorPdf ?? null
         ).catch((e: unknown) => console.error('[assignTailor] tailor WA:', e));
       }
+
+      // If this order is in an alteration rework cycle and the alteration hasn't
+      // yet been sent to a tailor, send the tailor-facing alteration document now.
+      await notifyPendingAlterationTailor(orderId, tailor.phone);
     } catch (e) {
       console.error('[assignTailor] PDF/WA error:', e);
     }
@@ -1099,6 +1170,8 @@ export async function changeTailorAction(
             tailorDisplayRef, detail.design_name, dueDateStr,
           ], tailorPdf ?? null).catch((e: unknown) => console.error('[changeTailor] new tailor WA:', e));
         }
+        // Send the pending alteration document to the newly-assigned tailor.
+        await notifyPendingAlterationTailor(orderId, newTailor.phone);
       }
     } catch (e) {
       console.error('[changeTailor] WA error:', e);

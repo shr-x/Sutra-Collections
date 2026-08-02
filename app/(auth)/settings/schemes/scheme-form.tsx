@@ -15,6 +15,7 @@ interface SchemeData {
   discount_value?: number; min_order_value?: number;
   valid_from?: string; valid_until?: string;
   item_ids?: string[]; category_ids?: string[];
+  is_active?: boolean; offer_image_path?: string | null; broadcast_sent_at?: string | null;
 }
 
 interface Props {
@@ -46,8 +47,13 @@ export default function SchemeForm({ action, items, categories = [], initialData
   const selectedOptions = activeOptions.filter((o) => activeSelectedIds.includes(o.id));
   const totalScoped = scopedItemIds.length + scopedCategoryIds.length;
 
+  // Default a NEW scheme to Active; an existing one reflects its saved state.
+  const isNew = initialData === undefined;
+  const [status, setStatus] = useState(isNew ? 'active' : (initialData?.is_active ? 'active' : 'draft'));
+  const [broadcast, setBroadcast] = useState(false);
+
   return (
-    <form action={formAction} className="space-y-6">
+    <form action={formAction} encType="multipart/form-data" className="space-y-6">
       {state.error && <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{state.error}</div>}
 
       <div className="card">
@@ -206,6 +212,63 @@ export default function SchemeForm({ action, items, categories = [], initialData
           <p className="mt-2 text-xs font-medium text-amber-600">
             ⚠ No items or categories selected — this scheme applies to ALL items.
           </p>
+        )}
+      </div>
+
+      {/* ── Broadcast Offer ─────────────────────────────────────────────────── */}
+      <div className="card space-y-4">
+        <h2 className="font-semibold text-gray-900">Broadcast Offer</h2>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label">Status</label>
+            <select name="status" value={status} onChange={(e) => setStatus(e.target.value)} className="input">
+              <option value="draft">Draft</option>
+              <option value="active">Active</option>
+            </select>
+            <p className="mt-1 text-xs text-gray-400">A Draft scheme is never broadcast, even if the toggle below is on.</p>
+          </div>
+
+          <div>
+            <label className="label">Offer Banner Image</label>
+            {initialData?.offer_image_path && (
+              <img
+                src={`/${initialData.offer_image_path}?v=${encodeURIComponent(initialData.offer_image_path)}`}
+                alt="Current offer banner"
+                className="mb-2 h-24 w-auto rounded border border-gray-200 object-contain"
+              />
+            )}
+            <input
+              type="file"
+              name="offer_image"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              className="block w-full text-sm text-gray-600 file:mr-3 file:rounded-md file:border-0 file:bg-purple-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-purple-700 hover:file:bg-purple-100"
+            />
+            <p className="mt-1 text-xs text-gray-400">PNG, JPG, GIF or WebP · Max 5 MB · Used as the broadcast message image</p>
+          </div>
+        </div>
+
+        <label className="flex items-start gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            name="send_broadcast"
+            checked={broadcast}
+            onChange={(e) => setBroadcast(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-purple-600"
+          />
+          <span>
+            Send as broadcast to customers
+            <span className="block text-xs font-normal text-gray-400">
+              Sends the offer (with the banner image) via WhatsApp to all marketing-opted-in customers on save — only when Status is Active.
+            </span>
+          </span>
+        </label>
+
+        {status !== 'active' && broadcast && (
+          <p className="text-xs font-medium text-amber-600">⚠ Status is Draft — nothing will be broadcast until you set it to Active.</p>
+        )}
+        {initialData?.broadcast_sent_at && (
+          <p className="text-xs text-gray-400">This offer was already broadcast on {new Date(initialData.broadcast_sent_at).toLocaleDateString('en-IN')} — re-saving won&apos;t send it again.</p>
         )}
       </div>
 

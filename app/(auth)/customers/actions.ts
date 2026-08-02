@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { triggerBirthdayGreetingIfToday } from '@/lib/greetings';
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
 const CustomerSchema = z.object({
@@ -19,6 +20,7 @@ const CustomerSchema = z.object({
     .or(z.literal('')),
   credit_limit: z.coerce.number().min(0, 'Credit limit cannot be negative').default(0),
   whatsapp_opt_out: z.boolean().default(false),
+  marketing_opt_in: z.boolean().default(true),
   date_of_birth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
 });
 
@@ -33,6 +35,12 @@ function parseCustomerForm(formData: FormData, isAdmin: boolean) {
     gstin: (formData.get('gstin') as string | null) || '',
     credit_limit: isAdmin ? (formData.get('credit_limit') ?? '0') : '0',
     whatsapp_opt_out: formData.get('whatsapp_opt_out') === 'on',
+    // Marketing checkbox is checked-by-default; an unchecked box doesn't submit,
+    // so absence means opted OUT. Uses a hidden mirror field so we can tell a
+    // deliberately-unchecked box from a form that never had the field.
+    marketing_opt_in: formData.get('marketing_field_present') === '1'
+      ? formData.get('marketing_opt_in') === 'on'
+      : true,
     date_of_birth: dob && /^\d{4}-\d{2}-\d{2}$/.test(dob) ? dob : null,
   };
 }
@@ -49,12 +57,17 @@ export async function createCustomerAction(
   const d = parsed.data;
   try {
     const res = await query<{ id: string }>(
-      `INSERT INTO customers (name, phone, address, gstin, credit_limit, whatsapp_opt_out, date_of_birth)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [d.name, d.phone || null, d.address, d.gstin || null, d.credit_limit, d.whatsapp_opt_out, d.date_of_birth ?? null]
+      `INSERT INTO customers (name, phone, address, gstin, credit_limit, whatsapp_opt_out, marketing_opt_in, date_of_birth)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [d.name, d.phone || null, d.address, d.gstin || null, d.credit_limit, d.whatsapp_opt_out, d.marketing_opt_in, d.date_of_birth ?? null]
     );
     const newId = res.rows[0].id;
     logAudit({ userId: session.userId, action: 'create', entityType: 'customer', entityId: newId, entityLabel: d.name }).catch(() => {});
+    // If the birthday entered is today, greet immediately (dedup + consent
+    // handled inside the helper) rather than waiting for the next daily cron.
+    if (d.date_of_birth) {
+      triggerBirthdayGreetingIfToday(newId).catch(() => {});
+    }
     revalidatePath('/customers');
   } catch {
     return { error: 'Failed to create customer. Please try again.' };
@@ -101,23 +114,51 @@ export async function updateCustomerAction(
     if (session.role === 'admin') {
       await query(
         `UPDATE customers SET name=$1,phone=$2,address=$3,gstin=$4,credit_limit=$5,
-         whatsapp_opt_out=$6,date_of_birth=$7 WHERE id=$8`,
-        [d.name, d.phone || null, d.address, d.gstin || null, d.credit_limit, d.whatsapp_opt_out, d.date_of_birth ?? null, id]
+         whatsapp_opt_out=$6,marketing_opt_in=$7,date_of_birth=$8 WHERE id=$9`,
+        [d.name, d.phone || null, d.address, d.gstin || null, d.credit_limit, d.whatsapp_opt_out, d.marketing_opt_in, d.date_of_birth ?? null, id]
       );
     } else {
       await query(
         `UPDATE customers SET name=$1,phone=$2,address=$3,gstin=$4,
-         whatsapp_opt_out=$5,date_of_birth=$6 WHERE id=$7`,
-        [d.name, d.phone || null, d.address, d.gstin || null, d.whatsapp_opt_out, d.date_of_birth ?? null, id]
+         whatsapp_opt_out=$5,marketing_opt_in=$6,date_of_birth=$7 WHERE id=$8`,
+        [d.name, d.phone || null, d.address, d.gstin || null, d.whatsapp_opt_out, d.marketing_opt_in, d.date_of_birth ?? null, id]
       );
     }
     logAudit({ userId: session.userId, action: 'update', entityType: 'customer', entityId: id, entityLabel: d.name }).catch(() => {});
+    // Birthday edited to today → greet immediately (dedup prevents a repeat if
+    // the cron also runs today).
+    if (d.date_of_birth) {
+      triggerBirthdayGreetingIfToday(id).catch(() => {});
+    }
     revalidatePath('/customers');
     revalidatePath(`/customers/${id}`);
   } catch {
     return { error: 'Failed to update customer.' };
   }
   redirect(`/customers/${id}`);
+}
+
+/**
+ * Per-customer "Marketing Messages" toggle used on the Customers list & detail
+ * pages. Flips marketing_opt_in. Controls birthday/anniversary greetings and
+ * offer broadcasts only — transactional messages are unaffected.
+ */
+export async function toggleMarketingOptInAction(formData: FormData): Promise<void> {
+  const session = await requireRole('admin');
+  const id = formData.get('id') as string;
+  if (!id) return;
+  const res = await query<{ marketing_opt_in: boolean; name: string }>(
+    `UPDATE customers SET marketing_opt_in = NOT marketing_opt_in WHERE id=$1 RETURNING marketing_opt_in, name`,
+    [id]
+  );
+  if (res.rows[0]) {
+    logAudit({
+      userId: session.userId, action: 'update', entityType: 'customer', entityId: id,
+      entityLabel: res.rows[0].name, newValue: { marketing_opt_in: res.rows[0].marketing_opt_in },
+    }).catch(() => {});
+  }
+  revalidatePath('/customers');
+  revalidatePath(`/customers/${id}`);
 }
 
 export async function deleteCustomerAction(formData: FormData) {

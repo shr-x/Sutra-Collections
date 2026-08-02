@@ -16,6 +16,53 @@ export interface GreetingRunResult {
   errors: string[];
 }
 
+/**
+ * Immediate birthday greeting — fired when a customer's date_of_birth is
+ * created/edited and it matches TODAY. Reuses the exact same per-customer,
+ * per-calendar-year greeting_log dedup as the daily cron, so a customer never
+ * receives two birthday messages on the same day even if the cron also runs
+ * later. Consent (DPDP + marketing opt-in + not opted-out) is enforced inside
+ * sendWhatsAppTemplate via marketingCustomerId. Never throws.
+ */
+export async function triggerBirthdayGreetingIfToday(
+  customerId: string,
+): Promise<'sent' | 'skipped' | 'not_today' | 'no_phone' | 'failed'> {
+  try {
+    const { rows } = await pool.query<{ name: string; phone: string | null; is_today: boolean }>(
+      `SELECT name, phone,
+              (date_of_birth IS NOT NULL
+               AND TO_CHAR(date_of_birth, 'MM-DD') = TO_CHAR(CURRENT_DATE, 'MM-DD')) AS is_today
+       FROM customers WHERE id = $1 AND deleted_at IS NULL`,
+      [customerId],
+    );
+    const cust = rows[0];
+    if (!cust || !cust.is_today) return 'not_today';
+    if (!cust.phone) return 'no_phone';
+
+    const year = new Date().getFullYear();
+    const dupRes = await pool.query<{ id: string }>(
+      `SELECT id FROM greeting_log
+       WHERE customer_id=$1 AND greeting_type='birthday' AND EXTRACT(YEAR FROM sent_at)=$2`,
+      [customerId, year],
+    );
+    if (dupRes.rows.length > 0) return 'skipped';
+
+    const res = await sendWhatsAppTemplate(cust.phone, 'sutra_birthday_greeting', [cust.name], null, null, null, { marketingCustomerId: customerId });
+    if (res.skipped) return 'skipped'; // consent gate declined — not an error
+    if (!res.success) return 'failed';
+
+    const message = `Dear ${cust.name}, wishing you a very Happy Birthday! 🎂 May this special day bring you joy and happiness. Thank you for being a valued customer of Sutra Collections. – Team Sutra Collections`;
+    await pool.query(
+      `INSERT INTO greeting_log (customer_id, greeting_type, message_sent, sent_at) VALUES ($1,'birthday',$2,NOW())`,
+      [customerId, message],
+    );
+    return 'sent';
+  } catch (err) {
+    console.error('[triggerBirthdayGreetingIfToday] failed:', err);
+    return 'failed';
+  }
+}
+
 export async function runDailyGreetings(): Promise<GreetingRunResult> {
   const result: GreetingRunResult = { checked: 0, sent: 0, skipped: 0, failed: 0, errors: [] };
 
@@ -38,6 +85,8 @@ export async function runDailyGreetings(): Promise<GreetingRunResult> {
        FROM customers c
        WHERE c.phone IS NOT NULL AND c.phone <> ''
          AND c.whatsapp_opt_out = FALSE
+         AND c.marketing_opt_in = TRUE
+         AND c.dpdp_consent = 'given'
          AND c.deleted_at IS NULL
          AND TO_CHAR(c.date_of_birth, 'MM-DD') = $1`,
       [monthDay]
@@ -55,7 +104,7 @@ export async function runDailyGreetings(): Promise<GreetingRunResult> {
 
       const message = `Dear ${cust.name}, wishing you a very Happy Birthday! 🎂 May this special day bring you joy and happiness. Thank you for being a valued customer of Sutra Collections. – Team Sutra Collections`;
       try {
-        await sendWhatsAppTemplate(cust.phone, 'sutra_birthday_greeting', [cust.name]);
+        await sendWhatsAppTemplate(cust.phone, 'sutra_birthday_greeting', [cust.name], null, null, null, { marketingCustomerId: cust.id });
         await client.query(
           `INSERT INTO greeting_log (customer_id, greeting_type, message_sent, sent_at) VALUES ($1,'birthday',$2,NOW())`,
           [cust.id, message]
@@ -83,6 +132,8 @@ export async function runDailyGreetings(): Promise<GreetingRunResult> {
          FROM customers c
          WHERE c.phone IS NOT NULL AND c.phone <> ''
            AND c.whatsapp_opt_out = FALSE
+           AND c.marketing_opt_in = TRUE
+           AND c.dpdp_consent = 'given'
            AND c.deleted_at IS NULL`
       );
 
@@ -108,7 +159,7 @@ export async function runDailyGreetings(): Promise<GreetingRunResult> {
 
         const message = `Dear ${cust.name}, today is a special day for us at Sutra Collections! 🎉 Thank you for being a cherished part of our journey. – Team Sutra Collections`;
         try {
-          await sendWhatsAppTemplate(cust.phone, 'sutra_anniversary_greeting', [cust.name], null, logoUrl);
+          await sendWhatsAppTemplate(cust.phone, 'sutra_anniversary_greeting', [cust.name], null, logoUrl, null, { marketingCustomerId: cust.id });
           await client.query(
             `INSERT INTO greeting_log (customer_id, greeting_type, message_sent, sent_at) VALUES ($1,'shop_anniversary',$2,NOW())`,
             [cust.id, message]

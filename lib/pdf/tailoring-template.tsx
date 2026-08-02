@@ -135,7 +135,9 @@ export interface TailoringLineItem {
 }
 
 export interface TailoringPdfInput {
-  docType: 'TAILORING ORDER' | 'PRODUCTION ORDER';
+  // 'TAILORING ORDER' = customer copy (shows customer + pricing); everything
+  // else is an internal tailor/production document with NO customer or money.
+  docType: 'TAILORING ORDER' | 'PRODUCTION ORDER' | 'ALTERATION';
   orderNumber: string;
   orderDate: string;
   dueDate?: string;

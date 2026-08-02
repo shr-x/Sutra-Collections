@@ -1,10 +1,31 @@
 'use server';
 
+import fs from 'fs';
+import path from 'path';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { pool, query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
+import { broadcastOffer } from '@/lib/offer-broadcast';
 import type { ActionResult } from '@/types';
+
+/**
+ * Saves an uploaded offer banner to public/uploads/schemes/<id>.<ext> (same
+ * storage pattern as design/item photos) and returns the relative path, or null
+ * if no file was provided. Returns { error } string on validation failure.
+ */
+async function saveOfferImage(schemeId: string, formData: FormData): Promise<{ path?: string; error?: string }> {
+  const image = formData.get('offer_image') as File | null;
+  if (!image || image.size === 0) return {};
+  if (image.size > 5 * 1024 * 1024) return { error: 'Offer image must be under 5 MB.' };
+  const ext = image.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+  if (!['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) return { error: 'Offer image must be PNG, JPG, GIF or WebP.' };
+  const dir = path.join(process.cwd(), 'public', 'uploads', 'schemes');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const buf = Buffer.from(await image.arrayBuffer());
+  fs.writeFileSync(path.join(dir, `${schemeId}.${ext}`), buf);
+  return { path: `uploads/schemes/${schemeId}.${ext}` };
+}
 
 async function saveSchemeScope(schemeId: string, itemIds: string[], categoryIds: string[]): Promise<void> {
   const client = await pool.connect();
@@ -62,15 +83,30 @@ export async function createSchemeAction(
   if (!parsed.success) return { success: false, error: parsed.error.errors[0].message };
   const d = parsed.data;
 
+  // Draft/Active status → is_active (Draft never broadcasts).
+  const isActive = formData.get('status') === 'active';
+
   const res = await query<{ id: string }>(
-    `INSERT INTO discount_schemes (name, scheme_type, buy_item_id, buy_quantity, get_item_id, get_quantity, discount_value, min_order_value, valid_from, valid_until)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+    `INSERT INTO discount_schemes (name, scheme_type, buy_item_id, buy_quantity, get_item_id, get_quantity, discount_value, min_order_value, valid_from, valid_until, is_active)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
     [d.name, d.scheme_type, d.buy_item_id ?? null, d.buy_quantity ?? null,
      d.get_item_id ?? null, d.get_quantity ?? null, d.discount_value ?? null,
-     d.min_order_value ?? null, d.valid_from ?? null, d.valid_until ?? null]
+     d.min_order_value ?? null, d.valid_from ?? null, d.valid_until ?? null, isActive]
   );
+  const schemeId = res.rows[0].id;
 
-  await saveSchemeScope(res.rows[0].id, formData.getAll('item_ids') as string[], formData.getAll('category_ids') as string[]);
+  await saveSchemeScope(schemeId, formData.getAll('item_ids') as string[], formData.getAll('category_ids') as string[]);
+
+  const img = await saveOfferImage(schemeId, formData);
+  if (img.error) return { success: false, error: img.error };
+  if (img.path) await query('UPDATE discount_schemes SET offer_image_path=$1 WHERE id=$2', [img.path, schemeId]);
+
+  // Broadcast only when Active AND the broadcast toggle is on (broadcastOffer
+  // itself re-checks Active, an image is present, and it hasn't already sent).
+  // Detached — the persistent Node server keeps it running past this request.
+  if (isActive && formData.get('send_broadcast') === 'on') {
+    void broadcastOffer(schemeId);
+  }
 
   redirect(`/settings/schemes`);
 }
@@ -90,14 +126,26 @@ export async function updateSchemeAction(id: string, _prev: ActionResult, formDa
   if (!parsed.success) return { success: false, error: parsed.error.errors[0].message };
   const d = parsed.data;
 
+  const isActive = formData.get('status') === 'active';
+
   await query(
-    `UPDATE discount_schemes SET name=$1, scheme_type=$2, buy_item_id=$3, buy_quantity=$4, get_item_id=$5, get_quantity=$6, discount_value=$7, min_order_value=$8, valid_from=$9, valid_until=$10 WHERE id=$11`,
+    `UPDATE discount_schemes SET name=$1, scheme_type=$2, buy_item_id=$3, buy_quantity=$4, get_item_id=$5, get_quantity=$6, discount_value=$7, min_order_value=$8, valid_from=$9, valid_until=$10, is_active=$11 WHERE id=$12`,
     [d.name, d.scheme_type, d.buy_item_id ?? null, d.buy_quantity ?? null,
      d.get_item_id ?? null, d.get_quantity ?? null, d.discount_value ?? null,
-     d.min_order_value ?? null, d.valid_from ?? null, d.valid_until ?? null, id]
+     d.min_order_value ?? null, d.valid_from ?? null, d.valid_until ?? null, isActive, id]
   );
 
   await saveSchemeScope(id, formData.getAll('item_ids') as string[], formData.getAll('category_ids') as string[]);
+
+  const img = await saveOfferImage(id, formData);
+  if (img.error) return { success: false, error: img.error };
+  if (img.path) await query('UPDATE discount_schemes SET offer_image_path=$1 WHERE id=$2', [img.path, id]);
+
+  // Broadcasts only once (guarded by broadcast_sent_at inside broadcastOffer),
+  // so re-saving an already-broadcast scheme won't re-blast all customers.
+  if (isActive && formData.get('send_broadcast') === 'on') {
+    void broadcastOffer(id);
+  }
 
   redirect('/settings/schemes');
 }

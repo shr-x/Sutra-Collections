@@ -6,6 +6,16 @@ import { useFormState, useFormStatus } from 'react-dom';
 import type { CustomerState } from './actions';
 import type { Customer } from '@/types';
 
+// `date_of_birth` arrives here as a raw pg `Date` object (SELECT * returns Date
+// for DATE columns, not a string) — String(date) gives "Sun Aug 02 2026 ...",
+// NOT an ISO date, which corrupts DatePicker's "YYYY-MM-DD" parsing. Also
+// tolerate a pre-formatted ISO string, in case a caller ever passes one.
+function toIsoDate(value: unknown): string {
+  if (!value) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
 function Submit({ label }: { label: string }) {
   const { pending } = useFormStatus();
   return (
@@ -86,7 +96,7 @@ export default function CustomerForm({ action, defaultValues, isAdmin, cancelHre
           className="input"
           defaultValue={
             defaultValues && 'date_of_birth' in defaultValues && defaultValues.date_of_birth
-              ? String(defaultValues.date_of_birth).slice(0, 10)
+              ? toIsoDate(defaultValues.date_of_birth)
               : ''
           }
         />
@@ -103,6 +113,20 @@ export default function CustomerForm({ action, defaultValues, isAdmin, cancelHre
           />
           Opted out of WhatsApp messages
         </label>
+        {/* Hidden mirror lets the server tell "unchecked" apart from "field absent". */}
+        <input type="hidden" name="marketing_field_present" value="1" />
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            name="marketing_opt_in"
+            defaultChecked={defaultValues?.marketing_opt_in ?? true}
+            className="h-4 w-4 rounded border-gray-300 text-purple-600"
+          />
+          Receive marketing messages (offers, birthday &amp; anniversary greetings)
+        </label>
+        <p className="text-xs text-gray-400">
+          Transactional messages (invoices, order updates, payment reminders) are always sent regardless of this setting.
+        </p>
       </div>
 
       <div className="flex gap-3 pt-2">

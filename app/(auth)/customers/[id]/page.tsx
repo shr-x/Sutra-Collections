@@ -5,7 +5,7 @@ import { requireRole } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import ConfirmForm from '@/components/confirm-form';
-import { deleteCustomerAction } from '../actions';
+import { deleteCustomerAction, toggleMarketingOptInAction } from '../actions';
 import type { Customer } from '@/types';
 
 export const metadata: Metadata = { title: 'Customer' };
@@ -192,6 +192,20 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
               <div className="flex items-start justify-between gap-4">
                 <dt className="shrink-0 text-gray-500">WhatsApp</dt>
                 <dd className="text-gray-700">{c.whatsapp_opt_out ? 'Opted out' : 'Opted in'}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <dt className="shrink-0 text-gray-500">Marketing Messages</dt>
+                <dd className="flex items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c.marketing_opt_in ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {c.marketing_opt_in ? 'On' : 'Off'}
+                  </span>
+                  <form action={toggleMarketingOptInAction}>
+                    <input type="hidden" name="id" value={c.id} />
+                    <button type="submit" className="text-xs text-purple-600 hover:underline">
+                      {c.marketing_opt_in ? 'Turn off' : 'Turn on'}
+                    </button>
+                  </form>
+                </dd>
               </div>
               <div className="flex items-start justify-between gap-4">
                 <dt className="shrink-0 text-gray-500">Added</dt>
