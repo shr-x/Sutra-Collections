@@ -32,15 +32,16 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
        ORDER BY invoice_date DESC LIMIT 5`,
       [params.id]
     ),
-    // source='pos' excludes tailoring-generated invoices — their balance is
-    // tracked separately via tailoring_orders.credit_amount (shown below as
-    // its own "Tailoring Credit Due" card), so including them here would
-    // double-count the same debt, and their amount_paid goes stale the moment
-    // a post-delivery payment is recorded (recordTailoringPaymentAction never
-    // syncs it back to the invoice).
+    // Pure invoice-balance across ALL issued invoices (POS and tailoring alike),
+    // consistent with the Outstanding Dues report/page and each tailoring
+    // order's own balance. Tailoring invoices are included because their
+    // amount_paid/status is now kept in lockstep with tailoring payments (see
+    // syncPaymentToInvoices in tailoring/actions.ts). The "Tailoring Credit Due"
+    // card below is a SUBSET of this figure (the delivered-on-credit portion),
+    // not an additional amount.
     query<{ outstanding: string }>(
       `SELECT COALESCE(SUM(grand_total - amount_paid), 0) AS outstanding
-       FROM invoices WHERE customer_id=$1 AND status IN ('issued','partially_paid') AND source='pos'`,
+       FROM invoices WHERE customer_id=$1 AND status IN ('issued','partially_paid')`,
       [params.id]
     ),
     query(
@@ -281,7 +282,9 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
               )}
               {tailoringDues > 0 && (
                 <div className="flex items-center justify-between rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
-                  <span className="text-sm font-medium text-amber-800">Tailoring Credit Due</span>
+                  <span className="text-sm font-medium text-amber-800">
+                    On Credit <span className="font-normal text-amber-600">(part of Outstanding)</span>
+                  </span>
                   <span className="text-base font-bold text-amber-800">{formatInr(tailoringDues)}</span>
                 </div>
               )}

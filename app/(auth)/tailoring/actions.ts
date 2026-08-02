@@ -13,8 +13,71 @@ import {
   generateTailoringProformaPdf, generateTailoringCreditDuePdf, generateTailoringOrderConfirmationPdf,
 } from '@/lib/pdf-generator';
 import { createTailoringInvoice, syncTailoringInvoiceAfterAlteration } from '@/lib/tailoring-invoice';
+import { postPaymentReceived } from '@/lib/accounting';
 import { logAudit } from '@/lib/audit';
+import type { PoolClient } from 'pg';
 import type { ActionResult, TailoringStatus, TailoringPaymentMode } from '@/types';
+
+// Applies a tailoring payment to the order's linked GST invoice(s) — the root
+// real invoice (tailoring_orders.invoice_id) plus any supplementary invoices
+// created for post-lock alterations (invoices.supplementary_of_invoice_id) —
+// allocating oldest-outstanding-first so each invoice's own amount_paid/status
+// stays in lockstep with the tailoring order's amount_paid. Without this, the
+// invoice's amount_paid was frozen at whatever was collected when the invoice
+// was created, so every invoice-balance-based view (Outstanding Dues report/
+// page, customer profile, customer list) showed the order as still owing even
+// after it was fully paid. Posts the AR payment to the ledger per applied
+// portion, mirroring billing/invoices/actions.ts recordPaymentAction, so the
+// invoice record and the double-entry ledger move together. Best-effort: never
+// throws (a sync failure must not roll back the tailoring payment itself).
+async function syncPaymentToInvoices(
+  client: PoolClient,
+  rootInvoiceId: string,
+  amount: number,
+  paymentMode: string,
+  createdBy: string,
+): Promise<void> {
+  // Root + supplementary invoices, oldest first, only those still outstanding.
+  const invRes = await client.query<{ id: string; invoice_number: string; grand_total: string; amount_paid: string }>(
+    `SELECT id, invoice_number, grand_total::text, amount_paid::text
+     FROM invoices
+     WHERE (id = $1 OR supplementary_of_invoice_id = $1)
+       AND status <> 'cancelled'
+       AND grand_total > amount_paid
+     ORDER BY created_at ASC, invoice_number ASC`,
+    [rootInvoiceId],
+  );
+
+  let remaining = Math.round(amount * 100) / 100;
+  for (const inv of invRes.rows) {
+    if (remaining <= 0) break;
+    const grandTotal = Number(inv.grand_total);
+    const alreadyPaid = Number(inv.amount_paid);
+    const balance = Math.round((grandTotal - alreadyPaid) * 100) / 100;
+    if (balance <= 0) continue;
+    const applied = Math.min(remaining, balance);
+    const newPaid = Math.round((alreadyPaid + applied) * 100) / 100;
+    const newStatus = newPaid >= grandTotal ? 'paid' : 'partially_paid';
+
+    await client.query(
+      `UPDATE invoices SET amount_paid=$1, status=$2 WHERE id=$3`,
+      [newPaid, newStatus, inv.id],
+    );
+    try {
+      await postPaymentReceived({
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoice_number,
+        paymentDate: new Date().toISOString().slice(0, 10),
+        amount: applied,
+        paymentMode,
+        createdBy,
+      }, client);
+    } catch (acctErr) {
+      console.error('[syncPaymentToInvoices] accounting post failed:', acctErr);
+    }
+    remaining = Math.round((remaining - applied) * 100) / 100;
+  }
+}
 
 // ── Batch notification helpers ─────────────────────────────────────────────
 
@@ -684,8 +747,8 @@ export async function recordTailoringPaymentAction(data: {
 
   if (!(data.amount > 0)) return { success: false, error: 'Enter an amount greater than zero.' };
 
-  const res = await query<{ order_number: string; customer_id: string }>(
-    `SELECT order_number, customer_id FROM tailoring_orders WHERE id=$1`, [data.orderId]
+  const res = await query<{ order_number: string; customer_id: string; invoice_id: string | null }>(
+    `SELECT order_number, customer_id, invoice_id FROM tailoring_orders WHERE id=$1`, [data.orderId]
   );
   if (!res.rows[0]) return { success: false, error: 'Order not found.' };
 
@@ -714,6 +777,15 @@ export async function recordTailoringPaymentAction(data: {
       [data.amount, data.orderId]
     );
 
+    // Keep the linked GST invoice(s) in lockstep with the tailoring order's
+    // payment so invoice-balance-based views (Outstanding Dues, customer
+    // profile/list) stay accurate. Only applies once the order has reached
+    // ready_for_pickup (which is when the real invoice is created); before
+    // that invoice_id is null and there is nothing to sync.
+    if (res.rows[0].invoice_id) {
+      await syncPaymentToInvoices(client, res.rows[0].invoice_id, data.amount, data.paymentMode, session.userId);
+    }
+
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -741,6 +813,9 @@ export async function recordTailoringPaymentAction(data: {
   // immediately after a single payment.
   revalidatePath('/tailoring/production');
   revalidatePath('/reports/customer-dues');
+  // Invoice-balance-based views now reflect this payment too (see syncPaymentToInvoices).
+  revalidatePath('/customers/dues');
+  revalidatePath('/customers');
   revalidatePath(`/customers/${res.rows[0].customer_id}`);
 
   return { success: true };
