@@ -56,6 +56,11 @@ services:
       - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Same volume the app writes uploads into — nginx serves /uploads/*
+      # directly from here so newly-uploaded files never depend on Next.js's
+      # in-memory public-folder listing (built once at `next start` boot;
+      # files added after that point 404 until the app process restarts).
+      - app_uploads:/usr/share/nginx/uploads:ro
       # Uncomment after running certbot:
       # - /etc/letsencrypt:/etc/letsencrypt:ro
       # - /var/www/certbot:/var/www/certbot:ro

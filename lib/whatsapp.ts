@@ -12,6 +12,7 @@ export interface WaSendResult {
   success: boolean;
   messageId?: string;
   error?: string;
+  errorCode?: number;
   skipped?: boolean;
 }
 
@@ -87,7 +88,7 @@ async function postToMeta(body: object): Promise<WaSendResult> {
   if (!res.ok) {
     // Log full Meta error object — code+subcode are critical for debugging #131008
     console.error('[WA] API error HTTP', res.status, JSON.stringify(data.error ?? data));
-    return { success: false, error: data.error?.message ?? `HTTP ${res.status}` };
+    return { success: false, error: data.error?.message ?? `HTTP ${res.status}`, errorCode: data.error?.code };
   }
 
   const msgId = data.messages?.[0]?.id;
@@ -266,18 +267,45 @@ export async function sendWhatsAppTemplate(
     console.log(`[WA] Button component added — index: ${buttonConfig?.index ?? '0'} url: ${effectiveButtonUrl}`);
   }
 
-  const body = {
+  const buildBody = (comps: object[]) => ({
     messaging_product: 'whatsapp',
     to: normalisePhone(toPhone),
     type: 'template',
     template: {
       name: templateName,
       language: { code: 'en' },
-      components,
+      components: comps,
     },
-  };
+  });
 
-  return postToMeta(body);
+  let result = await postToMeta(buildBody(components));
+
+  // #132012 "Format mismatch, expected DOCUMENT, received UNKNOWN" — Meta
+  // sometimes hasn't finished indexing a media file for message-sending use
+  // milliseconds after the upload call returns, even though the media_id is
+  // already valid (confirmed via the Media API). Empirically confirmed: the
+  // identical request, retried a few seconds later with the SAME media_id
+  // (no re-upload), succeeds. Retry once rather than losing the message.
+  if (!result.success && result.errorCode === 132012) {
+    console.warn(`[WA] "${templateName}" hit #132012 (media not yet propagated) — retrying once in 3s`);
+    await new Promise((r) => setTimeout(r, 3000));
+    result = await postToMeta(buildBody(components));
+  }
+
+  // #132018 "Template does not contain title component, no parameters
+  // allowed" — the live approved template genuinely has no header slot, but
+  // we attached one (PDF or image). Retry body-only so the customer still
+  // gets the message text instead of nothing.
+  if (!result.success && result.errorCode === 132018) {
+    const hasHeader = components.some((c) => (c as { type?: string }).type === 'header');
+    if (hasHeader) {
+      console.warn(`[WA] "${templateName}" has no approved header component — retrying without attachment`);
+      const bodyOnlyComponents = components.filter((c) => (c as { type?: string }).type !== 'header');
+      result = await postToMeta(buildBody(bodyOnlyComponents));
+    }
+  }
+
+  return result;
 }
 
 /**

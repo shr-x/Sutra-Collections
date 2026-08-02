@@ -902,15 +902,11 @@ export async function assignTailorAction(
   const [orderRes, tailorRes] = await Promise.all([
     query<{
       order_number: string; group_number: string | null; suffix: string | null;
-      due_date: string | null;
-      customer_name: string; customer_phone: string | null;
-      design_name: string; batch_id: string | null;
+      due_date: string | null; design_name: string;
     }>(
       `SELECT o.order_number, o.group_number, o.suffix, o.due_date::text,
-              c.name AS customer_name, c.phone AS customer_phone,
-              d.name AS design_name, o.batch_id
+              d.name AS design_name
        FROM tailoring_orders o
-       JOIN customers c ON c.id = o.customer_id
        JOIN designs d ON d.id = o.design_id
        WHERE o.id=$1`,
       [orderId]
@@ -939,10 +935,7 @@ export async function assignTailorAction(
 
   Promise.resolve().then(async () => {
     try {
-      const [customerPdf, tailorPdf] = await Promise.all([
-        generateTailoringCustomerPdf(orderId),
-        generateTailoringTailorPdf(orderId),
-      ]);
+      const tailorPdf = await generateTailoringTailorPdf(orderId);
 
       const dueDateStr = order.due_date
         ? new Date(order.due_date).toLocaleDateString('en-IN', {
@@ -950,20 +943,13 @@ export async function assignTailorAction(
           })
         : 'TBD';
 
-      const custDisplayRef   = order.group_number ?? order.order_number;
       const tailorDisplayRef = order.group_number && order.suffix
         ? `${order.group_number}${order.suffix}` : order.order_number;
 
-      // For batch orders, skip the per-order "order updated" customer WA — the customer
-      // already received ONE batch confirmation at creation time.
-      if (order.customer_phone && !order.batch_id) {
-        sendWhatsAppTemplate(
-          order.customer_phone,
-          'sutra_order_updated',
-          [order.customer_name, custDisplayRef, dueDateStr],
-          customerPdf ?? null
-        ).catch((e: unknown) => console.error('[assignTailor] customer WA:', e));
-      }
+      // Assigning a tailor is an internal/production detail — nothing about
+      // the order itself changes, so the customer is deliberately NOT
+      // notified here. (Genuine order changes — due date, measurements,
+      // price — notify via updateOrderAction's sutra_order_updated send.)
 
       if (tailor.phone) {
         sendWhatsAppTemplate(
