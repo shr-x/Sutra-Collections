@@ -17,6 +17,7 @@ build/
 
 # Backups (keep dir, not dumps)
 backups/*.sql
+backups/*.dump
 
 # Docker volumes
 docker-volumes/
