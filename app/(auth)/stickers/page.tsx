@@ -43,9 +43,11 @@ export default async function StickersPage({
        ORDER BY pi.purchase_date DESC, pi.created_at DESC
        LIMIT 60`,
     ),
+    // Price is read LIVE from items.sale_price (not the sticker_codes.price
+    // snapshot) so this matches what would actually print if reprinted now.
     searchCode
       ? query<SearchResult>(
-          `SELECT sc.code, it.name AS item_name, sc.price::text,
+          `SELECT sc.code, it.name AS item_name, COALESCE(it.sale_price, 0)::text AS price,
                   pi.purchase_number, pi.purchase_date::text,
                   isz.size_name, ic.color_name
            FROM sticker_codes sc

@@ -3,10 +3,11 @@ import { requireRole } from '@/lib/auth';
 import { query } from '@/lib/db';
 
 /**
- * Returns the design's measurement field definitions plus the order's current
- * (latest) measurement values, keyed by field_id. Used to pre-fill the
- * measurement grid inside the Request Alteration modal, wherever it's opened
- * from (order detail page or the production board).
+ * Returns the design's measurement field definitions, the order's current
+ * (latest) measurement values keyed by field_id, and the order's current due
+ * date. Used to pre-fill the measurement grid and due-date field inside the
+ * Request Alteration modal, wherever it's opened from (order detail page or
+ * the production board).
  */
 export async function GET(
   _req: NextRequest,
@@ -18,8 +19,8 @@ export async function GET(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const orderRes = await query<{ design_id: string; measurement_version_id: string | null }>(
-    `SELECT design_id, measurement_version_id FROM tailoring_orders WHERE id=$1`,
+  const orderRes = await query<{ design_id: string; measurement_version_id: string | null; due_date: string | null }>(
+    `SELECT design_id, measurement_version_id, due_date::text FROM tailoring_orders WHERE id=$1`,
     [params.id]
   );
   const order = orderRes.rows[0];
@@ -41,5 +42,5 @@ export async function GET(
     for (const row of valRes.rows) currentMeasurements[row.field_id] = row.value;
   }
 
-  return NextResponse.json({ fields: fieldsRes.rows, currentMeasurements });
+  return NextResponse.json({ fields: fieldsRes.rows, currentMeasurements, dueDate: order.due_date });
 }

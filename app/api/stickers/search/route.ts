@@ -12,12 +12,15 @@ export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code')?.trim().toUpperCase();
   if (!code) return NextResponse.json({ result: null });
 
+  // Price is read LIVE from items.sale_price (not the sticker_codes.price
+  // snapshot) so a lookup always matches what would actually print if this
+  // code were regenerated right now.
   const res = await query<{
     code: string; item_name: string; price: string;
     purchase_number: string; purchase_date: string;
     size_name: string | null; color_name: string | null;
   }>(
-    `SELECT sc.code, it.name AS item_name, sc.price::text,
+    `SELECT sc.code, it.name AS item_name, COALESCE(it.sale_price, 0)::text AS price,
             pi.purchase_number, pi.purchase_date::text,
             isz.size_name, ic.color_name
      FROM sticker_codes sc

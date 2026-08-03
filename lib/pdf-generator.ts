@@ -180,9 +180,11 @@ async function fetchGroupedTailoringData(orderId: string) {
   const { rows: siblings } = await query<{
     total_amount: string; amount_paid: string; gst_rate: string; created_at: string;
     notes: string | null; design_name: string; order_number: string; suffix: string | null;
+    alteration_total: string;
   }>(
     `SELECT o.total_amount::text, o.amount_paid::text, o.gst_rate::text, o.created_at::text,
-            o.notes, o.order_number, o.suffix, d.name AS design_name
+            o.notes, o.order_number, o.suffix, d.name AS design_name,
+            COALESCE((SELECT SUM(price_adjustment) FROM tailoring_alterations WHERE tailoring_order_id=o.id), 0)::text AS alteration_total
      FROM tailoring_orders o JOIN designs d ON d.id = o.design_id
      WHERE o.id = ANY($1::uuid[])
      ORDER BY o.suffix ASC, o.created_at ASC`,
@@ -190,9 +192,27 @@ async function fetchGroupedTailoringData(orderId: string) {
   );
   if (!siblings.length) return null;
 
-  const lineResults = siblings.map((s) => calcLine({
-    quantity: 1, rate: Number(s.total_amount), gstRate: Number(s.gst_rate), isScheme: false,
-  }));
+  // Each sibling becomes one line for the garment's base price, plus a
+  // separate "Alteration Charges" line when it has a non-zero net alteration
+  // adjustment — so the cost of alterations is visible on the PDF instead of
+  // being silently folded into the garment's price.
+  const lineEntries = siblings.flatMap((s) => {
+    const gstRate = Number(s.gst_rate);
+    const alterationTotal = Math.round(Number(s.alteration_total) * 100) / 100;
+    const basePrice = Math.round((Number(s.total_amount) - alterationTotal) * 100) / 100;
+    const entries = [{
+      description: s.design_name, rate: basePrice, gstRate,
+      result: calcLine({ quantity: 1, rate: basePrice, gstRate, isScheme: false }),
+    }];
+    if (Math.abs(alterationTotal) >= 0.005) {
+      entries.push({
+        description: `Alteration Charges — ${s.design_name}`, rate: alterationTotal, gstRate,
+        result: calcLine({ quantity: 1, rate: alterationTotal, gstRate, isScheme: false }),
+      });
+    }
+    return entries;
+  });
+  const lineResults = lineEntries.map((e) => e.result);
   const totals = calcInvoiceTotals(lineResults);
   const amountPaid = siblings.reduce((sum, s) => sum + Number(s.amount_paid), 0);
   const displayRef = anchor.group_number ?? anchor.order_number;
@@ -206,84 +226,26 @@ async function fetchGroupedTailoringData(orderId: string) {
     .map((s) => (siblings.length > 1 ? `${s.design_name}: ${s.notes!.trim()}` : s.notes!.trim()));
   const combinedNotes = notesEntries.length > 0 ? notesEntries.join('\n') : undefined;
 
-  return { anchor, siblings, lineResults, totals, amountPaid, displayRef, combinedNotes };
+  return { anchor, siblings, lineEntries, lineResults, totals, amountPaid, displayRef, combinedNotes };
 }
 
-// ─── Tailoring customer INVOICE (order creation AND ready-for-pickup balance
-// update) ─────────────────────────────────────────────────────────────────────
-// Customer-facing document labeled simply "INVOICE" (docType 'PROFORMA' is kept
-// purely as the internal layout discriminator that shows the Advance Paid /
-// Balance Due lines). This is NOT the accounting GST invoice — that's a separate
-// internal record created at ready_for_pickup (see lib/tailoring-invoice.ts) and
-// is unaffected by this document.
-export async function generateTailoringProformaPdf(
-  orderId: string,
-  opts?: { variant?: 'initial' | 'balance_update' }
-): Promise<string | null> {
-  try {
-    const variant = opts?.variant ?? 'initial';
-    const data = await fetchGroupedTailoringData(orderId);
-    if (!data) return null;
-    const { anchor, siblings, lineResults, totals, amountPaid, displayRef, combinedNotes } = data;
-    const co = await getCompany();
-
-    const buffer = await renderInvoicePdf({
-      docType: 'PROFORMA',
-      invoiceNumber: displayRef,
-      invoiceDate: fmtDate(siblings[0].created_at),
-      company: {
-        name: co.name, gstin: co.gstin, address: co.address,
-        state: co.state, phone: co.phone, email: co.email, logoAbsPath: co.logoAbsPath,
-      },
-      customer: {
-        name: anchor.customer_name,
-        address: anchor.customer_address ?? '',
-        gstin: anchor.customer_gstin ?? undefined,
-        phone: anchor.customer_phone || undefined,
-      },
-      items: siblings.map((s, i) => ({
-        description: s.design_name, hsn: '9988', qty: 1, unit: 'pcs',
-        rate: Number(s.total_amount), discountAmount: 0, gstRate: Number(s.gst_rate),
-        taxableValue: lineResults[i].taxableValue, cgst: lineResults[i].cgstAmount,
-        sgst: lineResults[i].sgstAmount, total: lineResults[i].totalAmount,
-      })),
-      invoiceDiscountAmount: 0,
-      subtotal: totals.subtotal,
-      totalCgst: totals.totalCgst,
-      totalSgst: totals.totalSgst,
-      grandTotal: totals.grandTotal,
-      amountPaid,
-      notes: combinedNotes,
-      customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
-    });
-
-    // Filename is customer-visible — WhatsApp shows path.basename() as the
-    // document name — so it must not say "proforma".
-    const safe = `${displayRef}_${variant}`.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filePath = `/tmp/tailoring_invoice_${safe}.pdf`;
-    fs.writeFileSync(filePath, buffer);
-    return filePath;
-  } catch (err) {
-    console.error('[pdf-generator] generateTailoringProformaPdf failed:', err);
-    return null;
-  }
-}
-
-// ─── Tailoring Order Confirmation (order creation — GST-style breakdown,
-// total only, no advance/balance) ─────────────────────────────────────────────
-// Sent alongside the customer invoice at order creation (see
-// createTailoringOrder / sendBatchConfirmationAction in
-// app/(auth)/tailoring/actions.ts). Same underlying GST-table layout as the
-// customer invoice, but deliberately omits amountPaid so the Advance Paid/
-// Balance Due lines never render (that block is gated on docType === 'PROFORMA'
-// in invoice-template.tsx) — this document just confirms what was ordered and
-// its total cost, not payment status. Not the accounting GST invoice; never
-// posts to accounting.
+// ─── Tailoring Order Confirmation (order creation AND ready-for-pickup) ───────
+// This is the ONE customer-facing tailoring document used at both trigger
+// points (see app/(auth)/tailoring/actions.ts) — at creation it shows
+// whatever advance was paid at that point (could be ₹0), and at
+// ready-for-pickup it's regenerated with the current total (including any
+// alteration charges as a separate line item) and current amount paid.
+// Shows Advance Paid/Balance Due (docType 'ORDER_CONFIRMATION' is gated into
+// the same rendering block as the legacy 'PROFORMA' docType in
+// invoice-template.tsx). Not the accounting GST invoice — that's a separate
+// internal record created at ready_for_pickup (see lib/tailoring-invoice.ts),
+// only ever sent to the customer once the order becomes fully paid, via
+// generateInvoicePdf() reading the actual invoices/invoice_items rows.
 export async function generateTailoringOrderConfirmationPdf(orderId: string): Promise<string | null> {
   try {
     const data = await fetchGroupedTailoringData(orderId);
     if (!data) return null;
-    const { anchor, siblings, lineResults, totals, displayRef, combinedNotes } = data;
+    const { anchor, siblings, lineEntries, lineResults, totals, amountPaid, displayRef, combinedNotes } = data;
     const co = await getCompany();
 
     const buffer = await renderInvoicePdf({
@@ -300,9 +262,9 @@ export async function generateTailoringOrderConfirmationPdf(orderId: string): Pr
         gstin: anchor.customer_gstin ?? undefined,
         phone: anchor.customer_phone || undefined,
       },
-      items: siblings.map((s, i) => ({
-        description: s.design_name, hsn: '9988', qty: 1, unit: 'pcs',
-        rate: Number(s.total_amount), discountAmount: 0, gstRate: Number(s.gst_rate),
+      items: lineEntries.map((e, i) => ({
+        description: e.description, hsn: '9988', qty: 1, unit: 'pcs',
+        rate: e.rate, discountAmount: 0, gstRate: e.gstRate,
         taxableValue: lineResults[i].taxableValue, cgst: lineResults[i].cgstAmount,
         sgst: lineResults[i].sgstAmount, total: lineResults[i].totalAmount,
       })),
@@ -311,6 +273,7 @@ export async function generateTailoringOrderConfirmationPdf(orderId: string): Pr
       totalCgst: totals.totalCgst,
       totalSgst: totals.totalSgst,
       grandTotal: totals.grandTotal,
+      amountPaid,
       notes: combinedNotes,
       customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
     });

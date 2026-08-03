@@ -1,8 +1,10 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { query } from '@/lib/db';
+import type { PoolClient } from 'pg';
 import { requireRole } from '@/lib/auth';
 import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
@@ -12,6 +14,7 @@ import { getLoyaltyRates, earnPoints, redeemPointsInTransaction } from '@/lib/lo
 import { logAudit } from '@/lib/audit';
 import { generateThermalInvoicePdf, generateInvoicePdf } from '@/lib/pdf-generator';
 import { checkLowStockForItems } from '@/lib/low-stock';
+import { sendFullyPaidNotification } from '@/app/(auth)/tailoring/actions';
 import type { ActionResult } from '@/types';
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
@@ -681,6 +684,68 @@ export async function cancelInvoiceAction(id: string, _fd?: FormData): Promise<v
   redirect('/billing/invoices');
 }
 
+// Mirrors syncPaymentToInvoices (app/(auth)/tailoring/actions.ts) in the
+// opposite direction: when a payment is recorded directly against an
+// invoice (e.g. from the Outstanding Dues page) and that invoice is linked
+// to a tailoring order — either as the order's root invoice
+// (tailoring_orders.invoice_id) or a supplementary invoice created for a
+// post-lock alteration (invoices.supplementary_of_invoice_id) — the
+// tailoring order's amount_paid must reflect it too, or the Production
+// Board keeps showing a stale balance/"Payment Due" after the invoice side
+// already shows paid. Recomputes amount_paid as the SUM across the root +
+// all its supplementary invoices (self-correcting regardless of which side
+// the payment came in from) rather than trying to apply just this payment's
+// delta, which could double- or under-count. Also pays down any outstanding
+// credit_amount by the delta actually applied here, matching the paydown
+// logic recordTailoringPaymentAction already does for the reverse direction.
+// Best-effort: never throws — a sync failure must not roll back the payment.
+// Also reports whether this sync just crossed the order from balance>0 to
+// balance=0, so the caller can fire sendFullyPaidNotification exactly once
+// on the actual transition (not on a payment that merely keeps an
+// already-fully-paid order at 0).
+async function syncInvoicePaymentToTailoringOrder(
+  invoiceId: string,
+  deltaApplied: number,
+  client: PoolClient
+): Promise<{ orderId: string; justBecameFullyPaid: boolean } | null> {
+  try {
+    const rootRes = await client.query<{ root_id: string }>(
+      `SELECT COALESCE(supplementary_of_invoice_id, id) AS root_id FROM invoices WHERE id=$1`,
+      [invoiceId]
+    );
+    const rootId = rootRes.rows[0]?.root_id;
+    if (!rootId) return null;
+
+    const orderRes = await client.query<{ id: string; total_amount: string; amount_paid: string }>(
+      `SELECT id, total_amount::text, amount_paid::text FROM tailoring_orders WHERE invoice_id=$1`, [rootId]
+    );
+    const order = orderRes.rows[0];
+    if (!order) return null;
+
+    const totalRes = await client.query<{ total_paid: string }>(
+      `SELECT COALESCE(SUM(amount_paid), 0)::text AS total_paid
+       FROM invoices WHERE id=$1 OR supplementary_of_invoice_id=$1`,
+      [rootId]
+    );
+    const totalPaid = Number(totalRes.rows[0]?.total_paid ?? 0);
+
+    const balanceBefore = Math.round((Number(order.total_amount) - Number(order.amount_paid)) * 100) / 100;
+    const balanceAfter = Math.round((Number(order.total_amount) - totalPaid) * 100) / 100;
+    const justBecameFullyPaid = balanceBefore > 0.005 && balanceAfter <= 0.005;
+
+    await client.query(
+      `UPDATE tailoring_orders
+       SET amount_paid=$1, credit_amount=GREATEST(0, credit_amount - $2), updated_at=NOW()
+       WHERE id=$3`,
+      [totalPaid, deltaApplied, order.id]
+    );
+    return { orderId: order.id, justBecameFullyPaid };
+  } catch (err) {
+    console.error('[syncInvoicePaymentToTailoringOrder] failed:', err);
+    return null;
+  }
+}
+
 // ─── Record Payment ───────────────────────────────────────────────────────────
 
 export async function recordPaymentAction(
@@ -715,22 +780,25 @@ export async function recordPaymentAction(
   const newStatus = capped >= grandTotal ? 'paid' : 'partially_paid';
 
   const client = await (await import('@/lib/db')).pool.connect();
+  let tailoringSync: { orderId: string; justBecameFullyPaid: boolean } | null = null;
   try {
     await client.query('BEGIN');
     await client.query(
       `UPDATE invoices SET amount_paid=$1, payment_mode=$2, status=$3 WHERE id=$4`,
       [capped, mode, newStatus, id]
     );
+    const deltaApplied = capped - Number(invRes.rows[0].amount_paid);
     try {
       await postPaymentReceived({
         invoiceId: id,
         invoiceNumber: invRes.rows[0].invoice_number,
         paymentDate: new Date().toISOString().slice(0, 10),
-        amount: capped - Number(invRes.rows[0].amount_paid),
+        amount: deltaApplied,
         paymentMode: mode,
         createdBy: session.userId,
       }, client);
     } catch (acctErr) { console.error('Accounting post failed:', acctErr); }
+    tailoringSync = await syncInvoicePaymentToTailoringOrder(id, deltaApplied, client);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');
@@ -739,6 +807,18 @@ export async function recordPaymentAction(
     client.release();
   }
   logAudit({ userId: session.userId, action: 'payment', entityType: 'invoice', entityId: id, entityLabel: invRes.rows[0].invoice_number, newValue: { amount, mode, newStatus } }).catch(() => {});
+
+  // Keep the Production Board (and the order's own detail page) in sync —
+  // without this, a payment recorded here left both showing the stale
+  // pre-payment balance until some unrelated action forced a refetch.
+  if (tailoringSync) {
+    revalidatePath('/tailoring/production');
+    revalidatePath('/tailoring');
+    revalidatePath(`/tailoring/${tailoringSync.orderId}`);
+    if (tailoringSync.justBecameFullyPaid) {
+      sendFullyPaidNotification(tailoringSync.orderId, amount).catch((e) => console.error('[recordPaymentAction] fully-paid WA failed:', e));
+    }
+  }
 
   // Earn loyalty points when credit invoice is fully paid
   // Earn on net amount: grand total minus any loyalty discount already applied

@@ -28,11 +28,14 @@ export async function generateStickersForPurchase(
   const lines = await client.query<{
     item_id: string; item_name: string;
     size_id: string | null; color_id: string | null;
-    quantity: number; rate: string;
+    quantity: number; sale_price: string | null;
   }>(
+    // Sticker price is the item's SALE price (what the customer pays), never
+    // the purchase rate paid to the supplier — pii.rate is deliberately not
+    // selected here.
     `SELECT pii.item_id, it.name AS item_name,
             pii.size_id, pii.color_id,
-            pii.quantity::int AS quantity, pii.rate::text
+            pii.quantity::int AS quantity, it.sale_price::text
      FROM purchase_invoice_items pii
      JOIN items it ON it.id = pii.item_id
      WHERE pii.purchase_invoice_id = $1`,
@@ -43,6 +46,7 @@ export async function generateStickersForPurchase(
   for (const line of lines.rows) {
     const prefix = makePrefix(line.item_name);
     const qty = Number(line.quantity);
+    const salePrice = Number(line.sale_price ?? 0);
     for (let i = 0; i < qty; i++) {
       const seqRes = await client.query<{ n: string }>(
         `SELECT nextval('sticker_code_seq')::text AS n`,
@@ -53,7 +57,7 @@ export async function generateStickersForPurchase(
         `INSERT INTO sticker_codes (code, item_id, purchase_invoice_id, size_id, color_id, price)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [code, line.item_id, purchaseInvoiceId,
-         line.size_id ?? null, line.color_id ?? null, Number(line.rate)],
+         line.size_id ?? null, line.color_id ?? null, salePrice],
       );
       generated++;
     }

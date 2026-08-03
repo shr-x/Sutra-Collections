@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import DatePicker from '@/components/date-picker';
 import { requestAlterationAction } from '../actions';
 
 interface Field {
@@ -33,6 +34,7 @@ export default function RequestAlterationButton({ orderId, label = '+ Request Al
   const [open, setOpen] = useState(false);
   const [description, setDescription] = useState('');
   const [priceAdjustment, setPriceAdjustment] = useState('0');
+  const [dueDate, setDueDate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTrans] = useTransition();
 
@@ -44,12 +46,13 @@ export default function RequestAlterationButton({ orderId, label = '+ Request Al
     if (!open) return;
     setLoadingMeasurements(true);
     fetch(`/api/tailoring/${orderId}/measurements`)
-      .then((r) => r.json() as Promise<{ fields?: Field[]; currentMeasurements?: Record<string, string> }>)
+      .then((r) => r.json() as Promise<{ fields?: Field[]; currentMeasurements?: Record<string, string>; dueDate?: string | null }>)
       .then((d) => {
         setFields(d.fields ?? []);
         setMeasurements(d.currentMeasurements ?? {});
+        setDueDate(d.dueDate ? d.dueDate.slice(0, 10) : '');
       })
-      .catch(() => { setFields([]); setMeasurements({}); })
+      .catch(() => { setFields([]); setMeasurements({}); setDueDate(''); })
       .finally(() => setLoadingMeasurements(false));
   }, [open, orderId]);
 
@@ -60,11 +63,13 @@ export default function RequestAlterationButton({ orderId, label = '+ Request Al
     startTrans(async () => {
       const res = await requestAlterationAction({
         orderId, description: description.trim(), priceAdjustment: adjustment, measurements,
+        dueDate: dueDate || null,
       });
       if (res.success) {
         setOpen(false);
         setDescription('');
         setPriceAdjustment('0');
+        setDueDate('');
         router.refresh();
       } else {
         setError(res.error ?? 'Failed to save alteration.');
@@ -115,6 +120,19 @@ export default function RequestAlterationButton({ orderId, label = '+ Request Al
               />
               <p className="mt-1 text-xs text-gray-400">
                 Positive to add cost, negative to reduce it, or 0 if the price doesn't change. This reopens the order — status resets to In Progress.
+              </p>
+            </div>
+
+            <div className="mb-5">
+              <label className="label text-xs">New Due Date <span className="font-normal text-gray-400">(optional)</span></label>
+              <DatePicker
+                value={dueDate}
+                onChange={setDueDate}
+                placeholder="Keep existing due date"
+                className="input w-full text-sm"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Only set this if the rework changes when the order will be ready. Leave it as-is to keep the current due date.
               </p>
             </div>
 

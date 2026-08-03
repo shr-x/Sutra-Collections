@@ -12,8 +12,13 @@ interface StickerRow {
   purchase_date: string | null;
 }
 
+// Price is read LIVE from items.sale_price at generation time, never from
+// sticker_codes.price (a historical snapshot of what the item's sale price
+// was when the code was first created — kept in the table for that record,
+// but never used for what actually prints) — so a sticker regenerated after
+// the item's price was edited always reflects the current price.
 const STICKER_SQL = `
-  SELECT sc.code, it.name AS item_name, sc.price::text,
+  SELECT sc.code, it.name AS item_name, COALESCE(it.sale_price, 0)::text AS price,
          isz.size_name, ic.color_name,
          pi.purchase_date::text AS purchase_date
   FROM sticker_codes sc

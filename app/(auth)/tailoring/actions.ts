@@ -10,8 +10,8 @@ import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import {
   generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf,
-  generateTailoringProformaPdf, generateTailoringCreditDuePdf, generateTailoringOrderConfirmationPdf,
-  generateAlterationTailorPdf,
+  generateTailoringCreditDuePdf, generateTailoringOrderConfirmationPdf,
+  generateAlterationTailorPdf, generateInvoicePdf,
 } from '@/lib/pdf-generator';
 import { createTailoringInvoice, syncTailoringInvoiceAfterAlteration } from '@/lib/tailoring-invoice';
 import { postPaymentReceived } from '@/lib/accounting';
@@ -142,10 +142,14 @@ async function sendDeliveredWhatsApp(orderId: string): Promise<void> {
 
 // Sends the ready-for-pickup notification, honoring batch holds. Branches
 // between sutra_order_ready (first time) and sutra_order_alteration_completed
-// (if this order has any alteration history) — same threshold-gating as delivery.
-// Only ONE message total is sent here — the customer "balance update" invoice
-// PDF (item/GST breakdown + Advance Paid/Balance Due) is attached directly to
-// whichever template fires, rather than following up with a second message.
+// (if this order has any alteration history) — same threshold-gating as
+// delivery. Attaches the SAME Order Confirmation document used at order
+// creation (regenerated with current data — updated due date/price, and a
+// separate "Alteration Charges" line if the order has alteration history —
+// see fetchGroupedTailoringData in lib/pdf-generator.ts), never the real GST
+// invoice or any advance-paid/balance-due figure. The real invoice is only
+// ever sent once the order is actually fully paid — see
+// sendFullyPaidNotification.
 async function sendReadyForPickupWhatsApp(orderId: string): Promise<void> {
   try {
     const { rows } = await query<{
@@ -170,14 +174,16 @@ async function sendReadyForPickupWhatsApp(orderId: string): Promise<void> {
       [orderId]
     );
     const hasAlterations = parseInt(alterRes.rows[0]?.cnt ?? '0', 10) > 0;
+    // The approved sutra_order_alteration_completed template's body text has
+    // a fixed slot for this line — kept as-is (still a valid, meaningful
+    // status line) even though the ATTACHED DOCUMENT no longer shows a
+    // balance figure. WhatsApp rejects empty-string parameters (#131008), so
+    // this always has real content, including "Balance due: ₹0.00".
     const balance = Math.max(0, Math.round((Number(r.total_amount) - Number(r.amount_paid)) * 100) / 100);
-    // WhatsApp rejects empty-string template parameters (API error #131008) —
-    // always populate {{4}} with the real balance, including zero, rather than
-    // omitting the line when there's nothing due.
     const balanceDueLine = `Balance due: ₹${balance.toFixed(2)}.`;
 
     const doSend = async (ref: string) => {
-      const pdfPath = await generateTailoringProformaPdf(orderId, { variant: 'balance_update' }).catch(() => null);
+      const pdfPath = await generateTailoringOrderConfirmationPdf(orderId).catch(() => null);
       if (hasAlterations) {
         await sendWhatsAppTemplate(r.phone!, 'sutra_order_alteration_completed', [r.name, ref, r.design_name, balanceDueLine], pdfPath);
       } else {
@@ -201,6 +207,53 @@ async function sendReadyForPickupWhatsApp(orderId: string): Promise<void> {
     await doSend(batchDisplayRef);
   } catch (e) {
     console.error('[sendReadyForPickupWhatsApp] failed:', e);
+  }
+}
+
+// Fires exactly once, the moment an order's balance crosses from > 0 to 0 —
+// called from recordTailoringPaymentAction (tailoring-side payments) and,
+// via syncInvoicePaymentToTailoringOrder, from recordPaymentAction in
+// app/(auth)/billing/invoices/actions.ts (invoice-side payments, e.g. from
+// the Outstanding Dues page). ONE message only: a short payment-confirmation
+// text with the real, formal GST invoice document attached directly (never
+// sent before this point) — the invoice naturally omits Advance Paid/Balance
+// Due since balance is 0 by definition here (see docType 'INVOICE' in
+// lib/pdf/invoice-template.tsx, which only shows "Payment Due" when
+// balance > 0). Does NOT fire from markDeliveredPaidAction/
+// markDeliveredOnCreditAction — neither of those touches amount_paid, so
+// this is only ever reached via an actual payment-recording code path.
+export async function sendFullyPaidNotification(orderId: string, paymentAmount: number): Promise<void> {
+  try {
+    const { rows } = await query<{
+      phone: string | null; name: string; invoice_id: string | null;
+    }>(
+      `SELECT c.phone, c.name, o.invoice_id
+       FROM tailoring_orders o
+       JOIN customers c ON c.id = o.customer_id
+       WHERE o.id=$1`,
+      [orderId]
+    );
+    const r = rows[0];
+    // No invoice yet means the order hasn't reached ready_for_pickup — there's
+    // no real GST invoice to attach, so there's nothing to send here yet.
+    if (!r?.phone || !r.invoice_id) return;
+
+    const invRes = await query<{ invoice_number: string }>(
+      `SELECT invoice_number FROM invoices WHERE id=$1`, [r.invoice_id]
+    );
+    const inv = invRes.rows[0];
+    if (!inv) return;
+
+    // sutra_payment_received is approved WITH a mandatory document header
+    // (confirmed live — Meta rejects it with #132012 "expected DOCUMENT" if
+    // sent without one). The invoice PDF satisfies that requirement directly,
+    // so this is the only send — no separate receipt/invoice message.
+    const invoicePdf = await generateInvoicePdf(r.invoice_id).catch(() => null);
+    await sendWhatsAppTemplate(r.phone, 'sutra_payment_received', [
+      r.name, paymentAmount.toFixed(2), inv.invoice_number,
+    ], invoicePdf).catch((e) => console.error('[sendFullyPaidNotification] payment-received WA failed:', e));
+  } catch (e) {
+    console.error('[sendFullyPaidNotification] failed:', e);
   }
 }
 
@@ -359,6 +412,10 @@ export async function createTailoringOrder(raw: unknown): Promise<{
 
     logAudit({ userId: session.userId, action: 'create', entityType: 'tailoring_order', entityId: newOrderId, entityLabel: orderNumber }).catch(() => {});
 
+    // Exactly ONE message at creation — the Order Confirmation document. The
+    // real GST invoice doesn't exist yet (created at ready_for_pickup, see
+    // lib/tailoring-invoice.ts) and is only ever sent once the order becomes
+    // fully paid — see sendFullyPaidNotification.
     if (!suppressWhatsApp) {
       const dueDateFormatted = dueDate
         ? `${dueDate.slice(8, 10)}/${dueDate.slice(5, 7)}/${dueDate.slice(0, 4)}`
@@ -369,16 +426,6 @@ export async function createTailoringOrder(raw: unknown): Promise<{
         sendWhatsAppTemplate(customerPhone, 'sutra_order_confirmation', [
           customerName, _groupNumber, dueDateFormatted,
         ], pdfPath).catch((e) => console.error('[createTailoringOrder] WhatsApp failed:', e));
-
-        // Customer invoice — separate message. Customer-facing labeling only;
-        // the accounting GST invoice is a separate internal record created at
-        // ready_for_pickup (lib/tailoring-invoice.ts), unaffected by this send.
-        const invoicePath = await generateTailoringProformaPdf(newOrderId).catch(() => null);
-        if (invoicePath) {
-          sendWhatsAppTemplate(customerPhone, 'sutra_invoice_notification', [
-            customerName, `${_groupNumber} (Invoice)`, price.toFixed(2),
-          ], invoicePath).catch((e) => console.error('[createTailoringOrder] invoice WhatsApp failed:', e));
-        }
       });
     }
 
@@ -415,30 +462,16 @@ export async function sendBatchConfirmationAction(batchId: string): Promise<void
       ? `${first.due_date.slice(8, 10)}/${first.due_date.slice(5, 7)}/${first.due_date.slice(0, 4)}`
       : 'TBD';
 
-    // grouped PDF — generateTailoringOrderConfirmationPdf auto-collects all group siblings
+    // Exactly ONE message for the whole batch — the Order Confirmation
+    // document. generateTailoringOrderConfirmationPdf auto-collects all group
+    // siblings into one combined document. Every item in a batch is created
+    // with suppressWhatsApp:true (see order-wizard.tsx), so this is the ONLY
+    // send for a multi-item booking.
     const pdfPath = await generateTailoringOrderConfirmationPdf(first.id).catch(() => null);
     const displayRef = first.group_number ?? first.order_number;
     await sendWhatsAppTemplate(first.phone, 'sutra_order_confirmation', [
       first.name, displayRef, dueDateFormatted,
     ], pdfPath);
-
-    // Customer invoice for the whole batch — every item in a batch is created
-    // with suppressWhatsApp:true (see order-wizard.tsx), so this is the ONLY
-    // place a multi-item booking's invoice gets sent. Reuses the same
-    // grouped-aware generator as the solo-order path in createTailoringOrder,
-    // which combines all batch siblings into one document with a single
-    // combined total instead of showing just one item.
-    const invoicePath = await generateTailoringProformaPdf(first.id).catch(() => null);
-    if (invoicePath) {
-      const totalRes = await query<{ total: string }>(
-        `SELECT COALESCE(SUM(total_amount), 0)::text AS total FROM tailoring_orders WHERE batch_id=$1`,
-        [batchId]
-      );
-      const batchTotal = Number(totalRes.rows[0]?.total ?? 0);
-      await sendWhatsAppTemplate(first.phone, 'sutra_invoice_notification', [
-        first.name, `${displayRef} (Invoice)`, batchTotal.toFixed(2),
-      ], invoicePath).catch((e) => console.error('[sendBatchConfirmationAction] invoice WA failed:', e));
-    }
   } catch (e) {
     console.error('[sendBatchConfirmationAction] failed:', e);
   }
@@ -697,6 +730,7 @@ export async function requestAlterationAction(data: {
   description: string;
   priceAdjustment: number;
   measurements: Record<string, string>;
+  dueDate?: string | null;
 }): Promise<ActionResult> {
   const session = await requireRole('admin', 'staff');
 
@@ -760,11 +794,15 @@ export async function requestAlterationAction(data: {
     );
     newAlterationId = altRes.rows[0].id;
 
+    // due_date only changes when the staff member actually sets one on the
+    // modal — COALESCE keeps the existing due date when left blank, rather
+    // than nulling out a date the customer already agreed to.
     await client.query(
       `UPDATE tailoring_orders
-       SET status='in_progress', total_amount = total_amount + $1, measurement_version_id=$2, updated_at=NOW()
-       WHERE id=$3`,
-      [data.priceAdjustment, versionId, data.orderId]
+       SET status='in_progress', total_amount = total_amount + $1, measurement_version_id=$2,
+           due_date = COALESCE($3, due_date), updated_at=NOW()
+       WHERE id=$4`,
+      [data.priceAdjustment, versionId, data.dueDate || null, data.orderId]
     );
 
     await client.query('COMMIT');
@@ -814,10 +852,21 @@ export async function recordTailoringPaymentAction(data: {
 
   if (!(data.amount > 0)) return { success: false, error: 'Enter an amount greater than zero.' };
 
-  const res = await query<{ order_number: string; customer_id: string; invoice_id: string | null }>(
-    `SELECT order_number, customer_id, invoice_id FROM tailoring_orders WHERE id=$1`, [data.orderId]
+  const res = await query<{
+    order_number: string; customer_id: string; invoice_id: string | null;
+    total_amount: string; amount_paid: string;
+  }>(
+    `SELECT order_number, customer_id, invoice_id, total_amount::text, amount_paid::text FROM tailoring_orders WHERE id=$1`, [data.orderId]
   );
   if (!res.rows[0]) return { success: false, error: 'Order not found.' };
+
+  // Detect the balance>0 -> balance=0 crossing BEFORE applying this payment,
+  // so sendFullyPaidNotification fires exactly once — not on a payment that
+  // merely keeps an already-fully-paid order at 0 (e.g. a stray ₹0-delta
+  // duplicate action).
+  const balanceBefore = Math.round((Number(res.rows[0].total_amount) - Number(res.rows[0].amount_paid)) * 100) / 100;
+  const balanceAfter = Math.round((balanceBefore - data.amount) * 100) / 100;
+  const justBecameFullyPaid = balanceBefore > 0.005 && balanceAfter <= 0.005;
 
   const client = await pool.connect();
   try {
@@ -866,6 +915,10 @@ export async function recordTailoringPaymentAction(data: {
     userId: session.userId, action: 'payment', entityType: 'tailoring_order', entityId: data.orderId,
     entityLabel: res.rows[0].order_number, newValue: { amount: data.amount, payment_mode: data.paymentMode },
   }).catch(() => {});
+
+  if (justBecameFullyPaid) {
+    sendFullyPaidNotification(data.orderId, data.amount).catch((e) => console.error('[recordTailoringPaymentAction] fully-paid WA failed:', e));
+  }
 
   revalidatePath(`/tailoring/${data.orderId}`);
   revalidatePath('/tailoring');

@@ -13,7 +13,7 @@
  */
 import type { PoolClient } from 'pg';
 import { pool, query } from '@/lib/db';
-import { calcLine } from '@/lib/gst';
+import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { postSalesInvoice, postJournalEntry, type JournalLine } from '@/lib/accounting';
 import { logAudit } from '@/lib/audit';
@@ -394,30 +394,72 @@ export async function syncTailoringInvoiceAfterAlteration(
     await client.query('BEGIN');
 
     const gstRate = Number(orderRow.gst_rate);
-    const lr = calcLine({ quantity: 1, rate: newTotal, gstRate, isScheme: false });
+
+    // Break the total into a base-garment line (sort_order=0, set at order
+    // creation) plus a separate "Alteration Charges" line (sort_order=1) for
+    // the cumulative price_adjustment total, instead of silently folding the
+    // adjustment into the garment's own rate — so the alteration cost is
+    // visible as its own line on the invoice, not hidden inside the price.
+    const alterRes = await client.query<{ total: string | null }>(
+      `SELECT SUM(price_adjustment)::text AS total FROM tailoring_alterations WHERE tailoring_order_id=$1`,
+      [orderId]
+    );
+    const alterationTotal = Math.round((Number(alterRes.rows[0]?.total ?? 0)) * 100) / 100;
+    const basePrice = Math.round((newTotal - alterationTotal) * 100) / 100;
+
+    const baseLine = calcLine({ quantity: 1, rate: basePrice, gstRate, isScheme: false });
+    const hasAlterationLine = Math.abs(alterationTotal) >= 0.005;
+    const alterationLine = hasAlterationLine
+      ? calcLine({ quantity: 1, rate: alterationTotal, gstRate, isScheme: false })
+      : null;
+    const totals = calcInvoiceTotals(alterationLine ? [baseLine, alterationLine] : [baseLine]);
 
     const invDetail = await client.query<{ amount_paid: string }>(
       `SELECT amount_paid::text FROM invoices WHERE id=$1`, [invoice.id]
     );
-    const amountPaid = Math.min(Number(invDetail.rows[0].amount_paid), lr.totalAmount);
-    const finalStatus = invoiceStatus(amountPaid, lr.totalAmount);
+    const amountPaid = Math.min(Number(invDetail.rows[0].amount_paid), totals.grandTotal);
+    const finalStatus = invoiceStatus(amountPaid, totals.grandTotal);
 
     await client.query(
       `UPDATE invoices SET subtotal=$1, total_cgst=$2, total_sgst=$3, grand_total=$4, status=$5 WHERE id=$6`,
-      [lr.totalAmount, lr.cgstAmount, lr.sgstAmount, lr.totalAmount, finalStatus, invoice.id]
+      [totals.subtotal, totals.totalCgst, totals.totalSgst, totals.grandTotal, finalStatus, invoice.id]
     );
     await client.query(
       `UPDATE invoice_items SET rate=$1, gst_rate=$2, taxable_value=$3, cgst_amount=$4, sgst_amount=$5, total_amount=$6
-       WHERE invoice_id=$7`,
-      [newTotal, gstRate, lr.taxableValue, lr.cgstAmount, lr.sgstAmount, lr.totalAmount, invoice.id]
+       WHERE invoice_id=$7 AND sort_order=0`,
+      [basePrice, gstRate, baseLine.taxableValue, baseLine.cgstAmount, baseLine.sgstAmount, baseLine.totalAmount, invoice.id]
     );
+
+    if (alterationLine) {
+      const serviceItemId = await getOrCreateServiceItemId(client);
+      const upserted = await client.query(
+        `UPDATE invoice_items SET rate=$1, gst_rate=$2, taxable_value=$3, cgst_amount=$4, sgst_amount=$5, total_amount=$6
+         WHERE invoice_id=$7 AND sort_order=1`,
+        [alterationTotal, gstRate, alterationLine.taxableValue, alterationLine.cgstAmount, alterationLine.sgstAmount, alterationLine.totalAmount, invoice.id]
+      );
+      if (upserted.rowCount === 0) {
+        await client.query(
+          `INSERT INTO invoice_items (
+             invoice_id, item_id, sort_order, description_override,
+             quantity, rate, discount_amount, hsn_code, gst_rate,
+             taxable_value, cgst_amount, sgst_amount, total_amount
+           ) VALUES ($1,$2,1,'Alteration Charges',1,$3,0,'9988',$4,$5,$6,$7,$8)`,
+          [invoice.id, serviceItemId, alterationTotal, gstRate,
+           alterationLine.taxableValue, alterationLine.cgstAmount, alterationLine.sgstAmount, alterationLine.totalAmount]
+        );
+      }
+    } else {
+      // Net adjustments cancelled out to zero — drop any alteration line
+      // from a prior amendment rather than leaving a stale ₹0 row.
+      await client.query(`DELETE FROM invoice_items WHERE invoice_id=$1 AND sort_order=1`, [invoice.id]);
+    }
 
     const today = new Date().toISOString().slice(0, 10);
     await reverseJournalEntry('invoice', invoice.id, `Reversal — amended invoice ${invoice.invoice_number}`, today, actingUserId, client);
     await postSalesInvoice({
       invoiceId: invoice.id, invoiceNumber: invoice.invoice_number, invoiceDate: today,
-      grandTotal: lr.totalAmount, taxableValue: lr.taxableValue,
-      totalCgst: lr.cgstAmount, totalSgst: lr.sgstAmount,
+      grandTotal: totals.grandTotal, taxableValue: totals.subtotal - totals.totalCgst - totals.totalSgst,
+      totalCgst: totals.totalCgst, totalSgst: totals.totalSgst,
       paymentMode: null, amountPaid,
       createdBy: actingUserId,
     }, client);

@@ -250,7 +250,12 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
   // are never mistaken for a normal tax invoice. Credit note = red, debit = orange.
   const isCreditNote = data.docType === 'CREDIT NOTE';
   const isDebitNote  = data.docType === 'DEBIT NOTE';
-  const isProforma   = data.docType === 'PROFORMA';
+  // Tailoring documents (order creation AND ready-for-pickup — both use
+  // docType 'ORDER_CONFIRMATION') always show Advance Paid/Balance Due as two
+  // distinct labeled lines, even when zero, so it's never ambiguous how much
+  // has already been collected. docType 'PROFORMA' is legacy/unused but kept
+  // in the same check for compatibility with any future caller.
+  const isProforma   = data.docType === 'PROFORMA' || data.docType === 'ORDER_CONFIRMATION';
   const isReturnDoc  = isCreditNote || isDebitNote;
   const accent       = isCreditNote ? '#DC2626' : isDebitNote ? '#EA580C' : BLACK;
   const accentBg     = isCreditNote ? '#FEF2F2' : isDebitNote ? '#FFF7ED' : undefined;
@@ -513,11 +518,11 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                   <Text style={[S.totalsValue, { color: '#B91C1C' }]}>{fmt(balance)}</Text>
                 </View>
               )}
-              {/* Tailoring INVOICE (docType 'PROFORMA' internally — both the
-                  order-creation and ready-for-pickup balance-update variants):
-                  always show Advance Paid AND Balance Due as two distinct
-                  labeled lines, even when zero, so it's never ambiguous how
-                  much has already been collected. */}
+              {/* Tailoring Order Confirmation (docType 'ORDER_CONFIRMATION' —
+                  both the order-creation and ready-for-pickup sends): always
+                  show Advance Paid AND Balance Due as two distinct labeled
+                  lines, even when zero, so it's never ambiguous how much has
+                  already been collected. */}
               {isProforma && (
                 <>
                   <View style={[S.totalsLine, { marginTop: 4 }]}>
