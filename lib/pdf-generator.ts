@@ -79,9 +79,12 @@ export async function generateInvoicePdf(invoiceId: string): Promise<string | nu
 
     let upiQrDataUrl: string | undefined;
     const balance = Math.max(0, Number(inv.grand_total) - Number(inv.amount_paid));
-    if (co.upiVpa && balance > 0) {
-      const uri = `upi://pay?pa=${encodeURIComponent(co.upiVpa)}&am=${balance.toFixed(2)}&tn=${encodeURIComponent(inv.invoice_number)}&cu=INR`;
+    if (co.upiVpa) {
+      const amount = balance > 0 ? balance : Number(inv.grand_total);
+      const uri = `upi://pay?pa=${encodeURIComponent(co.upiVpa)}&am=${amount.toFixed(2)}&tn=${encodeURIComponent(inv.invoice_number)}&cu=INR`;
       upiQrDataUrl = await QRCode.toDataURL(uri, { width: 128, margin: 1 });
+    } else {
+      console.warn('[pdf-generator] UPI VPA not configured — skipping QR for invoice', inv.invoice_number);
     }
 
     const buffer = await renderInvoicePdf({

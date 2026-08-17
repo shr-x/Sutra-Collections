@@ -6,6 +6,7 @@ import { formatInr } from '@/lib/gst';
 import SearchInput from '@/components/search-input';
 import ConfirmForm from '@/components/confirm-form';
 import { softDeleteCustomerAction, restoreCustomerAction } from './actions';
+import WalkInCustomerButton from './walk-in-customer-button';
 import type { Customer } from '@/types';
 
 export const metadata: Metadata = { title: 'Customers' };
@@ -57,6 +58,7 @@ export default async function CustomersPage({
           {!showDeleted && (
             <>
               <Link href="/customers/import" className="btn-secondary btn-sm">↑ Import</Link>
+              <WalkInCustomerButton />
               <Link href="/customers/new" className="btn-primary btn-sm">+ New Customer</Link>
             </>
           )}

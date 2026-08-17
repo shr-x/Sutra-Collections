@@ -89,30 +89,51 @@ export async function createPurchaseInvoiceAction(
 
       for (let i = 0; i < items.length; i++) {
         const item = items[i]; const lr = lineResults[i];
+
+        // Root-cause fix: never let a purchase line create a stock row with an
+        // unresolved size/color. Every item is guaranteed at least one item_sizes
+        // and one item_colors row (created alongside the item), so if the caller
+        // (e.g. AI import prefill) didn't resolve one, fall back to the item's
+        // default variant — preferring is_default, else the first by sort_order —
+        // instead of persisting NULL and corrupting stock lookups.
+        let sizeId = item.size_id ?? null;
+        let colorId = item.color_id ?? null;
+        if (!sizeId) {
+          const sRes = await client.query<{ id: string }>(
+            `SELECT id FROM item_sizes WHERE item_id=$1 ORDER BY is_default DESC, sort_order LIMIT 1`,
+            [item.item_id]
+          );
+          sizeId = sRes.rows[0]?.id ?? null;
+        }
+        if (!colorId) {
+          const cRes = await client.query<{ id: string }>(
+            `SELECT id FROM item_colors WHERE item_id=$1 ORDER BY is_default DESC, sort_order LIMIT 1`,
+            [item.item_id]
+          );
+          colorId = cRes.rows[0]?.id ?? null;
+        }
+
         await client.query(
           `INSERT INTO purchase_invoice_items (purchase_invoice_id, item_id, variant_id, size_id, color_id, sort_order, quantity, rate, hsn_code, gst_rate, taxable_value, cgst_amount, sgst_amount, total_amount)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-          [purId, item.item_id, item.variant_id ?? null, item.size_id ?? null, item.color_id ?? null,
+          [purId, item.item_id, item.variant_id ?? null, sizeId, colorId,
            i, item.quantity, item.rate, item.hsn_code ?? null, item.gst_rate,
            lr.taxableValue, lr.cgstAmount, lr.sgstAmount, lr.totalAmount]
         );
         // Add to stock: UPDATE existing row first, INSERT if none matched
-        // Uses COALESCE so it finds both null-size rows (old items) and sized rows (new items)
         const stockUpd = await client.query(
           `UPDATE stock SET quantity = quantity + $1
            WHERE item_id=$2 AND warehouse_id=$3
-             AND COALESCE(size_id,  (SELECT id FROM item_sizes  WHERE item_id=$2 AND is_default=TRUE LIMIT 1))
-                 IS NOT DISTINCT FROM COALESCE($4::uuid, (SELECT id FROM item_sizes  WHERE item_id=$2 AND is_default=TRUE LIMIT 1))
-             AND COALESCE(color_id, (SELECT id FROM item_colors WHERE item_id=$2 AND is_default=TRUE LIMIT 1))
-                 IS NOT DISTINCT FROM COALESCE($5::uuid, (SELECT id FROM item_colors WHERE item_id=$2 AND is_default=TRUE LIMIT 1))`,
-          [item.quantity, item.item_id, header.warehouse_id, item.size_id ?? null, item.color_id ?? null]
+             AND size_id  IS NOT DISTINCT FROM $4::uuid
+             AND color_id IS NOT DISTINCT FROM $5::uuid`,
+          [item.quantity, item.item_id, header.warehouse_id, sizeId, colorId]
         );
-        console.log('[STOCK] Purchase add rows updated:', stockUpd.rowCount, 'item', item.item_id, 'size', item.size_id ?? null, 'color', item.color_id ?? null);
+        console.log('[STOCK] Purchase add rows updated:', stockUpd.rowCount, 'item', item.item_id, 'size', sizeId, 'color', colorId);
         if ((stockUpd.rowCount ?? 0) === 0) {
           await client.query(
             `INSERT INTO stock (item_id, size_id, color_id, warehouse_id, quantity)
              VALUES ($1,$2,$3,$4,$5)`,
-            [item.item_id, item.size_id ?? null, item.color_id ?? null, header.warehouse_id, item.quantity]
+            [item.item_id, sizeId, colorId, header.warehouse_id, item.quantity]
           );
         }
         await client.query(

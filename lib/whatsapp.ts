@@ -42,6 +42,67 @@ export async function canSendMarketing(customerId: string): Promise<boolean> {
   }
 }
 
+const SETTING_LOGO_MEDIA_ID    = 'whatsapp_logo_media_id';
+const SETTING_LOGO_MEDIA_AT    = 'whatsapp_logo_media_uploaded_at';
+// Meta doesn't document a hard TTL for uploaded (non-link) media; this is a
+// conservative estimate so we proactively refresh well before any real expiry
+// rather than relying purely on the retry-on-failure path in
+// sendWhatsAppTemplateWithLogoHeader.
+const LOGO_MEDIA_TTL_MS = 25 * 24 * 60 * 60 * 1000; // 25 days
+
+async function setSetting(key: string, value: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    [key, value]
+  );
+}
+
+function guessImageMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase().replace('.', '');
+  const map: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
+  return map[ext] ?? 'image/jpeg';
+}
+
+/**
+ * WhatsApp media_id for the shop logo, uploaded directly to Meta's Media API
+ * (read from disk — wherever settings.company_logo_path points to under
+ * public/) rather than sent as a fetchable link. The media_id is cached in
+ * `settings` so the same static logo isn't re-uploaded on every send; pass
+ * `forceRefresh` to bypass the cache (used by sendWhatsAppTemplateWithLogoHeader
+ * when Meta rejects a cached id, e.g. because it expired).
+ * Returns null if no logo is configured, the file is missing, or the upload
+ * fails, so callers can skip the header gracefully.
+ */
+export async function getLogoMediaId(forceRefresh = false): Promise<string | null> {
+  const { rows } = await pool.query<{ key: string; value: string }>(
+    `SELECT key, value FROM settings WHERE key = ANY($1)`,
+    [[ 'company_logo_path', SETTING_LOGO_MEDIA_ID, SETTING_LOGO_MEDIA_AT ]]
+  );
+  const s = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const logoPath = s.company_logo_path ?? '';
+  if (!logoPath) return null;
+
+  if (!forceRefresh && s[SETTING_LOGO_MEDIA_ID]) {
+    const uploadedAt = s[SETTING_LOGO_MEDIA_AT] ? new Date(s[SETTING_LOGO_MEDIA_AT]).getTime() : 0;
+    if (Date.now() - uploadedAt < LOGO_MEDIA_TTL_MS) {
+      return s[SETTING_LOGO_MEDIA_ID];
+    }
+  }
+
+  const absPath = path.join(process.cwd(), 'public', logoPath);
+  if (!fs.existsSync(absPath)) {
+    console.warn('[WA] Logo file not found on disk for media upload:', absPath);
+    return null;
+  }
+
+  const mediaId = await uploadWhatsAppMediaFile(absPath, guessImageMimeType(absPath));
+  if (!mediaId) return null;
+
+  await setSetting(SETTING_LOGO_MEDIA_ID, mediaId);
+  await setSetting(SETTING_LOGO_MEDIA_AT, new Date().toISOString());
+  return mediaId;
+}
+
 export function interpolateTemplate(
   template: string,
   vars: { name: string; invoice_number: string; amount: string; days: string }
@@ -102,30 +163,30 @@ function normalisePhone(toPhone: string): string {
 }
 
 /**
- * Upload a PDF to the WhatsApp media API and return the media_id.
- * Returns null on any failure so callers can send body-only as fallback.
+ * Upload a local file to the WhatsApp media API and return the media_id.
+ * Returns null on any failure so callers can send body-only (or link-based
+ * fallback) rather than blocking the whole message.
  */
-async function uploadWhatsAppMedia(pdfPath: string): Promise<string | null> {
+async function uploadWhatsAppMediaFile(filePath: string, mimeType: string): Promise<string | null> {
   const token   = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   if (!token || !phoneId) return null;
 
   let fileBuffer: Buffer;
   try {
-    fileBuffer = fs.readFileSync(pdfPath);
+    fileBuffer = fs.readFileSync(filePath);
   } catch (err) {
-    console.error('[WA Media] Cannot read file:', pdfPath, (err as Error).message);
+    console.error('[WA Media] Cannot read file:', filePath, (err as Error).message);
     return null;
   }
 
-  const fileName = path.basename(pdfPath);
-  console.log(`[WA Media] Uploading ${fileName} (${fileBuffer.length} bytes)`);
-  console.log('[WA Media] Form fields: messaging_product=whatsapp, type=application/pdf, file=<buffer>');
+  const fileName = path.basename(filePath);
+  console.log(`[WA Media] Uploading ${fileName} (${fileBuffer.length} bytes, type=${mimeType})`);
 
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');   // required by Meta
-  form.append('type', 'application/pdf');          // MIME type of the file
-  form.append('file', new Blob([new Uint8Array(fileBuffer)], { type: 'application/pdf' }), fileName);
+  form.append('type', mimeType);
+  form.append('file', new Blob([new Uint8Array(fileBuffer)], { type: mimeType }), fileName);
 
   let res: Response;
   try {
@@ -183,9 +244,10 @@ const URL_BUTTON_CONFIG: Record<string, { index: string; url: string }> = {};
  * pdfPath: optional absolute path to a PDF — uploaded as document header if the
  *   template was approved with a Document header. On upload failure, falls back
  *   to body-only so the message still goes out.
- * headerImageUrl: optional public HTTPS URL for a static image header (e.g. the
- *   sutra_anniversary_greeting logo). Ignored if pdfPath is also provided — a
- *   template has only one header slot.
+ * headerImageMediaId: optional WhatsApp media_id (from the Media API — see
+ *   getLogoMediaId/uploadWhatsAppMediaFile) for a static image header, e.g.
+ *   the sutra_anniversary_greeting / sutra_store_visit_thankyou logo. Ignored
+ *   if pdfPath is also provided — a template has only one header slot.
  * buttonUrl: override URL for the "Visit website" button. Defaults to the
  *   per-template entry in URL_BUTTON_CONFIG. Pass null to suppress.
  * opts.marketingCustomerId: mark this as a MARKETING send for the given customer.
@@ -199,7 +261,7 @@ export async function sendWhatsAppTemplate(
   templateName: string,
   parameters: string[],
   pdfPath?: string | null,
-  headerImageUrl?: string | null,
+  headerImageMediaId?: string | null,
   buttonUrl?: string | null,
   opts?: { marketingCustomerId?: string | null }
 ): Promise<WaSendResult> {
@@ -226,7 +288,7 @@ export async function sendWhatsAppTemplate(
   // If a PDF is provided, upload it and prepend a document header component.
   // If the upload fails for any reason, fall back to body-only — never block the send.
   if (pdfPath) {
-    const mediaId = await uploadWhatsAppMedia(pdfPath);
+    const mediaId = await uploadWhatsAppMediaFile(pdfPath, 'application/pdf');
     if (mediaId) {
       components.unshift({
         type: 'header',
@@ -244,13 +306,14 @@ export async function sendWhatsAppTemplate(
     } else {
       console.warn(`[WA] PDF upload failed for "${templateName}" — continuing without document header`);
     }
-  } else if (headerImageUrl) {
-    // Image header sent by public link — no upload round-trip needed.
+  } else if (headerImageMediaId) {
+    // Image header by uploaded media_id — Meta serves it from their own
+    // storage rather than fetching a link at send time.
     components.unshift({
       type: 'header',
-      parameters: [{ type: 'image', image: { link: headerImageUrl } }],
+      parameters: [{ type: 'image', image: { id: headerImageMediaId } }],
     });
-    console.log(`[WA] Image header attached — url: ${headerImageUrl}`);
+    console.log(`[WA] Image header attached — media_id: ${headerImageMediaId}`);
   }
 
   // Button component — required for templates with a "Visit website" URL button.
@@ -302,6 +365,39 @@ export async function sendWhatsAppTemplate(
       console.warn(`[WA] "${templateName}" has no approved header component — retrying without attachment`);
       const bodyOnlyComponents = components.filter((c) => (c as { type?: string }).type !== 'header');
       result = await postToMeta(buildBody(bodyOnlyComponents));
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Send a template whose approved header is the shop logo image — used by
+ * sutra_anniversary_greeting and sutra_store_visit_thankyou. Resolves the
+ * cached logo media_id (getLogoMediaId), sends, and if Meta rejects the send
+ * (e.g. the cached media_id expired/was invalidated) retries exactly once
+ * with a freshly re-uploaded media_id. Falls back to sending without a header
+ * (never silently drops the message) if no logo is configured or upload fails.
+ */
+export async function sendWhatsAppTemplateWithLogoHeader(
+  toPhone: string,
+  templateName: string,
+  parameters: string[],
+  opts?: { marketingCustomerId?: string | null }
+): Promise<WaSendResult> {
+  const mediaId = await getLogoMediaId();
+  if (!mediaId) {
+    return sendWhatsAppTemplate(toPhone, templateName, parameters, null, null, null, opts);
+  }
+
+  let result = await sendWhatsAppTemplate(toPhone, templateName, parameters, null, mediaId, null, opts);
+  if (result.skipped) return result; // consent gate declined — not a media problem, don't retry
+
+  if (!result.success) {
+    console.warn(`[WA] "${templateName}" failed with cached logo media_id (${mediaId}) — re-uploading and retrying once`);
+    const freshMediaId = await getLogoMediaId(true);
+    if (freshMediaId && freshMediaId !== mediaId) {
+      result = await sendWhatsAppTemplate(toPhone, templateName, parameters, null, freshMediaId, null, opts);
     }
   }
 

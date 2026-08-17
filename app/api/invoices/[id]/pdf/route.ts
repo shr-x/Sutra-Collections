@@ -46,13 +46,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       })()
     : undefined;
 
-  // UPI QR code — generate only when balance > 0 and VPA is set
+  // UPI QR code — generate whenever a VPA is configured, regardless of balance
+  // (the QR should let the customer pay for the whole invoice, not just what's due).
   const upiVpa       = settings.upi_vpa ?? '';
   const balance      = Math.max(0, Number(inv.grand_total) - Number(inv.amount_paid));
   let upiQrDataUrl: string | undefined;
-  if (upiVpa && balance > 0) {
-    const upiUri = `upi://pay?pa=${encodeURIComponent(upiVpa)}&am=${balance.toFixed(2)}&tn=${encodeURIComponent(inv.invoice_number)}&cu=INR`;
+  if (upiVpa) {
+    const amount = balance > 0 ? balance : Number(inv.grand_total);
+    const upiUri = `upi://pay?pa=${encodeURIComponent(upiVpa)}&am=${amount.toFixed(2)}&tn=${encodeURIComponent(inv.invoice_number)}&cu=INR`;
     upiQrDataUrl = await QRCode.toDataURL(upiUri, { width: 128, margin: 1 });
+  } else {
+    console.warn('[PDF] UPI VPA not configured — skipping QR for invoice', inv.invoice_number);
   }
 
   // Format date as DD/MM/YYYY (en-IN locale)

@@ -8,6 +8,7 @@ import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
+import { createCustomerRecord } from '@/lib/customers';
 import {
   generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf,
   generateTailoringCreditDuePdf, generateTailoringOrderConfirmationPdf,
@@ -494,12 +495,8 @@ export async function createCustomerInline(data: { name: string; phone: string }
   if (phone.replace(/\D/g, '').length < 10)
     return { success: false, error: 'Enter a valid 10-digit phone number.' };
 
-  const res = await query(
-    `INSERT INTO customers (name, phone) VALUES ($1,$2) RETURNING id, name, phone`,
-    [name, phone]
-  );
-  const c = res.rows[0];
-  return { success: true, customer: { id: c.id, name: c.name, phone: c.phone } };
+  const { id } = await createCustomerRecord({ name, phone });
+  return { success: true, customer: { id, name, phone } };
 }
 
 // ── Advance Status (in_progress -> ready_for_pickup ONLY) ───────────────────

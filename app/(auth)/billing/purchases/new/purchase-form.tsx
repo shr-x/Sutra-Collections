@@ -402,10 +402,16 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
             ? item?.colors.find((c) => norm(c.color_name) === norm(it.color as string))
             : undefined;
 
+          // A product with exactly one size/colour has no real ambiguity — use it
+          // outright rather than flagging a mismatch just because the extracted
+          // text (or lack of it) didn't literally match the option's name.
+          const onlySize = item?.sizes.length === 1 ? item.sizes[0] : undefined;
+          const onlyColor = item?.colors.length === 1 ? item.colors[0] : undefined;
+
           // If AI extracted a size/colour that doesn't exist yet → suggest "Add this variant?"
           // instead of silently falling back to the default.
-          const sizeMismatch = it.size && !matchSize;
-          const colorMismatch = it.color && !matchColor;
+          const sizeMismatch = it.size && !matchSize && !onlySize;
+          const colorMismatch = it.color && !matchColor && !onlyColor;
           if (sizeMismatch || colorMismatch) {
             mismatches.push({
               lineKey,
@@ -416,9 +422,11 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
             });
           }
 
-          // Only fall back to default when AI didn't extract a size/colour at all
-          const size = matchSize ?? (!it.size ? (item?.sizes.find((s) => s.is_default) ?? item?.sizes[0]) : undefined);
-          const color = matchColor ?? (!it.color ? (item?.colors.find((c) => c.is_default) ?? item?.colors[0]) : undefined);
+          // Fall back to the item's default variant when AI didn't extract a
+          // size/colour at all, or when there's only one option so there's no
+          // real choice to make either way.
+          const size = matchSize ?? onlySize ?? (!it.size ? (item?.sizes.find((s) => s.is_default) ?? item?.sizes[0]) : undefined);
+          const color = matchColor ?? onlyColor ?? (!it.color ? (item?.colors.find((c) => c.is_default) ?? item?.colors[0]) : undefined);
 
           return {
             key: lineKey,

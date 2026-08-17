@@ -7,6 +7,7 @@ import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { triggerBirthdayGreetingIfToday } from '@/lib/greetings';
+import { createCustomerRecord } from '@/lib/customers';
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
 const CustomerSchema = z.object({
@@ -56,12 +57,11 @@ export async function createCustomerAction(
 
   const d = parsed.data;
   try {
-    const res = await query<{ id: string }>(
-      `INSERT INTO customers (name, phone, address, gstin, credit_limit, whatsapp_opt_out, marketing_opt_in, date_of_birth)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [d.name, d.phone || null, d.address, d.gstin || null, d.credit_limit, d.whatsapp_opt_out, d.marketing_opt_in, d.date_of_birth ?? null]
-    );
-    const newId = res.rows[0].id;
+    const { id: newId } = await createCustomerRecord({
+      name: d.name, phone: d.phone, address: d.address, gstin: d.gstin,
+      creditLimit: d.credit_limit, whatsappOptOut: d.whatsapp_opt_out,
+      marketingOptIn: d.marketing_opt_in, dateOfBirth: d.date_of_birth,
+    });
     logAudit({ userId: session.userId, action: 'create', entityType: 'customer', entityId: newId, entityLabel: d.name }).catch(() => {});
     // If the birthday entered is today, greet immediately (dedup + consent
     // handled inside the helper) rather than waiting for the next daily cron.
@@ -88,15 +88,43 @@ export async function quickCreateCustomerAction(
   const cleanPhone = (phone ?? '').trim();
   if (!cleanName) return { success: false, error: 'Name is required' };
   try {
-    const res = await query<{ id: string }>(
-      `INSERT INTO customers (name, phone, address) VALUES ($1,$2,'') RETURNING id`,
-      [cleanName, cleanPhone || null]
-    );
+    const { id } = await createCustomerRecord({ name: cleanName, phone: cleanPhone || null });
     revalidatePath('/customers');
-    return { success: true, id: res.rows[0].id, name: cleanName, phone: cleanPhone || undefined };
+    return { success: true, id, name: cleanName, phone: cleanPhone || undefined };
   } catch {
     return { success: false, error: 'Failed to create customer. Please try again.' };
   }
+}
+
+/**
+ * Dedicated entry point for the Customers page's "Add Walk-in Customer" button —
+ * store visitors who didn't buy anything but left their name/number. Records
+ * source='walk_in' for reporting only; the sutra_store_visit_thankyou welcome
+ * send is no longer gated on this — it fires for every customer created via
+ * createCustomerRecord (see lib/customers.ts), this path included.
+ */
+export async function createWalkInCustomerAction(
+  name: string,
+  phone: string
+): Promise<{ success: boolean; id?: string; error?: string }> {
+  const session = await requireRole('admin', 'staff');
+  const cleanName = (name ?? '').trim();
+  const cleanPhone = (phone ?? '').trim();
+  if (!cleanName) return { success: false, error: 'Name is required' };
+  if (!cleanPhone) return { success: false, error: 'Phone number is required to greet walk-in visitors on WhatsApp' };
+
+  let newId: string;
+  try {
+    const res = await createCustomerRecord({ name: cleanName, phone: cleanPhone, source: 'walk_in' });
+    newId = res.id;
+  } catch {
+    return { success: false, error: 'Failed to save customer. Please try again.' };
+  }
+
+  logAudit({ userId: session.userId, action: 'create', entityType: 'customer', entityId: newId, entityLabel: cleanName, newValue: { source: 'walk_in' } }).catch(() => {});
+  revalidatePath('/customers');
+
+  return { success: true, id: newId };
 }
 
 export async function updateCustomerAction(
