@@ -1081,3 +1081,143 @@ export async function retryInvoiceWaAction(invoiceId: string): Promise<void> {
     : `?wa=${waResult}`;
   redirect(`/billing/invoices/${invoiceId}${waQuery}`);
 }
+
+// ─── Draft Bills (scratch space — never touches invoices/stock/reports) ───────
+// A draft is just a JSON snapshot of the billing screen's in-progress state.
+// Recall is single-use: the row is deleted the instant it's loaded back into
+// the screen (see recallDraftBillAction), so this table is never a history —
+// only ever an unfinished-bill holding pen.
+
+const DraftLineSchema = z.object({
+  item_id: z.string().uuid(),
+  item_name: z.string(),
+  variant_id: z.string().uuid().nullable().optional(),
+  variant_label: z.string().nullable().optional(),
+  size_id: z.string().uuid().nullable().optional(),
+  color_id: z.string().uuid().nullable().optional(),
+  size_label: z.string().optional().default(''),
+  color_label: z.string().optional().default(''),
+  quantity: z.coerce.number().positive(),
+  rate: z.coerce.number().nonnegative(),
+  discount_type: z.enum(['flat', 'percent']).nullable().optional(),
+  discount_value: z.coerce.number().nonnegative().nullable().optional(),
+  hsn_code: z.string().nullable().optional(),
+  gst_rate: z.coerce.number().min(0).max(100),
+  stock_qty: z.coerce.number().nullable().optional(),
+});
+
+const DraftBillSchema = z.object({
+  label: z.string().trim().min(1).max(120),
+  customer_id: z.string().uuid().nullable().optional(),
+  warehouse_id: z.string().uuid().nullable().optional(),
+  invoice_date: z.string(),
+  invoice_type: z.enum(['gst', 'non_gst']).default('gst'),
+  payment_mode: z.enum(['cash', 'upi', 'credit', 'card']).nullable().optional(),
+  amount_paid: z.coerce.number().nonnegative().default(0),
+  invoice_discount_type: z.enum(['flat', 'percent']).nullable().optional(),
+  invoice_discount_value: z.coerce.number().nonnegative().nullable().optional(),
+  is_recurring: z.boolean().default(false),
+  recurring_frequency: z.enum(['weekly', 'monthly']).nullable().optional(),
+  notes: z.string().nullable().optional(),
+  loyalty_points_redeemed: z.coerce.number().int().nonnegative().default(0),
+  lines: z.array(DraftLineSchema),
+  grand_total: z.coerce.number().nonnegative().default(0),
+});
+
+export async function saveDraftBillAction(
+  raw: unknown
+): Promise<ActionResult<{ draftId: string }>> {
+  const session = await requireRole('admin', 'staff');
+
+  let parsed: z.infer<typeof DraftBillSchema>;
+  try {
+    parsed = DraftBillSchema.parse(raw);
+  } catch (e) {
+    return { success: false, error: e instanceof z.ZodError ? e.errors[0].message : 'Invalid draft data' };
+  }
+
+  const { label, customer_id, warehouse_id, grand_total, ...rest } = parsed;
+
+  try {
+    const res = await query<{ id: string }>(
+      `INSERT INTO draft_bills (label, warehouse_id, customer_id, item_count, total_amount, payload, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [
+        label,
+        warehouse_id ?? null,
+        customer_id ?? null,
+        rest.lines.length,
+        grand_total,
+        JSON.stringify({ customer_id: customer_id ?? null, warehouse_id: warehouse_id ?? null, ...rest }),
+        session.userId,
+      ]
+    );
+    return { success: true, data: { draftId: res.rows[0].id } };
+  } catch (err) {
+    console.error('[saveDraftBillAction]', err);
+    return { success: false, error: 'Failed to save draft' };
+  }
+}
+
+export interface DraftBillSummary {
+  id: string;
+  label: string;
+  item_count: number;
+  total_amount: number;
+  customer_name: string | null;
+  created_at: string;
+}
+
+export async function listDraftBillsAction(): Promise<DraftBillSummary[]> {
+  await requireRole('admin', 'staff');
+
+  const res = await query<{
+    id: string; label: string; item_count: number; total_amount: string;
+    customer_name: string | null; created_at: Date;
+  }>(
+    `SELECT db.id, db.label, db.item_count, db.total_amount::text AS total_amount,
+            c.name AS customer_name, db.created_at
+     FROM draft_bills db
+     LEFT JOIN customers c ON c.id = db.customer_id
+     ORDER BY db.created_at DESC
+     LIMIT 50`
+  );
+
+  return res.rows.map((r) => ({
+    id: r.id,
+    label: r.label,
+    item_count: r.item_count,
+    total_amount: Number(r.total_amount),
+    customer_name: r.customer_name,
+    created_at: r.created_at.toISOString(),
+  }));
+}
+
+export async function recallDraftBillAction(
+  id: string
+): Promise<{ success: boolean; payload?: Record<string, unknown>; error?: string }> {
+  await requireRole('admin', 'staff');
+
+  const client = await (await import('@/lib/db')).pool.connect();
+  try {
+    await client.query('BEGIN');
+    const res = await client.query<{ payload: Record<string, unknown> }>(
+      'SELECT payload FROM draft_bills WHERE id=$1 FOR UPDATE',
+      [id]
+    );
+    if (!res.rows[0]) {
+      await client.query('ROLLBACK');
+      return { success: false, error: 'Draft no longer available' };
+    }
+    // Single-use: delete the moment it's recalled, per draft semantics.
+    await client.query('DELETE FROM draft_bills WHERE id=$1', [id]);
+    await client.query('COMMIT');
+    return { success: true, payload: res.rows[0].payload };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[recallDraftBillAction]', err);
+    return { success: false, error: 'Failed to load draft' };
+  } finally {
+    client.release();
+  }
+}

@@ -9,7 +9,13 @@ import ItemPickerModal, { type PickerAddEvent } from '@/components/item-picker-m
 import ConfirmDialog from '@/components/confirm-dialog';
 import DatePicker from '@/components/date-picker';
 import { quickCreateCustomerAction } from '@/app/(auth)/customers/actions';
-import { sendInvoiceWhatsAppAction } from './actions';
+import {
+  sendInvoiceWhatsAppAction,
+  saveDraftBillAction,
+  listDraftBillsAction,
+  recallDraftBillAction,
+  type DraftBillSummary,
+} from './actions';
 
 interface ItemOption {
   id: string;
@@ -64,6 +70,10 @@ interface InvoiceBuilderProps {
   // format dialog — the edit flow reuses this same component but redirects
   // itself, so it never sets this.
   showSendDialog?: boolean;
+  // Draft bills ("Save as Draft" + "Drafts" list) are only wired up on the
+  // New Invoice screen — not on invoice edit or quotations, which reuse this
+  // same component for other flows.
+  enableDrafts?: boolean;
   initialData?: {
     customer_id?: string;
     warehouse_id?: string;
@@ -117,6 +127,7 @@ export default function InvoiceBuilder({
   discountSchemes = [],
   initialData,
   showSendDialog = false,
+  enableDrafts = false,
 }: InvoiceBuilderProps) {
   const router = useRouter();
   const [state, formAction] = useFormState<ActionResult, FormData>(action, { success: false });
@@ -227,6 +238,16 @@ export default function InvoiceBuilder({
   const [modalOpen, setModalOpen] = useState(false);
   const [confirmRemoveKey, setConfirmRemoveKey] = useState<string | null>(null);
 
+  // ── Draft bills ──────────────────────────────────────────────────────────────
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [drafts, setDrafts] = useState<DraftBillSummary[]>([]);
+  const [draftsLoading, setDraftsLoading] = useState(false);
+  const [draftsError, setDraftsError] = useState('');
+  const [recallingId, setRecallingId] = useState<string | null>(null);
+  const [draftToast, setDraftToast] = useState<string | null>(null);
+  const draftsRef = useRef<HTMLDivElement>(null);
+
   // ── Outside-click handlers ───────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -236,16 +257,24 @@ export default function InvoiceBuilder({
       if (warehouseRef.current && !warehouseRef.current.contains(e.target as Node)) {
         setShowWarehouseDrop(false);
       }
+      if (draftsRef.current && !draftsRef.current.contains(e.target as Node)) {
+        setDraftsOpen(false);
+      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
   // Reset redeemed points when the customer changes — but NOT on the initial
-  // mount, so a reloaded invoice (#3) keeps its saved redemption.
+  // mount, so a reloaded invoice (#3) keeps its saved redemption. Also skipped
+  // once when a draft is recalled (see handleRecallDraft) — that programmatic
+  // customerId change carries its own saved redemption too and would
+  // otherwise be stomped back to 0 by this same effect.
   const customerInitRef = useRef(true);
+  const skipLoyaltyResetRef = useRef(false);
   useEffect(() => {
     if (customerInitRef.current) { customerInitRef.current = false; return; }
+    if (skipLoyaltyResetRef.current) { skipLoyaltyResetRef.current = false; return; }
     setLoyaltyPointsToRedeem(0);
   }, [customerId]);
   useEffect(() => { setIsPending(false); }, [state]);
@@ -564,6 +593,133 @@ export default function InvoiceBuilder({
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, [field]: value } : l)));
   };
 
+  // ── Draft bills: save / recall ───────────────────────────────────────────────
+  const resetToBlankBill = useCallback(() => {
+    setCustomerId('');
+    setCustomerSearch('');
+    setLines([]);
+    linesTouchedRef.current = false;
+    setNotes('');
+    setShowNotes(false);
+    setPaymentMode('');
+    setPaymentModeError('');
+    setAmountPaid(0);
+    setInvDiscType('');
+    setInvDiscValue(0);
+    setShowDiscount(false);
+    setIsRecurring(false);
+    setRecurringFreq('');
+    setLoyaltyPointsToRedeem(0);
+    setInvoiceDate(today);
+    setInvoiceType('gst');
+  }, [today]);
+
+  const flashDraftToast = (msg: string) => {
+    setDraftToast(msg);
+    setTimeout(() => setDraftToast(null), 3000);
+  };
+
+  const handleSaveDraft = async () => {
+    if (lines.length === 0 || savingDraft) return;
+    setSavingDraft(true);
+    const now = new Date();
+    const label = selectedCustomer
+      ? selectedCustomer.name
+      : `Draft - ${now.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}, ${now.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`;
+
+    const res = await saveDraftBillAction({
+      label,
+      customer_id: customerId || null,
+      warehouse_id: warehouseId || null,
+      invoice_date: invoiceDate,
+      invoice_type: invoiceType,
+      payment_mode: paymentMode || null,
+      amount_paid: amountPaid,
+      invoice_discount_type: invDiscType || null,
+      invoice_discount_value: invDiscValue || null,
+      is_recurring: isRecurring,
+      recurring_frequency: recurringFreq || null,
+      notes: notes || null,
+      loyalty_points_redeemed: loyaltyPointsToRedeem,
+      lines,
+      grand_total: effectiveGrandTotal,
+    });
+    setSavingDraft(false);
+    if (res.success) {
+      resetToBlankBill();
+      flashDraftToast(`Saved as draft: "${label}"`);
+    } else {
+      flashDraftToast(res.error ?? 'Failed to save draft');
+    }
+  };
+
+  const openDrafts = async () => {
+    const next = !draftsOpen;
+    setDraftsOpen(next);
+    if (!next) return;
+    setDraftsLoading(true);
+    setDraftsError('');
+    try {
+      setDrafts(await listDraftBillsAction());
+    } catch {
+      setDraftsError('Failed to load drafts');
+    } finally {
+      setDraftsLoading(false);
+    }
+  };
+
+  const handleRecallDraft = async (draft: DraftBillSummary) => {
+    if (recallingId) return;
+    setRecallingId(draft.id);
+    const res = await recallDraftBillAction(draft.id);
+    setRecallingId(null);
+
+    if (!res.success || !res.payload) {
+      setDraftsError(res.error ?? 'Failed to load draft');
+      setDrafts(await listDraftBillsAction().catch(() => []));
+      return;
+    }
+
+    const p = res.payload as {
+      customer_id: string | null;
+      warehouse_id: string | null;
+      invoice_date: string;
+      invoice_type: string;
+      payment_mode: string | null;
+      amount_paid: number;
+      invoice_discount_type: DiscountType | null;
+      invoice_discount_value: number | null;
+      is_recurring: boolean;
+      recurring_frequency: string | null;
+      notes: string | null;
+      loyalty_points_redeemed: number;
+      lines: LineItemDraft[];
+    };
+
+    const cust = allCustomers.find((c) => c.id === p.customer_id);
+    skipLoyaltyResetRef.current = true;
+    setCustomerId(p.customer_id ?? '');
+    setCustomerSearch(cust ? `${cust.name}${cust.phone ? ` · ${cust.phone}` : ''}` : '');
+    if (p.warehouse_id) setWarehouseId(p.warehouse_id);
+    setInvoiceDate(p.invoice_date);
+    setInvoiceType(p.invoice_type);
+    setPaymentMode(p.payment_mode ?? '');
+    setAmountPaid(Number(p.amount_paid) || 0);
+    setInvDiscType(p.invoice_discount_type ?? '');
+    setInvDiscValue(Number(p.invoice_discount_value) || 0);
+    setShowDiscount(!!p.invoice_discount_type);
+    setIsRecurring(!!p.is_recurring);
+    setRecurringFreq(p.recurring_frequency ?? '');
+    setNotes(p.notes ?? '');
+    setShowNotes(!!p.notes);
+    setLoyaltyPointsToRedeem(Number(p.loyalty_points_redeemed) || 0);
+    setLines((p.lines ?? []).map((l) => ({ ...l, key: nextKey() })));
+    linesTouchedRef.current = true;
+
+    setDraftsOpen(false);
+    flashDraftToast(`Loaded draft: "${draft.label}"`);
+  };
+
   // ── Submit ───────────────────────────────────────────────────────────────────
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -625,6 +781,15 @@ export default function InvoiceBuilder({
         </div>
       )}
 
+      {/* Draft save/load toast — top-center, auto-dismiss after 3s */}
+      {draftToast && (
+        <div className="fixed left-1/2 top-6 z-[60] -translate-x-1/2 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2 rounded-full bg-gray-800 px-5 py-2.5 text-sm font-semibold text-white shadow-lg ring-1 ring-gray-900/30">
+            {draftToast}
+          </div>
+        </div>
+      )}
+
       {/* Error banner */}
       {state.error && (
         <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -662,8 +827,56 @@ export default function InvoiceBuilder({
           )}
         </div>
 
-        {/* Right: invoice type toggle + warehouse picker */}
+        {/* Right: drafts + invoice type toggle + warehouse picker */}
         <div className="flex items-center gap-2">
+          {/* Drafts */}
+          {enableDrafts && (
+            <div ref={draftsRef} className="relative">
+              <button
+                type="button"
+                onClick={openDrafts}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-gray-400"
+              >
+                Drafts
+                <span className="text-gray-400">▾</span>
+              </button>
+              {draftsOpen && (
+                <div className="absolute left-0 z-20 mt-1 w-72 rounded-lg border border-gray-200 bg-white shadow-lg">
+                  {draftsLoading ? (
+                    <p className="px-4 py-4 text-center text-xs text-gray-400">Loading…</p>
+                  ) : draftsError ? (
+                    <p className="px-4 py-3 text-xs text-red-600">{draftsError}</p>
+                  ) : drafts.length === 0 ? (
+                    <p className="px-4 py-4 text-center text-xs text-gray-400">No saved drafts.</p>
+                  ) : (
+                    <ul className="max-h-80 overflow-y-auto py-1">
+                      {drafts.map((d) => (
+                        <li key={d.id}>
+                          <button
+                            type="button"
+                            disabled={recallingId === d.id}
+                            onClick={() => handleRecallDraft(d)}
+                            className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm hover:bg-purple-50 disabled:opacity-50"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate font-medium text-gray-800">{d.label}</span>
+                              <span className="block text-xs text-gray-400">
+                                {d.item_count} item{d.item_count === 1 ? '' : 's'} · {formatInr(d.total_amount)}
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-xs text-gray-400">
+                              {recallingId === d.id ? 'Loading…' : 'Load →'}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Invoice type */}
           <div className="flex overflow-hidden rounded-lg border border-gray-300 text-xs font-medium">
             <button
@@ -1223,6 +1436,16 @@ export default function InvoiceBuilder({
           >
             Cancel
           </button>
+          {enableDrafts && (
+            <button
+              type="button"
+              onClick={handleSaveDraft}
+              disabled={savingDraft || lines.length === 0}
+              className="btn-secondary disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {savingDraft ? 'Saving…' : 'Save as Draft'}
+            </button>
+          )}
           <button
             type="submit"
             disabled={isPending || lines.length === 0 || !warehouseId || !paymentMode}

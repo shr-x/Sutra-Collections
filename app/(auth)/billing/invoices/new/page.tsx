@@ -46,6 +46,7 @@ export default async function NewInvoicePage() {
       <InvoiceBuilder
         action={createInvoiceAction}
         showSendDialog
+        enableDrafts
         items={itemsRes.rows as Parameters<typeof InvoiceBuilder>[0]['items']}
         customers={customersRes.rows as Parameters<typeof InvoiceBuilder>[0]['customers']}
         warehouses={warehousesRes.rows as Parameters<typeof InvoiceBuilder>[0]['warehouses']}
