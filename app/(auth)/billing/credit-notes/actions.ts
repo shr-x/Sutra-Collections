@@ -10,6 +10,7 @@ import { postCreditNote } from '@/lib/accounting';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import { generateCreditNotePdf } from '@/lib/pdf-generator';
 import { logAudit } from '@/lib/audit';
+import { resolveStockVariant } from '@/lib/stock-variant';
 import type { ActionResult } from '@/types';
 
 const optUuid = (s: z.ZodTypeAny) =>
@@ -122,15 +123,19 @@ export async function createCreditNoteAction(
         // Return stock for finished goods
         const typeRes = await client.query<{ item_type: string }>('SELECT item_type FROM items WHERE id=$1', [item.item_id]);
         if (typeRes.rows[0]?.item_type === 'finished') {
-          let sizeId: string | null = null;
-          let colorId: string | null = null;
+          let sourceSizeId: string | null = null;
+          let sourceColorId: string | null = null;
           if (item.invoice_item_id) {
             const iiRes = await client.query<{ size_id: string | null; color_id: string | null }>(
               'SELECT size_id, color_id FROM invoice_items WHERE id=$1', [item.invoice_item_id]
             );
-            sizeId  = iiRes.rows[0]?.size_id  ?? null;
-            colorId = iiRes.rows[0]?.color_id ?? null;
+            sourceSizeId  = iiRes.rows[0]?.size_id  ?? null;
+            sourceColorId = iiRes.rows[0]?.color_id ?? null;
           }
+          // Root-cause fix: fall back to the item's default variant if the
+          // source line has no invoice_item_id, or (for pre-fix legacy rows)
+          // the source line itself never had size/color resolved.
+          const { sizeId, colorId } = await resolveStockVariant(client, item.item_id, sourceSizeId, sourceColorId);
           const stockUpd = await client.query(
             `UPDATE stock SET quantity = quantity + $1
              WHERE item_id=$2 AND warehouse_id=$3

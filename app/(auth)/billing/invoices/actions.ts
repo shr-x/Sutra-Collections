@@ -14,6 +14,7 @@ import { getLoyaltyRates, earnPoints, redeemPointsInTransaction } from '@/lib/lo
 import { logAudit } from '@/lib/audit';
 import { generateThermalInvoicePdf, generateInvoicePdf } from '@/lib/pdf-generator';
 import { checkLowStockForItems } from '@/lib/low-stock';
+import { resolveStockVariant } from '@/lib/stock-variant';
 import { sendFullyPaidNotification } from '@/app/(auth)/tailoring/actions';
 import type { ActionResult } from '@/types';
 
@@ -276,7 +277,11 @@ export async function createInvoiceAction(
           'SELECT item_type FROM items WHERE id=$1', [item.item_id]
         );
         if (itemTypeRes.rows[0]?.item_type === 'finished') {
-          console.log('[STOCK] Deducting', item.quantity, 'for item', item.item_id, 'size_id:', item.size_id ?? null, 'color_id:', item.color_id ?? null, 'wh:', header.warehouse_id);
+          // Root-cause fix: resolve size/color up front so the oversold-fallback
+          // INSERT below never persists NULL — it previously inserted the raw
+          // (possibly-null) cart values directly instead of a real default.
+          const { sizeId, colorId } = await resolveStockVariant(client, item.item_id, item.size_id, item.color_id);
+          console.log('[STOCK] Deducting', item.quantity, 'for item', item.item_id, 'size_id:', sizeId, 'color_id:', colorId, 'wh:', header.warehouse_id);
           // Symmetric COALESCE: resolve NULL → default on BOTH the stored column
           // and the incoming param, so a sale with no variant (NULL) matches a
           // stock row stored as NULL (legacy) or as the default UUID. The old
@@ -288,7 +293,7 @@ export async function createInvoiceAction(
                    IS NOT DISTINCT FROM COALESCE($4::uuid, (SELECT id FROM item_sizes  WHERE item_id=$2 AND is_default=TRUE LIMIT 1))
                AND COALESCE(color_id, (SELECT id FROM item_colors WHERE item_id=$2 AND is_default=TRUE LIMIT 1))
                    IS NOT DISTINCT FROM COALESCE($5::uuid, (SELECT id FROM item_colors WHERE item_id=$2 AND is_default=TRUE LIMIT 1))`,
-            [item.quantity, item.item_id, header.warehouse_id, item.size_id ?? null, item.color_id ?? null]
+            [item.quantity, item.item_id, header.warehouse_id, sizeId, colorId]
           );
           console.log('[STOCK] Rows updated:', stockUpd.rowCount);
           if ((stockUpd.rowCount ?? 0) === 0) {
@@ -301,7 +306,7 @@ export async function createInvoiceAction(
             await client.query(
               `INSERT INTO stock (item_id, size_id, color_id, warehouse_id, quantity)
                VALUES ($1,$2,$3,$4,$5)`,
-              [item.item_id, item.size_id ?? null, item.color_id ?? null, header.warehouse_id, -item.quantity]
+              [item.item_id, sizeId, colorId, header.warehouse_id, -item.quantity]
             );
             console.log('[STOCK] Inserted oversold row with quantity', -item.quantity);
           }

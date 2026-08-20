@@ -9,6 +9,7 @@ import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { postDebitNote } from '@/lib/accounting';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import { generateDebitNotePdf } from '@/lib/pdf-generator';
+import { resolveStockVariant } from '@/lib/stock-variant';
 import type { ActionResult } from '@/types';
 
 const optUuid = (s: z.ZodTypeAny) =>
@@ -90,15 +91,19 @@ export async function createDebitNoteAction(
         // Return stock to warehouse (purchase return) — target the exact
         // size/color row recorded on the original purchase line, mirroring the
         // credit-note pattern so we never fan-out across every variant row.
-        let sizeId: string | null = null;
-        let colorId: string | null = null;
+        let sourceSizeId: string | null = null;
+        let sourceColorId: string | null = null;
         if (item.purchase_invoice_item_id) {
           const piiRes = await client.query<{ size_id: string | null; color_id: string | null }>(
             'SELECT size_id, color_id FROM purchase_invoice_items WHERE id=$1', [item.purchase_invoice_item_id]
           );
-          sizeId  = piiRes.rows[0]?.size_id  ?? null;
-          colorId = piiRes.rows[0]?.color_id ?? null;
+          sourceSizeId  = piiRes.rows[0]?.size_id  ?? null;
+          sourceColorId = piiRes.rows[0]?.color_id ?? null;
         }
+        // Root-cause fix: fall back to the item's default variant if the source
+        // line has no purchase_invoice_item_id, or (for pre-fix legacy rows) the
+        // source line itself never had size/color resolved.
+        const { sizeId, colorId } = await resolveStockVariant(client, item.item_id, sourceSizeId, sourceColorId);
         const dnStockUpd = await client.query(
           `UPDATE stock SET quantity = quantity + $1
            WHERE item_id=$2 AND warehouse_id=$3

@@ -8,6 +8,7 @@ import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { postPurchaseInvoice } from '@/lib/accounting';
 import { generateStickersForPurchase } from '@/lib/stickers';
+import { resolveStockVariant } from '@/lib/stock-variant';
 import type { ActionResult } from '@/types';
 
 const LineSchema = z.object({
@@ -91,27 +92,10 @@ export async function createPurchaseInvoiceAction(
         const item = items[i]; const lr = lineResults[i];
 
         // Root-cause fix: never let a purchase line create a stock row with an
-        // unresolved size/color. Every item is guaranteed at least one item_sizes
-        // and one item_colors row (created alongside the item), so if the caller
-        // (e.g. AI import prefill) didn't resolve one, fall back to the item's
-        // default variant — preferring is_default, else the first by sort_order —
-        // instead of persisting NULL and corrupting stock lookups.
-        let sizeId = item.size_id ?? null;
-        let colorId = item.color_id ?? null;
-        if (!sizeId) {
-          const sRes = await client.query<{ id: string }>(
-            `SELECT id FROM item_sizes WHERE item_id=$1 ORDER BY is_default DESC, sort_order LIMIT 1`,
-            [item.item_id]
-          );
-          sizeId = sRes.rows[0]?.id ?? null;
-        }
-        if (!colorId) {
-          const cRes = await client.query<{ id: string }>(
-            `SELECT id FROM item_colors WHERE item_id=$1 ORDER BY is_default DESC, sort_order LIMIT 1`,
-            [item.item_id]
-          );
-          colorId = cRes.rows[0]?.id ?? null;
-        }
+        // unresolved size/color — if the caller (e.g. AI import prefill) didn't
+        // resolve one, fall back to the item's default variant instead of
+        // persisting NULL and corrupting stock lookups.
+        const { sizeId, colorId } = await resolveStockVariant(client, item.item_id, item.size_id, item.color_id);
 
         await client.query(
           `INSERT INTO purchase_invoice_items (purchase_invoice_id, item_id, variant_id, size_id, color_id, sort_order, quantity, rate, hsn_code, gst_rate, taxable_value, cgst_amount, sgst_amount, total_amount)

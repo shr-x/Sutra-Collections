@@ -127,6 +127,10 @@ function ThermalDoc({ data }: { data: ThermalData }) {
           <Text style={S.sep}>{SEP}</Text>
 
           {/* Totals */}
+          <View style={S.totRow}>
+            <Text>Subtotal</Text>
+            <Text>{fmt(data.subtotal)}</Text>
+          </View>
           {data.invoiceDiscountAmount > 0 && (
             <View style={S.totRow}>
               <Text>Invoice Disc.</Text>

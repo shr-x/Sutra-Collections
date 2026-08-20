@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
+import { resolveStockVariant } from '@/lib/stock-variant';
 
 const IN_TYPES = ['purchase', 'adjustment_in'] as const;
 const OUT_TYPES = ['sale', 'adjustment_out'] as const;
@@ -48,6 +49,18 @@ export async function createStockMovementAction(
   try {
     await client.query('BEGIN');
 
+    // Root-cause fix: this form has no size/color picker (only the legacy,
+    // now-empty item_variants dropdown), so every movement used to match/
+    // upsert stock purely on variant_id. Postgres never considers two rows
+    // "conflicting" on a plain UNIQUE constraint when the constrained column
+    // is NULL, so with variant_id always NULL here, the ON CONFLICT below
+    // never actually matched an existing row — every movement silently
+    // INSERTed a brand-new stock row instead of updating the item's real one.
+    // Resolve to the item's actual size/color (single option, or is_default/
+    // first if several) and match/upsert on that instead, same as every
+    // other write path.
+    const { sizeId, colorId } = await resolveStockVariant(client, d.item_id, null, null);
+
     if (isTransfer) {
       if (!d.to_warehouse_id) {
         await client.query('ROLLBACK');
@@ -61,8 +74,8 @@ export async function createStockMovementAction(
       // Check source stock
       const { rows } = await client.query(
         `SELECT quantity FROM stock WHERE item_id=$1 AND warehouse_id=$2
-         AND ($3::uuid IS NULL AND variant_id IS NULL OR variant_id=$3)`,
-        [d.item_id, d.warehouse_id, variantId]
+         AND size_id IS NOT DISTINCT FROM $3::uuid AND color_id IS NOT DISTINCT FROM $4::uuid`,
+        [d.item_id, d.warehouse_id, sizeId, colorId]
       );
       const available = Number(rows[0]?.quantity ?? 0);
       if (available < d.quantity) {
@@ -74,17 +87,17 @@ export async function createStockMovementAction(
       await client.query(
         `UPDATE stock SET quantity = quantity - $1
          WHERE item_id=$2 AND warehouse_id=$3
-         AND ($4::uuid IS NULL AND variant_id IS NULL OR variant_id=$4)`,
-        [d.quantity, d.item_id, d.warehouse_id, variantId]
+         AND size_id IS NOT DISTINCT FROM $4::uuid AND color_id IS NOT DISTINCT FROM $5::uuid`,
+        [d.quantity, d.item_id, d.warehouse_id, sizeId, colorId]
       );
 
       // Add to destination (upsert)
       await client.query(
-        `INSERT INTO stock (item_id, variant_id, warehouse_id, quantity)
-         VALUES ($1,$2,$3,$4)
-         ON CONFLICT (item_id, variant_id, warehouse_id) DO UPDATE
-         SET quantity = stock.quantity + EXCLUDED.quantity`,
-        [d.item_id, variantId, d.to_warehouse_id, d.quantity]
+        `INSERT INTO stock (item_id, size_id, color_id, warehouse_id, quantity)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (item_id, warehouse_id, size_id, color_id) WHERE size_id IS NOT NULL AND color_id IS NOT NULL
+         DO UPDATE SET quantity = stock.quantity + EXCLUDED.quantity`,
+        [d.item_id, sizeId, colorId, d.to_warehouse_id, d.quantity]
       );
 
       // Log transfer_out
@@ -104,8 +117,8 @@ export async function createStockMovementAction(
         // Check stock before deducting
         const { rows } = await client.query(
           `SELECT quantity FROM stock WHERE item_id=$1 AND warehouse_id=$2
-           AND ($3::uuid IS NULL AND variant_id IS NULL OR variant_id=$3)`,
-          [d.item_id, d.warehouse_id, variantId]
+           AND size_id IS NOT DISTINCT FROM $3::uuid AND color_id IS NOT DISTINCT FROM $4::uuid`,
+          [d.item_id, d.warehouse_id, sizeId, colorId]
         );
         const available = Number(rows[0]?.quantity ?? 0);
         if (available < d.quantity) {
@@ -117,11 +130,11 @@ export async function createStockMovementAction(
       const delta = isIn ? d.quantity : -d.quantity;
 
       await client.query(
-        `INSERT INTO stock (item_id, variant_id, warehouse_id, quantity)
-         VALUES ($1,$2,$3,$4)
-         ON CONFLICT (item_id, variant_id, warehouse_id) DO UPDATE
-         SET quantity = stock.quantity + EXCLUDED.quantity`,
-        [d.item_id, variantId, d.warehouse_id, delta]
+        `INSERT INTO stock (item_id, size_id, color_id, warehouse_id, quantity)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (item_id, warehouse_id, size_id, color_id) WHERE size_id IS NOT NULL AND color_id IS NOT NULL
+         DO UPDATE SET quantity = stock.quantity + EXCLUDED.quantity`,
+        [d.item_id, sizeId, colorId, d.warehouse_id, delta]
       );
 
       await client.query(

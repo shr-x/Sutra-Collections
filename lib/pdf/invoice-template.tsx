@@ -471,6 +471,10 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
 
             {/* Totals */}
             <View style={S.totalsBox}>
+              <View style={S.totalsLine}>
+                <Text style={S.totalsLabel}>Subtotal</Text>
+                <Text style={S.totalsValue}>{fmt(data.subtotal)}</Text>
+              </View>
               {data.invoiceDiscountAmount > 0 && (
                 <View style={S.totalsLine}>
                   <Text style={S.totalsLabel}>Invoice Discount</Text>
