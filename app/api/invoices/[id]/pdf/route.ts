@@ -37,6 +37,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const inv      = invRes.rows[0];
   const settings = Object.fromEntries(settingsRes.rows.map((r) => [r.key, r.value]));
 
+  const customTerms = (settings.terms_and_conditions ?? '')
+    .split('\n')
+    .map((line: string) => line.trim())
+    .filter(Boolean);
+
   // Logo — resolve absolute path; skip if file missing
   const rawLogoPath  = settings.company_logo_path ?? '';
   const logoAbsPath  = rawLogoPath
@@ -115,6 +120,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     loyaltyPoints:   Number(inv.loyalty_points_redeemed ?? 0),
     upiVpa:      upiVpa || undefined,
     upiQrDataUrl,
+    customTerms: customTerms.length > 0 ? customTerms : undefined,
   };
 
   const buffer = await renderInvoicePdf(data);

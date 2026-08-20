@@ -38,6 +38,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const pur     = purRes.rows[0];
   const settings = Object.fromEntries(settingsRes.rows.map((r) => [r.key, r.value]));
 
+  const customTerms = (settings.terms_and_conditions ?? '')
+    .split('\n')
+    .map((line: string) => line.trim())
+    .filter(Boolean);
+
   const rawLogoPath = settings.company_logo_path ?? '';
   const logoAbsPath = rawLogoPath
     ? (() => {
@@ -94,6 +99,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     paymentMode: pur.payment_mode,
     notes:       pur.notes,
     taxModeLabel: pur.is_tax_inclusive ? '(Tax Inclusive)' : '(Tax Exclusive)',
+    customTerms: customTerms.length > 0 ? customTerms : undefined,
   };
 
   const buffer = await renderInvoicePdf(data);
