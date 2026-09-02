@@ -220,7 +220,7 @@ export default async function ProductionBoardPage() {
                                 {balance > 0 ? formatInr(balance) : '—'}
                               </span>
                             </div>
-                            <DeliveryActions orderId={o.id} balanceDue={balance} />
+                            <DeliveryActions orderId={o.id} balanceDue={balance} currentTotal={total} />
                             <div className="flex gap-2">
                               {balance > 0 && (
                                 <RecordPaymentButton

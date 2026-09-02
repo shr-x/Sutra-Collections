@@ -8,7 +8,7 @@ import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
-import { createCustomerRecord } from '@/lib/customers';
+import { createCustomerRecord, DuplicatePhoneError } from '@/lib/customers';
 import {
   generateTailoringCustomerPdf, generateTailoringTailorPdf, generateBatchTailoringPdf,
   generateTailoringCreditDuePdf, generateTailoringOrderConfirmationPdf,
@@ -495,8 +495,14 @@ export async function createCustomerInline(data: { name: string; phone: string }
   if (phone.replace(/\D/g, '').length < 10)
     return { success: false, error: 'Enter a valid 10-digit phone number.' };
 
-  const { id } = await createCustomerRecord({ name, phone });
-  return { success: true, customer: { id, name, phone } };
+  try {
+    const { id } = await createCustomerRecord({ name, phone });
+    return { success: true, customer: { id, name, phone } };
+  } catch (err) {
+    if (err instanceof DuplicatePhoneError) return { success: false, error: err.message };
+    console.error('[createCustomerInline]', err);
+    return { success: false, error: 'Failed to create customer. Please try again.' };
+  }
 }
 
 // ── Advance Status (in_progress -> ready_for_pickup ONLY) ───────────────────
@@ -661,6 +667,80 @@ export async function markDeliveredOnCreditAction(orderId: string): Promise<Acti
   }
 
   return { success: true };
+}
+
+// ── Edit Price at Pickup — lighter-weight than a full alteration ───────────
+// Same idea as requestAlterationAction's price_adjustment (extra work done,
+// discount given, etc.) but scoped to the moment right before the delivery
+// decision — no measurements/due-date, no reopening to in_progress, and only
+// usable while status is still 'ready_for_pickup' (requestAlterationAction
+// covers post-delivery corrections). Logs the same tailoring_alterations row
+// (so it shows up in the order's existing Alterations history, and so
+// syncTailoringInvoiceAfterAlteration's base/alteration invoice-line split
+// correctly attributes the amount) and reuses that exact sync function —
+// the same total_amount->invoice sync mechanism alterations already use —
+// so the linked invoice is amended/supplemented identically. amount_paid and
+// credit_amount are intentionally left untouched: this only changes what's
+// owed, not what's been paid, and credit_amount is only ever set by
+// markDeliveredOnCreditAction, which still runs afterward against the
+// corrected total exactly as it does after a full alteration today.
+
+export async function adjustPickupPriceAction(
+  orderId: string,
+  priceAdjustment: number,
+  reason: string
+): Promise<ActionResult<{ newTotal: number }>> {
+  const session = await requireRole('admin', 'staff');
+
+  const cleanReason = reason.trim();
+  if (!cleanReason) return { success: false, error: 'Enter a reason for the price change.' };
+  if (!priceAdjustment || priceAdjustment === 0) return { success: false, error: 'Enter a non-zero amount.' };
+
+  const res = await query<{ status: TailoringStatus; total_amount: string; order_number: string }>(
+    `SELECT status, total_amount, order_number FROM tailoring_orders WHERE id=$1`, [orderId]
+  );
+  const order = res.rows[0];
+  if (!order) return { success: false, error: 'Order not found.' };
+  if (order.status !== 'ready_for_pickup') {
+    return { success: false, error: 'Price can only be edited while the order is ready for pickup.' };
+  }
+
+  const newTotal = Math.round((Number(order.total_amount) + priceAdjustment) * 100) / 100;
+  if (newTotal < 0) return { success: false, error: 'Total cannot go below ₹0.' };
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO tailoring_alterations (tailoring_order_id, description, price_adjustment, requested_by)
+       VALUES ($1,$2,$3,$4)`,
+      [orderId, `Price adjustment at pickup: ${cleanReason}`, priceAdjustment, session.userId]
+    );
+    await client.query(
+      `UPDATE tailoring_orders SET total_amount = total_amount + $1, updated_at=NOW() WHERE id=$2`,
+      [priceAdjustment, orderId]
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[adjustPickupPriceAction]', err);
+    return { success: false, error: 'Failed to update price.' };
+  } finally {
+    client.release();
+  }
+
+  await syncTailoringInvoiceAfterAlteration(orderId, session.userId);
+
+  logAudit({
+    userId: session.userId, action: 'update', entityType: 'tailoring_order', entityId: orderId,
+    entityLabel: order.order_number, newValue: { pickup_price_adjustment: priceAdjustment, reason: cleanReason, new_total: newTotal },
+  }).catch(() => {});
+
+  revalidatePath(`/tailoring/${orderId}`);
+  revalidatePath('/tailoring/production');
+  revalidatePath('/tailoring');
+
+  return { success: true, data: { newTotal } };
 }
 
 // ── Request Alteration — reopens a ready-for-pickup/delivered order ────────

@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import ConfirmDialog from '@/components/confirm-dialog';
 import { markDeliveredPaidAction, markDeliveredOnCreditAction } from '../actions';
+import EditPriceButton from './edit-price-button';
 
 const fmt = (n: number) =>
   `₹${new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(n)}`;
@@ -11,9 +12,10 @@ const fmt = (n: number) =>
 interface Props {
   orderId: string;
   balanceDue: number;
+  currentTotal: number;
 }
 
-export default function DeliveryActions({ orderId, balanceDue }: Props) {
+export default function DeliveryActions({ orderId, balanceDue, currentTotal }: Props) {
   const router = useRouter();
   const [isPending, startTrans] = useTransition();
   const [confirmCredit, setConfirmCredit] = useState(false);
@@ -45,6 +47,8 @@ export default function DeliveryActions({ orderId, balanceDue }: Props) {
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
       )}
+
+      <EditPriceButton orderId={orderId} currentTotal={currentTotal} />
 
       {/* Each delivery action is only rendered when it's actually usable —
           no disabled/grayed buttons cluttering the card. */}

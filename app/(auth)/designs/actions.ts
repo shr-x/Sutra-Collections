@@ -160,3 +160,49 @@ export async function deleteFieldAction(formData: FormData) {
   await query('DELETE FROM design_measurement_fields WHERE id=$1', [fieldId]);
   revalidatePath(`/designs/${designId}`);
 }
+
+export async function updateFieldAction(data: {
+  fieldId: string;
+  designId: string;
+  fieldName: string;
+  fieldType: 'number' | 'text';
+  unit: string;
+}): Promise<FieldState> {
+  await requireRole('admin');
+
+  const parsed = FieldSchema.omit({ design_id: true }).safeParse({
+    field_name: data.fieldName,
+    field_type: data.fieldType,
+    unit: data.unit || undefined,
+  });
+  if (!parsed.success) return { error: parsed.error.errors[0].message };
+
+  await query(
+    `UPDATE design_measurement_fields SET field_name=$1, field_type=$2, unit=$3 WHERE id=$4`,
+    [parsed.data.field_name, parsed.data.field_type, parsed.data.unit ?? null, data.fieldId]
+  );
+
+  revalidatePath(`/designs/${data.designId}`);
+  return {};
+}
+
+export async function reorderFieldsAction(
+  designId: string,
+  orderedFieldIds: string[]
+): Promise<{ success: boolean; error?: string }> {
+  await requireRole('admin');
+
+  try {
+    for (let i = 0; i < orderedFieldIds.length; i++) {
+      await query(
+        `UPDATE design_measurement_fields SET sort_order=$1 WHERE id=$2 AND design_id=$3`,
+        [i, orderedFieldIds[i], designId]
+      );
+    }
+    revalidatePath(`/designs/${designId}`);
+    return { success: true };
+  } catch (err) {
+    console.error('[reorderFieldsAction]', err);
+    return { success: false, error: 'Failed to save order.' };
+  }
+}

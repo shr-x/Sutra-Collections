@@ -291,7 +291,7 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
 
             {/* Delivery decision — available once ready for pickup */}
             {status === 'ready_for_pickup' && (
-              <DeliveryActions orderId={order.id} balanceDue={balanceDue} />
+              <DeliveryActions orderId={order.id} balanceDue={balanceDue} currentTotal={totalAmount} />
             )}
           </div>
 
