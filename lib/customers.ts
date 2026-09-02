@@ -15,6 +15,12 @@
 import { query } from '@/lib/db';
 import { sendWhatsAppTemplateWithLogoHeader } from '@/lib/whatsapp';
 
+// Thrown by createCustomerRecord when the phone number is already on file for
+// another active customer — callers should catch this specifically and
+// surface err.message directly (it's already a friendly, user-facing
+// string), rather than folding it into a generic "failed to create" message.
+export class DuplicatePhoneError extends Error {}
+
 export interface CreateCustomerInput {
   name: string;
   phone?: string | null;
@@ -28,6 +34,18 @@ export interface CreateCustomerInput {
 }
 
 export async function createCustomerRecord(input: CreateCustomerInput): Promise<{ id: string }> {
+  // App-level pre-check ahead of the DB's unique index (db/migrations/015_customer_phone_unique.sql)
+  // — gives a friendly, named error instead of a raw constraint-violation message.
+  if (input.phone) {
+    const dupe = await query<{ name: string }>(
+      `SELECT name FROM customers WHERE phone=$1 AND deleted_at IS NULL LIMIT 1`,
+      [input.phone]
+    );
+    if (dupe.rows[0]) {
+      throw new DuplicatePhoneError(`A customer with this phone number already exists (${dupe.rows[0].name}).`);
+    }
+  }
+
   const res = await query<{ id: string }>(
     `INSERT INTO customers (name, phone, address, gstin, credit_limit, whatsapp_opt_out, marketing_opt_in, date_of_birth, source)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,

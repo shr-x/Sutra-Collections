@@ -7,7 +7,7 @@ import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { triggerBirthdayGreetingIfToday } from '@/lib/greetings';
-import { createCustomerRecord } from '@/lib/customers';
+import { createCustomerRecord, DuplicatePhoneError } from '@/lib/customers';
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
 const CustomerSchema = z.object({
@@ -69,7 +69,8 @@ export async function createCustomerAction(
       triggerBirthdayGreetingIfToday(newId).catch(() => {});
     }
     revalidatePath('/customers');
-  } catch {
+  } catch (err) {
+    if (err instanceof DuplicatePhoneError) return { error: err.message };
     return { error: 'Failed to create customer. Please try again.' };
   }
   redirect('/customers');
@@ -91,7 +92,8 @@ export async function quickCreateCustomerAction(
     const { id } = await createCustomerRecord({ name: cleanName, phone: cleanPhone || null });
     revalidatePath('/customers');
     return { success: true, id, name: cleanName, phone: cleanPhone || undefined };
-  } catch {
+  } catch (err) {
+    if (err instanceof DuplicatePhoneError) return { success: false, error: err.message };
     return { success: false, error: 'Failed to create customer. Please try again.' };
   }
 }
@@ -117,7 +119,8 @@ export async function createWalkInCustomerAction(
   try {
     const res = await createCustomerRecord({ name: cleanName, phone: cleanPhone, source: 'walk_in' });
     newId = res.id;
-  } catch {
+  } catch (err) {
+    if (err instanceof DuplicatePhoneError) return { success: false, error: err.message };
     return { success: false, error: 'Failed to save customer. Please try again.' };
   }
 
@@ -138,6 +141,17 @@ export async function updateCustomerAction(
   if (!parsed.success) return { error: parsed.error.errors[0].message };
 
   const d = parsed.data;
+
+  if (d.phone) {
+    const dupe = await query<{ name: string }>(
+      `SELECT name FROM customers WHERE phone=$1 AND deleted_at IS NULL AND id IS DISTINCT FROM $2 LIMIT 1`,
+      [d.phone, id]
+    );
+    if (dupe.rows[0]) {
+      return { error: `A customer with this phone number already exists (${dupe.rows[0].name}).` };
+    }
+  }
+
   try {
     if (session.role === 'admin') {
       await query(
@@ -197,7 +211,7 @@ export async function deleteCustomerAction(formData: FormData) {
     await query(
       `UPDATE customers SET
          name = 'Deleted User',
-         phone = '0000000000',
+         phone = NULL,
          address = '',
          gstin = NULL,
          whatsapp_opt_out = TRUE,

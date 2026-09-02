@@ -517,6 +517,14 @@ export default function InvoiceBuilder({
   // If the search box holds a phone number, capture it for the new customer.
   const searchIsPhone = /^[\d\s+\-]{5,}$/.test(customerSearch.trim());
   const searchDigits = customerSearch.replace(/[^\d]/g, '');
+  // While the search looks like an in-progress phone number (digits/spaces/+/-
+  // only) but hasn't reached 10 digits yet, suppress the "New customer?" jump
+  // below — otherwise it fires (and autoFocus-steals the name input) after the
+  // very first non-matching digit, before the cashier has finished typing.
+  const looksLikePhoneInProgress =
+    /^[\d\s+\-]+$/.test(customerSearch.trim()) &&
+    customerSearch.trim().length > 0 &&
+    searchDigits.length < 10;
 
   const handleQuickCreate = async () => {
     const name = newCustName.trim();
@@ -997,6 +1005,12 @@ export default function InvoiceBuilder({
                     <span className="text-xs text-gray-400">{c.phone ?? 'No phone'}</span>
                   </button>
                 ))
+              ) : looksLikePhoneInProgress ? (
+                <div className="px-4 py-3">
+                  <p className="text-sm text-gray-400">
+                    Keep typing the phone number… ({searchDigits.length}/10 digits)
+                  </p>
+                </div>
               ) : (
                 <div className="px-4 py-3">
                   <p className="text-sm text-gray-500 mb-2">
