@@ -8,16 +8,27 @@ import SalesChart from './sales-chart';
 
 export const metadata: Metadata = { title: 'Sales Report' };
 
+// Toggle between Combined (all invoices), Retail/Inventory (source='pos') and
+// Tailoring (source='tailoring') — reuses the existing invoices.source column
+// (db/migrations/008_invoice_source.sql) rather than any new report logic.
+// State lives entirely in the URL (?mode=), same pattern as the existing
+// from/to/warehouse_id/created_by filters — persists across navigation within
+// the session, and (as a bonus, not a requirement) across reloads too.
+type SalesMode = 'all' | 'retail' | 'tailoring';
+const MODE_SOURCE: Record<Exclude<SalesMode, 'all'>, string> = { retail: 'pos', tailoring: 'tailoring' };
+const MODE_LABEL: Record<SalesMode, string> = { all: 'All Sales', retail: 'Retail Sales', tailoring: 'Tailoring Sales' };
+
 export default async function SalesReportPage({
   searchParams,
 }: {
-  searchParams: { from?: string; to?: string; warehouse_id?: string; created_by?: string };
+  searchParams: { from?: string; to?: string; warehouse_id?: string; created_by?: string; mode?: string };
 }) {
   await requireRole('admin', 'accountant');
 
   const today  = new Date().toISOString().slice(0, 10);
   const from   = searchParams.from ?? today.slice(0, 7) + '-01';
   const to     = searchParams.to   ?? today;
+  const mode: SalesMode = searchParams.mode === 'retail' || searchParams.mode === 'tailoring' ? searchParams.mode : 'all';
 
   const conditions = [
     `i.invoice_date BETWEEN $1 AND $2`,
@@ -33,8 +44,18 @@ export default async function SalesReportPage({
     params.push(searchParams.created_by);
     conditions.push(`i.created_by=$${params.length}`);
   }
+  if (mode !== 'all') {
+    params.push(MODE_SOURCE[mode]);
+    conditions.push(`i.source=$${params.length}`);
+  }
 
   const where = conditions.join(' AND ');
+
+  // Preserves every other active filter when switching modes/building export links.
+  const otherParams = new URLSearchParams();
+  if (searchParams.warehouse_id) otherParams.set('warehouse_id', searchParams.warehouse_id);
+  if (searchParams.created_by)   otherParams.set('created_by', searchParams.created_by);
+  const otherQS = otherParams.toString() ? `&${otherParams.toString()}` : '';
 
   let dbError: string | null = null;
   const rawData = await Promise.all([
@@ -98,7 +119,7 @@ export default async function SalesReportPage({
         </div>
         <div className="flex flex-wrap gap-2">
           <a
-            href={`/api/reports/sales?from=${from}&to=${to}${searchParams.warehouse_id ? '&warehouse_id=' + searchParams.warehouse_id : ''}${searchParams.created_by ? '&created_by=' + searchParams.created_by : ''}`}
+            href={`/api/reports/sales?from=${from}&to=${to}${otherQS}${mode !== 'all' ? '&mode=' + mode : ''}`}
             className="btn-secondary btn-sm"
           >
             Export CSV
@@ -111,7 +132,7 @@ export default async function SalesReportPage({
             Export JSON
           </a>
           <a
-            href={`/api/reports/sales/pdf?from=${from}&to=${to}${searchParams.warehouse_id ? '&warehouse_id=' + searchParams.warehouse_id : ''}`}
+            href={`/api/reports/sales/pdf?from=${from}&to=${to}${searchParams.warehouse_id ? '&warehouse_id=' + searchParams.warehouse_id : ''}${mode !== 'all' ? '&mode=' + mode : ''}`}
             className="btn-secondary btn-sm"
             download
           >
@@ -120,8 +141,33 @@ export default async function SalesReportPage({
         </div>
       </div>
 
+      {/* Sales mode toggle — filters everything below (summary cards, chart, daily
+          table) by invoices.source. State lives in the URL (?mode=), so it persists
+          across navigation within the session (and reloads, as a free bonus) same as
+          the from/to/warehouse/staff filters below. */}
+      <div className="mb-4 flex flex-wrap gap-1.5 text-sm">
+        {(['all', 'retail', 'tailoring'] as const).map((m) => {
+          const qs = new URLSearchParams();
+          if (from) qs.set('from', from);
+          if (to) qs.set('to', to);
+          if (searchParams.warehouse_id) qs.set('warehouse_id', searchParams.warehouse_id);
+          if (searchParams.created_by) qs.set('created_by', searchParams.created_by);
+          if (m !== 'all') qs.set('mode', m);
+          return (
+            <Link
+              key={m}
+              href={`/reports/sales?${qs.toString()}`}
+              className={`rounded-full px-3 py-1 text-xs font-medium ${mode === m ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+              {MODE_LABEL[m]}
+            </Link>
+          );
+        })}
+      </div>
+
       {/* Filters */}
       <form method="get" className="card mb-6">
+        <input type="hidden" name="mode" value={mode === 'all' ? '' : mode} />
         <div className="flex flex-wrap gap-3 items-end">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">From</label>

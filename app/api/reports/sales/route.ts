@@ -19,6 +19,12 @@ export async function GET(req: NextRequest) {
 
   if (sp.get('warehouse_id')) { params.push(sp.get('warehouse_id')); conditions.push(`i.warehouse_id=$${params.length}`); }
   if (sp.get('created_by'))   { params.push(sp.get('created_by'));   conditions.push(`i.created_by=$${params.length}`); }
+  // Mirrors the ?mode= toggle on the Sales Report page (invoices.source: 'pos' | 'tailoring').
+  const mode = sp.get('mode');
+  if (mode === 'retail' || mode === 'tailoring') {
+    params.push(mode === 'retail' ? 'pos' : 'tailoring');
+    conditions.push(`i.source=$${params.length}`);
+  }
 
   const res = await query(
     `SELECT i.invoice_number, i.invoice_date, i.status,

@@ -48,6 +48,12 @@ export async function GET(req: NextRequest) {
   const conditions = [`i.invoice_date BETWEEN $1 AND $2`, `i.status NOT IN ('cancelled','draft')`];
   const params: unknown[] = [from, to];
   if (searchParams.get('warehouse_id')) { params.push(searchParams.get('warehouse_id')); conditions.push(`i.warehouse_id=$${params.length}`); }
+  // Mirrors the ?mode= toggle on the Sales Report page (invoices.source: 'pos' | 'tailoring').
+  const mode = searchParams.get('mode');
+  if (mode === 'retail' || mode === 'tailoring') {
+    params.push(mode === 'retail' ? 'pos' : 'tailoring');
+    conditions.push(`i.source=$${params.length}`);
+  }
   const where = conditions.join(' AND ');
 
   const [summaryRes, dailyRes] = await Promise.all([
@@ -67,6 +73,7 @@ export async function GET(req: NextRequest) {
   const grandTotal = dailyRows.reduce((acc, r) => acc + Number(r.total), 0);
 
   const period = `${new Date(from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} – ${new Date(to).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+  const modeLabel = mode === 'retail' ? ' (Retail Sales)' : mode === 'tailoring' ? ' (Tailoring Sales)' : '';
 
   const doc = React.createElement(
     Document,
@@ -74,7 +81,7 @@ export async function GET(req: NextRequest) {
     React.createElement(
       Page,
       { size: 'A4', style: S.page },
-      React.createElement(Text, { style: S.heading }, 'Sutra Collections — Sales Report'),
+      React.createElement(Text, { style: S.heading }, `Sutra Collections — Sales Report${modeLabel}`),
       React.createElement(Text, { style: S.subheading }, `Period: ${period}`),
       React.createElement(View, { style: S.rule }),
 
