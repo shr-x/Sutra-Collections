@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { verifySession, signSession, COOKIE_NAME, COOKIE_OPTIONS } from '@/lib/session';
 import type { Role } from '@/types';
 
-const PUBLIC_PATHS = ['/login', '/consent', '/sa-console-x7k2', '/api/sa-console', '/api/webhooks'];
+const PUBLIC_PATHS = ['/login', '/consent', '/api/webhooks'];
 
 // Paths that require specific roles. Admin always passes.
 // First-match wins, so put more specific paths first.
