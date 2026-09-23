@@ -15,6 +15,7 @@ const DesignSchema = z.object({
   category:    z.string().max(100).optional(),
   description: z.string().max(1000).optional(),
   gst_rate:    z.coerce.number().refine((v) => [0, 5, 12, 18, 28].includes(v), 'GST rate must be 0, 5, 12, 18 or 28%').default(5),
+  price:       z.coerce.number().nonnegative().optional(),
 });
 
 export interface DesignState { error?: string }
@@ -30,6 +31,7 @@ export async function createDesignAction(
     category:    formData.get('category') || undefined,
     description: formData.get('description') || undefined,
     gst_rate:    formData.get('gst_rate') || undefined,
+    price:       formData.get('price') || undefined,
   });
   if (!parsed.success) return { error: parsed.error.errors[0].message };
 
@@ -51,10 +53,10 @@ export async function createDesignAction(
   }
 
   await query(
-    `INSERT INTO designs (id, name, category, photo_path, description, gst_rate, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    `INSERT INTO designs (id, name, category, photo_path, description, gst_rate, price, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
     [id, parsed.data.name, parsed.data.category ?? null,
-     photoPath, parsed.data.description ?? null, parsed.data.gst_rate, session.userId]
+     photoPath, parsed.data.description ?? null, parsed.data.gst_rate, parsed.data.price ?? null, session.userId]
   );
 
   redirect(`/designs/${id}`);
@@ -72,11 +74,12 @@ export async function updateDesignAction(
     category:    formData.get('category') || undefined,
     description: formData.get('description') || undefined,
     gst_rate:    formData.get('gst_rate') || undefined,
+    price:       formData.get('price') || undefined,
   });
   if (!parsed.success) return { error: parsed.error.errors[0].message };
 
   let photoUpdate = '';
-  const photoParams: unknown[] = [parsed.data.name, parsed.data.category ?? null, parsed.data.description ?? null, parsed.data.gst_rate, id];
+  const photoParams: unknown[] = [parsed.data.name, parsed.data.category ?? null, parsed.data.description ?? null, parsed.data.gst_rate, parsed.data.price ?? null, id];
 
   const photo = formData.get('photo') as File | null;
   if (photo && photo.size > 0) {
@@ -89,12 +92,12 @@ export async function updateDesignAction(
     const buf = Buffer.from(await photo.arrayBuffer());
     fs.writeFileSync(path.join(dir, `${id}.${ext}`), buf);
     const newPhotoPath = `uploads/designs/${id}.${ext}`;
-    photoParams.splice(4, 0, newPhotoPath);  // insert before id → [name, cat, desc, gst_rate, photoPath, id]
-    photoUpdate = ', photo_path=$5';          // $5=photoPath, $6=id
+    photoParams.splice(5, 0, newPhotoPath);  // insert before id → [name, cat, desc, gst_rate, price, photoPath, id]
+    photoUpdate = ', photo_path=$6';          // $6=photoPath, $7=id
   }
 
   await query(
-    `UPDATE designs SET name=$1, category=$2, description=$3, gst_rate=$4${photoUpdate} WHERE id=$${photoParams.length}`,
+    `UPDATE designs SET name=$1, category=$2, description=$3, gst_rate=$4, price=$5${photoUpdate} WHERE id=$${photoParams.length}`,
     photoParams
   );
 

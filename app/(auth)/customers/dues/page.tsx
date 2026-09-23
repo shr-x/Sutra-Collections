@@ -3,8 +3,9 @@ import Link from 'next/link';
 import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
-import { recordPaymentAction } from '@/app/(auth)/billing/invoices/actions';
+import { recordPaymentAction, clearCustomerDuesAction } from '@/app/(auth)/billing/invoices/actions';
 import CollectPaymentModal from '@/components/collect-payment-modal';
+import ConfirmForm from '@/components/confirm-form';
 
 export const metadata: Metadata = { title: 'Outstanding Dues' };
 
@@ -182,9 +183,21 @@ export default async function DuesPage({
                     className="font-semibold text-purple-700 hover:underline leading-tight">
                     {row.customer_name}
                   </Link>
-                  <span className="tabular-nums font-bold text-red-700 text-sm shrink-0">
-                    {formatInr(row.balance_due)}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="tabular-nums font-bold text-red-700 text-sm">
+                      {formatInr(row.balance_due)}
+                    </span>
+                    <ConfirmForm
+                      action={clearCustomerDuesAction.bind(null, row.customer_id)}
+                      title="Clear Due"
+                      message={`Clear this due for ${row.customer_name}? Marks their invoice(s) as fully paid — no notification is sent to the customer.`}
+                      confirmLabel="Clear Due"
+                    >
+                      <button type="submit" className="text-gray-300 hover:text-red-500 text-base leading-none" title="Clear due (silent)">
+                        ✕
+                      </button>
+                    </ConfirmForm>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500 mb-3">
                   <div>
@@ -264,13 +277,25 @@ export default async function DuesPage({
                     {formatInr(row.balance_due)}
                   </td>
                   <td className="px-4 py-3">
-                    <CollectPaymentModal
-                      balance={row.balance_due}
-                      action={payAction}
-                      invoiceNumber={row.invoice_number}
-                      customerName={row.customer_name}
-                      returnTo="/customers/dues"
-                    />
+                    <div className="flex items-center gap-3">
+                      <CollectPaymentModal
+                        balance={row.balance_due}
+                        action={payAction}
+                        invoiceNumber={row.invoice_number}
+                        customerName={row.customer_name}
+                        returnTo="/customers/dues"
+                      />
+                      <ConfirmForm
+                        action={clearCustomerDuesAction.bind(null, row.customer_id)}
+                        title="Clear Due"
+                        message={`Clear this due for ${row.customer_name}? Marks their invoice(s) as fully paid — no notification is sent to the customer.`}
+                        confirmLabel="Clear Due"
+                      >
+                        <button type="submit" className="text-gray-300 hover:text-red-500 text-base leading-none" title="Clear due (silent)">
+                          ✕
+                        </button>
+                      </ConfirmForm>
+                    </div>
                   </td>
                 </tr>
               );

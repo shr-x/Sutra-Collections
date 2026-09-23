@@ -54,6 +54,7 @@ export default function SizeColorManager({
     return map;
   });
 
+  const PRESET_SIZES = ['S', 'M', 'L', 'XL'];
   const [newSizeName, setNewSizeName] = useState('');
   const [newColorName, setNewColorName] = useState('');
   const [addingSize, setAddingSize] = useState(false);
@@ -62,8 +63,8 @@ export default function SizeColorManager({
   const [colorError, setColorError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'size' | 'color'; id: string; name: string } | null>(null);
 
-  async function addSize() {
-    const name = newSizeName.trim();
+  async function addSize(nameOverride?: string) {
+    const name = (nameOverride ?? newSizeName).trim();
     if (!name) return;
     setAddingSize(true);
     setSizeError('');
@@ -76,7 +77,7 @@ export default function SizeColorManager({
       const data = await res.json();
       if (!res.ok) { setSizeError(data.error ?? 'Failed'); return; }
       setSizes((prev) => [...prev, data]);
-      setNewSizeName('');
+      if (!nameOverride) setNewSizeName('');
     } finally {
       setAddingSize(false);
     }
@@ -156,7 +157,20 @@ export default function SizeColorManager({
             </div>
           ))}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {PRESET_SIZES.filter(
+            (p) => !sizes.some((s) => s.size_name.trim().toLowerCase() === p.toLowerCase())
+          ).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => addSize(p)}
+              disabled={addingSize}
+              className="btn-secondary py-1.5 text-sm disabled:opacity-50"
+            >
+              + {p}
+            </button>
+          ))}
           <input
             type="text"
             placeholder="Add size (e.g. S, M, XL)"
@@ -167,7 +181,7 @@ export default function SizeColorManager({
           />
           <button
             type="button"
-            onClick={addSize}
+            onClick={() => addSize()}
             disabled={addingSize || !newSizeName.trim()}
             className="btn-secondary py-1.5 text-sm disabled:opacity-50"
           >

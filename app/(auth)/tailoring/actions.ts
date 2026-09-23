@@ -266,8 +266,10 @@ const CreateOrderInput = z.object({
   measurements:    z.record(z.string().uuid(), z.string()),
   colorFabric:     z.string().max(200).optional(),
   price:           z.coerce.number().nonnegative(),
+  quantity:        z.coerce.number().int().positive().default(1),
   dueDate:         z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   notes:           z.string().max(1000).optional(),
+  notesTailor:     z.string().max(1000).optional(),
   invoiceId:       z.string().uuid().optional(),
   batchId:         z.string().uuid().optional(),
   suppressWhatsApp: z.boolean().optional().default(false),
@@ -287,9 +289,10 @@ export async function createTailoringOrder(raw: unknown): Promise<{
   if (!parsed.success) return { success: false, error: parsed.error.errors[0].message };
 
   const {
-    designId, customerId, measurements, colorFabric, price, dueDate, notes,
+    designId, customerId, measurements, colorFabric, price, quantity, dueDate, notes, notesTailor,
     invoiceId, batchId, suppressWhatsApp, advanceAmount, advancePaymentMode,
   } = parsed.data;
+  const totalAmount = Math.round(price * quantity * 100) / 100;
 
   const custRes = await query<{ phone: string | null; name: string }>(
     'SELECT phone, name FROM customers WHERE id=$1', [customerId]
@@ -323,26 +326,64 @@ export async function createTailoringOrder(raw: unknown): Promise<{
   try {
     await client.query('BEGIN');
 
-    const vRes = await client.query(
-      `SELECT COALESCE(MAX(version_number), 0) + 1 AS next_ver
-       FROM measurement_versions WHERE customer_id=$1 AND design_id=$2`,
+    // Normalized incoming measurements (blank values dropped) — compared
+    // against the customer's most recent version for this design so a new
+    // version row is only created when at least one value actually differs.
+    const normalizedIncoming = Object.fromEntries(
+      Object.entries(measurements)
+        .map(([fieldId, value]) => [fieldId, value.trim()])
+        .filter(([, value]) => value !== '')
+    );
+
+    const latestVerRes = await client.query<{ id: string }>(
+      `SELECT id FROM measurement_versions
+       WHERE customer_id=$1 AND design_id=$2
+       ORDER BY version_number DESC LIMIT 1`,
       [customerId, designId]
     );
-    const versionNumber = Number(vRes.rows[0].next_ver);
 
-    const mvRes = await client.query(
-      `INSERT INTO measurement_versions (customer_id, design_id, version_number, taken_by)
-       VALUES ($1,$2,$3,$4) RETURNING id`,
-      [customerId, designId, versionNumber, session.userId]
-    );
-    const versionId = mvRes.rows[0].id as string;
+    let versionId = '';
+    let reusedExisting = false;
 
-    for (const [fieldId, value] of Object.entries(measurements)) {
-      if (!value.trim()) continue;
-      await client.query(
-        `INSERT INTO measurement_values (version_id, field_id, value) VALUES ($1,$2,$3)`,
-        [versionId, fieldId, value.trim()]
+    if (latestVerRes.rows[0]) {
+      const latestVersionId = latestVerRes.rows[0].id;
+      const latestValsRes = await client.query<{ field_id: string; value: string }>(
+        `SELECT field_id, value FROM measurement_values WHERE version_id=$1`,
+        [latestVersionId]
       );
+      const normalizedExisting = Object.fromEntries(
+        latestValsRes.rows.map((r) => [r.field_id, r.value])
+      );
+      const unchanged =
+        JSON.stringify(Object.entries(normalizedIncoming).sort()) ===
+        JSON.stringify(Object.entries(normalizedExisting).sort());
+      if (unchanged) {
+        versionId = latestVersionId;
+        reusedExisting = true;
+      }
+    }
+
+    if (!reusedExisting) {
+      const vRes = await client.query(
+        `SELECT COALESCE(MAX(version_number), 0) + 1 AS next_ver
+         FROM measurement_versions WHERE customer_id=$1 AND design_id=$2`,
+        [customerId, designId]
+      );
+      const versionNumber = Number(vRes.rows[0].next_ver);
+
+      const mvRes = await client.query(
+        `INSERT INTO measurement_versions (customer_id, design_id, version_number, taken_by)
+         VALUES ($1,$2,$3,$4) RETURNING id`,
+        [customerId, designId, versionNumber, session.userId]
+      );
+      versionId = mvRes.rows[0].id as string;
+
+      for (const [fieldId, value] of Object.entries(normalizedIncoming)) {
+        await client.query(
+          `INSERT INTO measurement_values (version_id, field_id, value) VALUES ($1,$2,$3)`,
+          [versionId, fieldId, value]
+        );
+      }
     }
 
     // group_number = the TO sequence number (shared by all items in a booking session).
@@ -379,14 +420,14 @@ export async function createTailoringOrder(raw: unknown): Promise<{
     const ordRes = await client.query(
       `INSERT INTO tailoring_orders
          (order_number, customer_id, design_id, measurement_version_id,
-          color_fabric, price, total_amount, due_date, notes, created_by, invoice_id,
+          color_fabric, price, quantity, total_amount, due_date, notes, notes_tailor, created_by, invoice_id,
           customer_name_snapshot, customer_phone_snapshot, batch_id,
           group_number, suffix, warehouse_id, gst_rate)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING id`,
       [
         orderNumber, customerId, designId, versionId,
-        colorFabric || null, price, price,
-        dueDate || null, notes || null, session.userId,
+        colorFabric || null, price, quantity, totalAmount,
+        dueDate || null, notes || null, notesTailor || null, session.userId,
         invoiceId || null,
         customerName, customerPhone,
         batchId || null,
@@ -1293,6 +1334,37 @@ export async function changeTailorAction(
       console.error('[changeTailor] WA error:', e);
     }
   });
+
+  return { success: true };
+}
+
+// ── Delete a measurement version (from "View history") ─────────────────────
+
+export async function deleteMeasurementVersionAction(versionId: string): Promise<ActionResult> {
+  const session = await requireRole('admin', 'staff');
+
+  // Never delete a version that's still the "current" one for an ACTIVE order
+  // (in_progress / ready_for_pickup) or a pending alteration on one — that
+  // would silently blank out that order's measurements instead of the
+  // explicit cleanup this action is meant for. A delivered order is a final
+  // state — its measurement history is no longer load-bearing, so versions
+  // referenced only by delivered orders are safe to clean up.
+  const inUseRes = await query<{ order_number: string }>(
+    `SELECT order_number FROM tailoring_orders
+     WHERE measurement_version_id=$1 AND status IN ('in_progress','ready_for_pickup')
+     UNION ALL
+     SELECT o.order_number FROM tailoring_alterations a
+     JOIN tailoring_orders o ON o.id = a.tailoring_order_id
+     WHERE a.measurement_version_id=$1 AND o.status IN ('in_progress','ready_for_pickup')
+     LIMIT 1`,
+    [versionId]
+  );
+  if (inUseRes.rows[0]) {
+    return { success: false, error: `This version is still in use by active order ${inUseRes.rows[0].order_number} and cannot be deleted.` };
+  }
+
+  await query('DELETE FROM measurement_versions WHERE id=$1', [versionId]);
+  logAudit({ userId: session.userId, action: 'delete', entityType: 'tailoring_order', entityId: versionId, entityLabel: 'measurement version' }).catch(() => {});
 
   return { success: true };
 }

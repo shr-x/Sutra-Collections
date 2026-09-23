@@ -15,7 +15,7 @@ export default async function NewTailoringOrderPage({
 
   const [designsRes, customersRes] = await Promise.all([
     query(
-      `SELECT d.id, d.name, d.category, d.photo_path,
+      `SELECT d.id, d.name, d.category, d.photo_path, d.price::numeric AS price,
               json_agg(
                 json_build_object(
                   'id',         f.id,
@@ -38,12 +38,13 @@ export default async function NewTailoringOrderPage({
     ),
   ]);
 
-  type DesignRow = { id: string; name: string; category: string | null; photo_path: string | null; fields: Array<{ id: string; field_name: string; field_type: 'number' | 'text'; unit: string | null; sort_order: number }> | null };
+  type DesignRow = { id: string; name: string; category: string | null; photo_path: string | null; price: string | null; fields: Array<{ id: string; field_name: string; field_type: 'number' | 'text'; unit: string | null; sort_order: number }> | null };
   const designs = (designsRes.rows as DesignRow[]).map((d) => ({
     id:         d.id,
     name:       d.name,
     category:   d.category,
     photo_path: d.photo_path,
+    price:      d.price !== null ? Number(d.price) : null,
     fields:     d.fields ?? [],
   }));
   type CustomerRow = { id: string; name: string; phone: string | null };

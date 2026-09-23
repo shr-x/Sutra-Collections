@@ -3,7 +3,8 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import DatePicker from '@/components/date-picker';
-import { updateOrderAction } from '../actions';
+import ConfirmDialog from '@/components/confirm-dialog';
+import { updateOrderAction, deleteMeasurementVersionAction } from '../actions';
 
 interface Field {
   id: string;
@@ -70,6 +71,10 @@ export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
   const [showHistory, setShowHistory]   = useState(false);
   const [history, setHistory]           = useState<VersionHistoryEntry[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const [deletingVersionId, setDeletingVersionId] = useState<string | null>(null);
+  const [confirmDeleteVersion, setConfirmDeleteVersion] = useState<VersionHistoryEntry | null>(null);
+  const [confirmThermalVersion, setConfirmThermalVersion] = useState<VersionHistoryEntry | null>(null);
 
   function toggleHistory() {
     if (showHistory) { setShowHistory(false); return; }
@@ -84,6 +89,25 @@ export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
   }
 
   const fieldById = Object.fromEntries(fields.map((f) => [f.id, f]));
+
+  function handleDeleteVersion(version: VersionHistoryEntry) {
+    setDeletingVersionId(version.id);
+    setVersionError(null);
+    startTrans(async () => {
+      const res = await deleteMeasurementVersionAction(version.id);
+      if (res.success) {
+        setHistory((prev) => prev.filter((v) => v.id !== version.id));
+        router.refresh();
+      } else {
+        setVersionError(res.error ?? 'Failed to delete version.');
+      }
+      setDeletingVersionId(null);
+    });
+  }
+
+  function handleDownloadThermal(version: VersionHistoryEntry) {
+    window.open(`/api/tailoring/measurement-versions/${version.id}/thermal`, '_blank');
+  }
 
   function cancelEdit() {
     setEditing(false);
@@ -121,6 +145,28 @@ export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
   }
 
   return (
+    <>
+    <ConfirmDialog
+      open={confirmDeleteVersion !== null}
+      title="Delete Measurement Version"
+      message={`Delete version ${confirmDeleteVersion?.version_number ?? ''}? This cannot be undone.`}
+      onConfirm={() => {
+        if (confirmDeleteVersion) handleDeleteVersion(confirmDeleteVersion);
+        setConfirmDeleteVersion(null);
+      }}
+      onCancel={() => setConfirmDeleteVersion(null)}
+    />
+    <ConfirmDialog
+      open={confirmThermalVersion !== null}
+      title="Download Thermal Receipt"
+      message={`Generate a thermal receipt for version ${confirmThermalVersion?.version_number ?? ''}?`}
+      confirmLabel="Download"
+      onConfirm={() => {
+        if (confirmThermalVersion) handleDownloadThermal(confirmThermalVersion);
+        setConfirmThermalVersion(null);
+      }}
+      onCancel={() => setConfirmThermalVersion(null)}
+    />
     <div className="space-y-4">
       {/* ── Order Summary ── */}
       <div className="card">
@@ -261,6 +307,12 @@ export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
           )}
         </div>
 
+        {versionError && (
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
+            {versionError}
+          </div>
+        )}
+
         {showHistory && (
           <div className="mb-4 space-y-2 rounded-lg border border-gray-100 bg-gray-50 p-3">
             {loadingHistory ? (
@@ -296,6 +348,23 @@ export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
                       ))}
                     </div>
                   )}
+                  <div className="mt-2 flex items-center gap-3 border-t border-gray-100 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmThermalVersion(v)}
+                      className="text-xs text-purple-600 hover:underline"
+                    >
+                      🧾 Download as thermal receipt
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteVersion(v)}
+                      disabled={deletingVersionId === v.id}
+                      className="text-xs text-red-500 hover:underline disabled:opacity-40"
+                    >
+                      {deletingVersionId === v.id ? 'Deleting…' : '🗑 Delete'}
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -341,5 +410,6 @@ export default function OrderDetailsPanel(props: OrderDetailsPanelProps) {
         )}
       </div>
     </div>
+    </>
   );
 }

@@ -69,6 +69,22 @@ export default function DesignForm() {
       </div>
 
       <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Price</label>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">₹</span>
+          <input
+            type="number"
+            name="price"
+            min="0"
+            step="0.01"
+            className="input w-full pl-7"
+            placeholder="0.00 (optional)"
+          />
+        </div>
+        <p className="mt-1 text-xs text-gray-400">Optional fixed base price — prefills the Price field when this design is used on a new tailoring order.</p>
+      </div>
+
+      <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Design Photo</label>
         <input
           type="file"

@@ -21,6 +21,7 @@ interface DesignOption {
   name: string;
   category: string | null;
   photo_path: string | null;
+  price: number | null;
   fields: Field[];
 }
 
@@ -94,8 +95,11 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [colorFabric, setColorFabric]     = useState('');
   const [price, setPrice]                 = useState('');
+  const [quantity, setQuantity]           = useState('1');
   const [dueDate, setDueDate]             = useState('');
   const [notes, setNotes]                 = useState('');
+  const [showTailorNotes, setShowTailorNotes] = useState(false);
+  const [tailorNotes, setTailorNotes]     = useState('');
   const [advanceAmount, setAdvanceAmount] = useState('');
   const [advanceMode, setAdvanceMode]     = useState<'cash' | 'upi' | 'card'>('cash');
   const [submitError, setSubmitError]     = useState<string | null>(null);
@@ -124,6 +128,7 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
   function handleDesignSelect(d: DesignOption) {
     setDesign(d);
     setMeasurements({});
+    setPrice(d.price != null ? String(d.price) : '0');
     if (lockedCustomer) {
       setCustomer(lockedCustomer);
       setStep(3);
@@ -173,8 +178,11 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
     setPrevVersions([]);
     setColorFabric('');
     setPrice('');
+    setQuantity('1');
     setDueDate('');
     setNotes('');
+    setShowTailorNotes(false);
+    setTailorNotes('');
     setAdvanceAmount('');
     setAdvanceMode('cash');
     setSubmitError(null);
@@ -196,8 +204,10 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
         measurements,
         colorFabric:     colorFabric || undefined,
         price:           parseFloat(price) || 0,
+        quantity:        parseInt(quantity, 10) || 1,
         dueDate:         dueDate || null,
         notes:           notes || undefined,
+        notesTailor:     tailorNotes || undefined,
         batchId:         currentBatchId,
         suppressWhatsApp: true,
         advanceAmount:      advanceAmount ? parseFloat(advanceAmount) : undefined,
@@ -231,8 +241,10 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
         measurements,
         colorFabric:     colorFabric || undefined,
         price:           parseFloat(price) || 0,
+        quantity:        parseInt(quantity, 10) || 1,
         dueDate:         dueDate || null,
         notes:           notes || undefined,
+        notesTailor:     tailorNotes || undefined,
         batchId:         batchId ?? undefined,
         suppressWhatsApp: isBatch, // suppress individual WA; batch confirmation fired below
         advanceAmount:      advanceAmount ? parseFloat(advanceAmount) : undefined,
@@ -547,24 +559,43 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
           <p className="mt-1 text-xs text-gray-400">Recorded only — no stock deduction.</p>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Price <span className="text-red-500">*</span>
-          </label>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">₹</span>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Price <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm">₹</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                className="input w-full pl-7"
+                placeholder="0.00"
+                required
+              />
+            </div>
+            {design?.price != null && (
+              <p className="mt-1 text-xs text-gray-400">Prefilled from design's fixed price — editable.</p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
             <input
               type="number"
-              min="0"
-              step="0.01"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              className="input w-full pl-7"
-              placeholder="0.00"
-              required
+              min="1"
+              step="1"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              className="input w-full"
             />
           </div>
         </div>
+        <p className="-mt-2 text-xs text-gray-400">
+          Order total: ₹{((parseFloat(price) || 0) * (parseInt(quantity, 10) || 1)).toFixed(2)}
+        </p>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Advance Payment (optional)</label>
@@ -608,7 +639,18 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="block text-sm font-medium text-gray-700">Notes</label>
+            {!showTailorNotes && (
+              <button
+                type="button"
+                onClick={() => setShowTailorNotes(true)}
+                className="text-xs text-purple-600 hover:underline"
+              >
+                + Add Tailor Notes
+              </button>
+            )}
+          </div>
           <textarea
             rows={3}
             value={notes}
@@ -616,7 +658,22 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
             className="input w-full"
             placeholder="Special instructions, alterations, etc."
           />
+          <p className="mt-1 text-xs text-gray-400">Shown to the customer (order confirmation, customer PDF).</p>
         </div>
+
+        {showTailorNotes && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tailor Notes</label>
+            <textarea
+              rows={3}
+              value={tailorNotes}
+              onChange={(e) => setTailorNotes(e.target.value)}
+              className="input w-full"
+              placeholder="Production/alteration instructions for the tailor only…"
+            />
+            <p className="mt-1 text-xs text-gray-400">Shown only to the tailor (Tailor PDF, tailor WhatsApp message) — never sent to the customer.</p>
+          </div>
+        )}
 
         <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-end">
           <button onClick={() => setStep(3)} className="btn-secondary sm:order-first">Back</button>

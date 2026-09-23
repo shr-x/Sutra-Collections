@@ -168,6 +168,25 @@ const S = StyleSheet.create({
     borderTopWidth: 0.3, borderTopColor: RULE, paddingTop: 5,
   },
   footerText: { fontSize: 6.5, color: MUTED },
+
+  // ── Measurement groups (tailor/production docs — no pricing) ──
+  measGroupWrap:   { marginTop: 14 },
+  measGroupItem:   { marginBottom: 16, paddingBottom: 14, borderBottomWidth: 0.5, borderBottomColor: RULE },
+  measGroupBadge:  { alignSelf: 'flex-start', backgroundColor: THEAD, borderRadius: 3, paddingHorizontal: 7, paddingVertical: 3, marginBottom: 8 },
+  measGroupBadgeTx:{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: DARK },
+  measHeroRow:     { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+  measPhoto:       { width: 70, height: 70, objectFit: 'cover', borderRadius: 4, borderWidth: 0.5, borderColor: RULE, marginRight: 12 },
+  measDesignName:  { fontSize: 12, fontFamily: 'Helvetica-Bold', color: DARK, marginBottom: 3 },
+  measFabric:      { fontSize: 9, color: MUTED },
+  measNotesBox:    { backgroundColor: '#FFFBEB', borderLeftWidth: 3, borderLeftColor: '#F59E0B', paddingLeft: 9, paddingRight: 8, paddingVertical: 7, marginBottom: 10 },
+  measNotesLabel:  { fontSize: 7, fontFamily: 'Helvetica-Bold', color: '#92400E', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 3 },
+  measNotesBody:   { fontSize: 9, color: DARK, lineHeight: 1.4 },
+  measTable:       { borderWidth: 0.5, borderColor: RULE },
+  measTableHead:   { flexDirection: 'row', backgroundColor: THEAD, borderBottomWidth: 0.5, borderBottomColor: RULE, paddingVertical: 4, paddingHorizontal: 6 },
+  measTableRow:    { flexDirection: 'row', borderBottomWidth: 0.3, borderBottomColor: RULE, paddingVertical: 4, paddingHorizontal: 6 },
+  measColField:    { flex: 2 },
+  measColValue:    { flex: 1 },
+  measColUnit:     { flex: 1 },
 });
 
 export interface PdfCompany {
@@ -202,8 +221,22 @@ export interface PdfLineItem {
   total: number;
 }
 
+export interface PdfMeasurementGroup {
+  // Item badge label for multi-item groups, e.g. "Item A" — omit for a single item.
+  label?: string;
+  designName: string;
+  colorFabric?: string;
+  photoAbsPath?: string;
+  // Units to produce — shown on the tailor/production doc so quantity is
+  // never ambiguous even though pricing is hidden for this docType.
+  qty?: number;
+  // Tailor-facing notes only — never the customer-facing notes field.
+  notes?: string;
+  measurements: Array<{ fieldName: string; value: string; unit?: string | null }>;
+}
+
 export interface PdfInvoiceData {
-  docType: 'INVOICE' | 'QUOTATION' | 'PURCHASE' | 'CREDIT NOTE' | 'DEBIT NOTE' | 'PROFORMA' | 'ORDER_CONFIRMATION';
+  docType: 'INVOICE' | 'QUOTATION' | 'PURCHASE' | 'CREDIT NOTE' | 'DEBIT NOTE' | 'PROFORMA' | 'ORDER_CONFIRMATION' | 'PRODUCTION_ORDER';
   invoiceNumber: string;
   invoiceDate: string;
   dueDate?: string;
@@ -239,6 +272,14 @@ export interface PdfInvoiceData {
   // direction (an amount added to the customer's dues, not a refund) — see
   // generateTailoringCreditDuePdf in lib/pdf-generator.ts.
   creditNoteSubtitle?: string;
+  // Internal tailor/production documents (docType 'PRODUCTION_ORDER'): no
+  // pricing, no GST, no customer contact block, no payment/terms — just the
+  // item(s) and their measurements. See lib/pdf-generator.ts generateTailoringTailorPdf.
+  hidePricing?: boolean;
+  hideCustomerBlock?: boolean;
+  measurementGroups?: PdfMeasurementGroup[];
+  // Footer override for internal (non-customer-facing) documents.
+  internalDocLabel?: string;
 }
 
 function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
@@ -319,6 +360,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                 : data.docType === 'DEBIT NOTE' ? 'DEBIT NOTE'
                 : data.docType === 'PROFORMA' ? 'INVOICE'
                 : data.docType === 'ORDER_CONFIRMATION' ? 'ORDER CONFIRMATION'
+                : data.docType === 'PRODUCTION_ORDER' ? 'PRODUCTION ORDER'
                 : 'TAX INVOICE'}
             </Text>
             {isReturnDoc ? (
@@ -363,43 +405,48 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
             </View>
           )}
 
-          {/* ── Bill To ── */}
-          <View style={S.billSection}>
-            <View style={{ flex: 1 }}>
-              <Text style={S.sectionLabel}>{data.docType === 'PURCHASE' ? 'Supplier' : 'Bill To'}</Text>
-              <Text style={S.customerName}>{data.customer.name}</Text>
-              {data.customer.phone ? (
-                <Text style={S.customerDetail}>Ph: {data.customer.phone}</Text>
-              ) : null}
-              {data.customer.address ? (
-                <Text style={S.customerDetail}>{data.customer.address}</Text>
-              ) : null}
-              {validGstin(data.customer.gstin) ? (
-                <Text style={S.customerDetail}>GSTIN: {validGstin(data.customer.gstin)}</Text>
-              ) : null}
-              {isReturnDoc && data.originalInvoiceNumber ? (
-                <Text style={[S.customerDetail, { marginTop: 3, color: accent, fontFamily: 'Helvetica-Bold' }]}>
-                  Against Invoice: {data.originalInvoiceNumber}
+          {/* ── Bill To — omitted entirely for internal tailor/production docs ── */}
+          {!data.hideCustomerBlock && (
+            <View style={S.billSection}>
+              <View style={{ flex: 1 }}>
+                <Text style={S.sectionLabel}>{data.docType === 'PURCHASE' ? 'Supplier' : 'Bill To'}</Text>
+                <Text style={S.customerName}>{data.customer.name}</Text>
+                {data.customer.phone ? (
+                  <Text style={S.customerDetail}>Ph: {data.customer.phone}</Text>
+                ) : null}
+                {data.customer.address ? (
+                  <Text style={S.customerDetail}>{data.customer.address}</Text>
+                ) : null}
+                {validGstin(data.customer.gstin) ? (
+                  <Text style={S.customerDetail}>GSTIN: {validGstin(data.customer.gstin)}</Text>
+                ) : null}
+                {isReturnDoc && data.originalInvoiceNumber ? (
+                  <Text style={[S.customerDetail, { marginTop: 3, color: accent, fontFamily: 'Helvetica-Bold' }]}>
+                    Against Invoice: {data.originalInvoiceNumber}
+                  </Text>
+                ) : null}
+                {isReturnDoc && data.refundMode ? (
+                  <Text style={[S.customerDetail, { color: accent }]}>Refund Mode: {data.refundMode}</Text>
+                ) : null}
+              </View>
+              <View style={[S.badge, isReturnDoc ? { borderColor: accent, backgroundColor: accentBg } : {}]}>
+                <Text style={[S.badgeText, isReturnDoc ? { color: accent } : {}]}>
+                  {data.docType === 'QUOTATION' ? 'QUOTATION COPY'
+                    : data.docType === 'PURCHASE' ? 'PURCHASE RECORD'
+                    : data.docType === 'CREDIT NOTE' ? 'CREDIT NOTE COPY'
+                    : data.docType === 'DEBIT NOTE' ? 'DEBIT NOTE COPY'
+                    : data.docType === 'PROFORMA' ? 'INVOICE COPY'
+                    : data.docType === 'ORDER_CONFIRMATION' ? 'CUSTOMER COPY'
+                    : data.docType === 'PRODUCTION_ORDER' ? 'TAILOR COPY'
+                    : 'ORIGINAL FOR RECIPIENT'}
                 </Text>
-              ) : null}
-              {isReturnDoc && data.refundMode ? (
-                <Text style={[S.customerDetail, { color: accent }]}>Refund Mode: {data.refundMode}</Text>
-              ) : null}
+              </View>
             </View>
-            <View style={[S.badge, isReturnDoc ? { borderColor: accent, backgroundColor: accentBg } : {}]}>
-              <Text style={[S.badgeText, isReturnDoc ? { color: accent } : {}]}>
-                {data.docType === 'QUOTATION' ? 'QUOTATION COPY'
-                  : data.docType === 'PURCHASE' ? 'PURCHASE RECORD'
-                  : data.docType === 'CREDIT NOTE' ? 'CREDIT NOTE COPY'
-                  : data.docType === 'DEBIT NOTE' ? 'DEBIT NOTE COPY'
-                  : data.docType === 'PROFORMA' ? 'INVOICE COPY'
-                  : data.docType === 'ORDER_CONFIRMATION' ? 'CUSTOMER COPY'
-                  : 'ORIGINAL FOR RECIPIENT'}
-              </Text>
-            </View>
-          </View>
+          )}
 
-          {/* ── Line Items Table ── */}
+          {/* ── Line Items Table — skipped for no-pricing internal docs (see measurementGroups below) ── */}
+          {!data.hidePricing && (
+          <>
           <View style={S.tableWrap}>
             <View style={S.tableHead}>
               <View style={S.colItem}><Text style={S.th}>Item</Text></View>
@@ -541,8 +588,11 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
               )}
             </View>
           </View>
+          </>
+          )}
 
-          {/* ── Payment / Notes / Signature ── */}
+          {/* ── Payment / Notes / Signature — skipped for no-pricing internal docs ── */}
+          {!data.hidePricing && (
           <View style={S.bottomRow}>
             {(data.upiVpa || data.upiQrDataUrl) && (
               <View style={S.payBox}>
@@ -576,6 +626,56 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
               </View>
             </View>
           </View>
+          )}
+
+          {/* ── Measurement Groups — tailor/production docs only ── */}
+          {data.measurementGroups && data.measurementGroups.length > 0 && (
+            <View style={S.measGroupWrap}>
+              {data.measurementGroups.map((group, gi) => (
+                <View key={gi} style={S.measGroupItem}>
+                  {group.label && (
+                    <View style={S.measGroupBadge}>
+                      <Text style={S.measGroupBadgeTx}>{group.label}</Text>
+                    </View>
+                  )}
+                  <View style={S.measHeroRow}>
+                    {group.photoAbsPath ? (
+                      <Image src={group.photoAbsPath} style={S.measPhoto} />
+                    ) : null}
+                    <View style={{ flex: 1 }}>
+                      <Text style={S.measDesignName}>{group.designName}</Text>
+                      {group.colorFabric ? <Text style={S.measFabric}>{group.colorFabric}</Text> : null}
+                      {group.qty ? <Text style={S.measFabric}>Qty: {group.qty}</Text> : null}
+                    </View>
+                  </View>
+                  {group.notes ? (
+                    <View style={S.measNotesBox}>
+                      <Text style={S.measNotesLabel}>Tailor Notes</Text>
+                      <Text style={S.measNotesBody}>{group.notes}</Text>
+                    </View>
+                  ) : null}
+                  {group.measurements.length > 0 ? (
+                    <View style={S.measTable}>
+                      <View style={S.measTableHead}>
+                        <View style={S.measColField}><Text style={S.th}>Measurement</Text></View>
+                        <View style={S.measColValue}><Text style={S.th}>Value</Text></View>
+                        <View style={S.measColUnit}><Text style={S.th}>Unit</Text></View>
+                      </View>
+                      {group.measurements.map((m, mi) => (
+                        <View key={mi} style={S.measTableRow}>
+                          <View style={S.measColField}><Text style={S.td}>{m.fieldName}</Text></View>
+                          <View style={S.measColValue}><Text style={[S.td, { fontFamily: 'Helvetica-Bold' }]}>{m.value}</Text></View>
+                          <View style={S.measColUnit}><Text style={S.tdMuted}>{m.unit ?? ''}</Text></View>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={{ fontSize: 8, color: MUTED }}>No measurements recorded.</Text>
+                  )}
+                </View>
+              ))}
+            </View>
+          )}
 
           {/* ── Terms — client-editable Store Terms only (settings.terms_and_conditions).
               No hardcoded boilerplate: if the client hasn't set any terms, this
@@ -598,7 +698,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
         {/* ── Page Footer ── */}
         <View style={S.footer}>
           <Text style={S.footerText}>
-            This is a computer-generated document. No physical signature is required.
+            {data.internalDocLabel ?? 'This is a computer-generated document. No physical signature is required.'}
           </Text>
           <Text style={S.footerText}>{data.company.name}</Text>
         </View>

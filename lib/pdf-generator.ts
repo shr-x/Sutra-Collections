@@ -9,18 +9,16 @@ import { query } from '@/lib/db';
 import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { renderInvoicePdf } from '@/lib/pdf/invoice-template';
 import type { PdfCompany, PdfInvoiceData } from '@/lib/pdf/invoice-template';
-import { renderThermalPdf } from '@/lib/pdf/thermal-template';
-import {
-  renderTailoringPdf,
-  renderGroupedTailoringPdf,
-  type GroupedTailoringPdfInput,
-  type TailoringLineItem,
-} from '@/lib/pdf/tailoring-template';
+import { renderThermalPdf, renderMeasurementThermalPdf } from '@/lib/pdf/thermal-template';
+import { renderTailoringPdf } from '@/lib/pdf/tailoring-template';
 
 const fmtDate = (d: string | Date | null): string =>
   d ? new Date(d).toLocaleDateString('en-IN') : '';
 
-async function getCompany(): Promise<PdfCompany & { upiVpa: string; termsAndConditions: string[] }> {
+const splitTerms = (raw: string): string[] =>
+  raw.split('\n').map((line) => line.trim()).filter(Boolean);
+
+async function getCompany(): Promise<PdfCompany & { upiVpa: string; retailTerms: string[]; tailoringTerms: string[] }> {
   const { rows } = await query<{ key: string; value: string }>('SELECT key, value FROM settings');
   const s = Object.fromEntries(rows.map((r) => [r.key, r.value]));
 
@@ -32,10 +30,11 @@ async function getCompany(): Promise<PdfCompany & { upiVpa: string; termsAndCond
       })()
     : undefined;
 
-  const termsAndConditions = (s.terms_and_conditions ?? '')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+  // Retail and tailoring documents each print their own Terms & Conditions
+  // (see Settings > Store). Falls back to the legacy single
+  // 'terms_and_conditions' key if a split key hasn't been set yet.
+  const retailTerms = splitTerms(s.retail_terms_and_conditions ?? s.terms_and_conditions ?? '');
+  const tailoringTerms = splitTerms(s.tailoring_terms_and_conditions ?? s.terms_and_conditions ?? '');
 
   return {
     name: s.company_name ?? 'Sutra Collections',
@@ -46,7 +45,8 @@ async function getCompany(): Promise<PdfCompany & { upiVpa: string; termsAndCond
     email: s.company_email || undefined,
     logoAbsPath,
     upiVpa: s.upi_vpa ?? '',
-    termsAndConditions,
+    retailTerms,
+    tailoringTerms,
   };
 }
 
@@ -76,6 +76,7 @@ export async function generateInvoicePdf(invoiceId: string): Promise<string | nu
     if (!invRes.rows[0]) return null;
     const inv = invRes.rows[0];
     const co = await getCompany();
+    const invoiceTerms = inv.source === 'tailoring' ? co.tailoringTerms : co.retailTerms;
 
     let upiQrDataUrl: string | undefined;
     const balance = Math.max(0, Number(inv.grand_total) - Number(inv.amount_paid));
@@ -127,7 +128,7 @@ export async function generateInvoicePdf(invoiceId: string): Promise<string | nu
       schemeDiscount: Number(inv.scheme_discount_amount ?? 0),
       loyaltyDiscount: Number(inv.loyalty_discount_amount ?? 0),
       loyaltyPoints: Number(inv.loyalty_points_redeemed ?? 0),
-      customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
+      customTerms: invoiceTerms.length > 0 ? invoiceTerms : undefined,
     });
 
     const safe = inv.invoice_number.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -183,10 +184,10 @@ async function fetchGroupedTailoringData(orderId: string) {
   const { rows: siblings } = await query<{
     total_amount: string; amount_paid: string; gst_rate: string; created_at: string;
     notes: string | null; design_name: string; order_number: string; suffix: string | null;
-    alteration_total: string;
+    alteration_total: string; quantity: number;
   }>(
     `SELECT o.total_amount::text, o.amount_paid::text, o.gst_rate::text, o.created_at::text,
-            o.notes, o.order_number, o.suffix, d.name AS design_name,
+            o.notes, o.order_number, o.suffix, o.quantity, d.name AS design_name,
             COALESCE((SELECT SUM(price_adjustment) FROM tailoring_alterations WHERE tailoring_order_id=o.id), 0)::text AS alteration_total
      FROM tailoring_orders o JOIN designs d ON d.id = o.design_id
      WHERE o.id = ANY($1::uuid[])
@@ -198,18 +199,25 @@ async function fetchGroupedTailoringData(orderId: string) {
   // Each sibling becomes one line for the garment's base price, plus a
   // separate "Alteration Charges" line when it has a non-zero net alteration
   // adjustment — so the cost of alterations is visible on the PDF instead of
-  // being silently folded into the garment's price.
+  // being silently folded into the garment's price. The garment line splits
+  // its base total back into qty × unit rate (total_amount is the up-to-date
+  // figure, so the unit rate is derived from it rather than read from the
+  // possibly-stale `price` column — see updateOrderAction/alterations, which
+  // only ever mutate total_amount) so the PDF shows the real quantity instead
+  // of always "1 pcs" at the full line total.
   const lineEntries = siblings.flatMap((s) => {
     const gstRate = Number(s.gst_rate);
+    const quantity = Number(s.quantity) > 0 ? Number(s.quantity) : 1;
     const alterationTotal = Math.round(Number(s.alteration_total) * 100) / 100;
     const basePrice = Math.round((Number(s.total_amount) - alterationTotal) * 100) / 100;
+    const unitRate = Math.round((basePrice / quantity) * 100) / 100;
     const entries = [{
-      description: s.design_name, rate: basePrice, gstRate,
-      result: calcLine({ quantity: 1, rate: basePrice, gstRate, isScheme: false }),
+      description: s.design_name, rate: unitRate, qty: quantity, gstRate,
+      result: calcLine({ quantity, rate: unitRate, gstRate, isScheme: false }),
     }];
     if (Math.abs(alterationTotal) >= 0.005) {
       entries.push({
-        description: `Alteration Charges — ${s.design_name}`, rate: alterationTotal, gstRate,
+        description: `Alteration Charges — ${s.design_name}`, rate: alterationTotal, qty: 1, gstRate,
         result: calcLine({ quantity: 1, rate: alterationTotal, gstRate, isScheme: false }),
       });
     }
@@ -266,7 +274,7 @@ export async function generateTailoringOrderConfirmationPdf(orderId: string): Pr
         phone: anchor.customer_phone || undefined,
       },
       items: lineEntries.map((e, i) => ({
-        description: e.description, hsn: '9988', qty: 1, unit: 'pcs',
+        description: e.description, hsn: '9988', qty: e.qty, unit: 'pcs',
         rate: e.rate, discountAmount: 0, gstRate: e.gstRate,
         taxableValue: lineResults[i].taxableValue, cgst: lineResults[i].cgstAmount,
         sgst: lineResults[i].sgstAmount, total: lineResults[i].totalAmount,
@@ -278,7 +286,7 @@ export async function generateTailoringOrderConfirmationPdf(orderId: string): Pr
       grandTotal: totals.grandTotal,
       amountPaid,
       notes: combinedNotes,
-      customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
+      customTerms: co.tailoringTerms.length > 0 ? co.tailoringTerms : undefined,
     });
 
     const safe = `${displayRef}_confirmation`.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -348,7 +356,7 @@ export async function generateTailoringCreditDuePdf(orderId: string): Promise<st
       totalSgst: 0,
       grandTotal: creditAmount,
       notes: `This amount has been added to your outstanding dues for order ${displayRef}. Please clear at your earliest convenience.`,
-      customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
+      customTerms: co.tailoringTerms.length > 0 ? co.tailoringTerms : undefined,
     });
 
     const safe = `${displayRef}-CR`.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -387,6 +395,7 @@ export async function generateThermalInvoicePdf(invoiceId: string): Promise<stri
     if (!invRes.rows[0]) return null;
     const inv = invRes.rows[0];
     const co = await getCompany();
+    const invoiceTerms = inv.source === 'tailoring' ? co.tailoringTerms : co.retailTerms;
 
     // Thermal must use base64 data URL — file-path images cause a react-pdf page-split bug
     const logoDataUrl = co.logoAbsPath
@@ -437,7 +446,7 @@ export async function generateThermalInvoicePdf(invoiceId: string): Promise<stri
       schemeDiscount: Number(inv.scheme_discount_amount ?? 0),
       loyaltyDiscount: Number(inv.loyalty_discount_amount ?? 0),
       loyaltyPoints: Number(inv.loyalty_points_redeemed ?? 0),
-      customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
+      customTerms: invoiceTerms.length > 0 ? invoiceTerms : undefined,
     };
 
     const buffer = await renderThermalPdf(data, logoDataUrl);
@@ -592,14 +601,15 @@ async function getTailoringOrderData(orderId: string) {
   const [orderRes, measRes] = await Promise.all([
     query<{
       id: string; order_number: string; group_number: string | null; suffix: string | null;
-      price: string; gst_rate: string | null; due_date: string | null;
-      notes: string | null; color_fabric: string | null; created_at: string;
+      price: string; quantity: number; gst_rate: string | null; due_date: string | null;
+      notes: string | null; notes_tailor: string | null; color_fabric: string | null; created_at: string;
       customer_name: string; customer_phone: string | null;
       design_name: string; design_category: string | null; design_photo: string | null;
     }>(
       // total_amount (not price) is the up-to-date figure — edits/alterations only update total_amount.
       `SELECT o.id, o.order_number, o.group_number, o.suffix,
-              o.total_amount::text AS price, o.gst_rate::text, o.due_date::text, o.notes, o.color_fabric, o.created_at::text,
+              o.total_amount::text AS price, o.quantity, o.gst_rate::text, o.due_date::text,
+              o.notes, o.notes_tailor, o.color_fabric, o.created_at::text,
               c.name AS customer_name, c.phone AS customer_phone,
               d.name AS design_name, d.category AS design_category, d.photo_path AS design_photo
        FROM tailoring_orders o
@@ -623,98 +633,51 @@ async function getTailoringOrderData(orderId: string) {
 }
 
 /**
- * Customer copy: grouped PDF — all orders sharing the same group_number on ONE page,
- * listed as line items with a single combined total at the bottom.
- * Falls back to a single-page PDF for orders without group_number.
+ * Customer copy — same visual template as regular invoices/order confirmation
+ * (lib/pdf/invoice-template.tsx), grouped across all sibling orders sharing the
+ * same group_number into one document with a combined total, just like
+ * generateTailoringOrderConfirmationPdf (which this mirrors so the on-demand
+ * "Customer PDF" button always matches what was already sent to the customer).
  */
 export async function generateTailoringCustomerPdf(orderId: string): Promise<string | null> {
   try {
-    const { order: firstOrder } = await getTailoringOrderData(orderId);
-    if (!firstOrder) return null;
+    const data = await fetchGroupedTailoringData(orderId);
+    if (!data) return null;
+    const { anchor, siblings, lineEntries, lineResults, totals, amountPaid, displayRef, combinedNotes } = data;
     const co = await getCompany();
 
-    // Collect all orders in the same group (sorted by suffix A, B, C...)
-    let orderIds: string[] = [orderId];
-    if (firstOrder.group_number) {
-      const groupRes = await query<{ id: string }>(
-        `SELECT id FROM tailoring_orders WHERE group_number=$1 ORDER BY suffix ASC, created_at ASC`,
-        [firstOrder.group_number]
-      );
-      if (groupRes.rows.length > 0) orderIds = groupRes.rows.map((r) => r.id);
-    }
+    const buffer = await renderInvoicePdf({
+      docType: 'ORDER_CONFIRMATION',
+      invoiceNumber: displayRef,
+      invoiceDate: fmtDate(siblings[0].created_at),
+      company: {
+        name: co.name, gstin: co.gstin, address: co.address,
+        state: co.state, phone: co.phone, email: co.email, logoAbsPath: co.logoAbsPath,
+      },
+      customer: {
+        name: anchor.customer_name,
+        address: anchor.customer_address ?? '',
+        gstin: anchor.customer_gstin ?? undefined,
+        phone: anchor.customer_phone || undefined,
+      },
+      items: lineEntries.map((e, i) => ({
+        description: e.description, hsn: '9988', qty: e.qty, unit: 'pcs',
+        rate: e.rate, discountAmount: 0, gstRate: e.gstRate,
+        taxableValue: lineResults[i].taxableValue, cgst: lineResults[i].cgstAmount,
+        sgst: lineResults[i].sgstAmount, total: lineResults[i].totalAmount,
+      })),
+      invoiceDiscountAmount: 0,
+      subtotal: totals.subtotal,
+      totalCgst: totals.totalCgst,
+      totalSgst: totals.totalSgst,
+      grandTotal: totals.grandTotal,
+      amountPaid,
+      notes: combinedNotes,
+      customTerms: co.tailoringTerms.length > 0 ? co.tailoringTerms : undefined,
+    });
 
-    // Fetch data for all sibling orders
-    const allData = await Promise.all(orderIds.map((id) => getTailoringOrderData(id)));
-    const validData = allData.filter((d) => d.order !== null) as Array<{ order: NonNullable<Awaited<ReturnType<typeof getTailoringOrderData>>['order']>; measurements: Awaited<ReturnType<typeof getTailoringOrderData>>['measurements'] }>;
-    if (!validData.length) return null;
-
-    const companyInfo = { name: co.name, gstin: co.gstin, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath };
-    const groupNumber = firstOrder.group_number ?? firstOrder.order_number;
-    const safe = groupNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safe = `${displayRef}_customer`.replace(/[^a-zA-Z0-9_-]/g, '_');
     const filePath = `/tmp/tailoring_customer_${safe}.pdf`;
-
-    let buffer: Buffer;
-
-    const resolvePhoto = (rawPath: string | null): string | undefined => {
-      if (!rawPath) return undefined;
-      const abs = path.join(process.cwd(), 'public', rawPath);
-      return fs.existsSync(abs) ? abs : undefined;
-    };
-
-    if (validData.length === 1) {
-      // Solo order — single-page layout
-      const { order, measurements } = validData[0];
-      buffer = await renderTailoringPdf({
-        docType:     'TAILORING ORDER',
-        orderNumber: groupNumber,
-        orderDate:   fmtDate(order.created_at),
-        dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
-        company:     companyInfo,
-        customer:    { name: order.customer_name, phone: order.customer_phone ?? undefined },
-        items: [{
-          designName:   order.design_name,
-          colorFabric:  order.color_fabric ?? undefined,
-          photoAbsPath: resolvePhoto(order.design_photo),
-          qty:          1,
-          price:        Number(order.price),
-          notes:        order.notes ?? undefined,
-          measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
-        }],
-        gstRate: order.gst_rate ? Number(order.gst_rate) : undefined,
-        customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
-      });
-    } else {
-      // Grouped booking — ONE page with items table and combined total
-      const pdfItems: TailoringLineItem[] = [];
-      for (const { order, measurements } of validData) {
-        // Guard: if design_name is the company name (data bug), use category instead
-        const designName = (order.design_name && order.design_name.toLowerCase() !== co.name.toLowerCase())
-          ? order.design_name
-          : (order.design_category ?? order.design_name);
-        pdfItems.push({
-          designName,
-          colorFabric:  order.color_fabric ?? undefined,
-          photoAbsPath: resolvePhoto(order.design_photo),
-          qty:          1,
-          price:        Number(order.price),
-          notes:        order.notes ?? undefined,
-          measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
-        });
-      }
-      const firstValid = validData[0].order;
-      buffer = await renderGroupedTailoringPdf({
-        docType:     'TAILORING ORDER',
-        orderNumber: groupNumber,
-        orderDate:   fmtDate(firstValid.created_at),
-        dueDate:     firstValid.due_date ? fmtDate(firstValid.due_date) : undefined,
-        company:     companyInfo,
-        customer:    { name: firstValid.customer_name, phone: firstValid.customer_phone ?? undefined },
-        items:       pdfItems,
-        gstRate:     firstValid.gst_rate ? Number(firstValid.gst_rate) : undefined,
-        customTerms: co.termsAndConditions.length > 0 ? co.termsAndConditions : undefined,
-      });
-    }
-
     fs.writeFileSync(filePath, buffer);
     return filePath;
   } catch (err) {
@@ -723,34 +686,42 @@ export async function generateTailoringCustomerPdf(orderId: string): Promise<str
   }
 }
 
-/** Tailor copy: NO customer name/phone/price — header shows full order_number e.g. "TO/2026-27/0029-A". */
+/**
+ * Tailor copy — same visual template as regular invoices, but with pricing,
+ * GST and customer contact info all hidden (hidePricing/hideCustomerBlock):
+ * only the order reference, design/measurements, and tailor-only notes. Never
+ * shows the customer-facing `notes` field — only `notes_tailor`.
+ */
 export async function generateTailoringTailorPdf(orderId: string): Promise<string | null> {
   try {
     const { order, measurements } = await getTailoringOrderData(orderId);
     if (!order) return null;
     const co = await getCompany();
 
-    // order_number already contains suffix (e.g. "TO/2026-27/0029-A")
-    const displayNum = order.order_number;
+    const photoAbsPath = (() => {
+      if (!order.design_photo) return undefined;
+      const abs = path.join(process.cwd(), 'public', order.design_photo);
+      return fs.existsSync(abs) ? abs : undefined;
+    })();
 
-    const buffer = await renderTailoringPdf({
-      docType:     'PRODUCTION ORDER',
-      orderNumber: displayNum,
-      orderDate:   fmtDate(order.created_at),
-      dueDate:     order.due_date ? fmtDate(order.due_date) : undefined,
-      company:     { name: co.name, gstin: co.gstin, address: co.address, phone: co.phone, logoAbsPath: co.logoAbsPath },
-      customer:    { name: order.customer_name, phone: order.customer_phone ?? undefined },
-      items: [{
+    const buffer = await renderInvoicePdf({
+      docType: 'PRODUCTION_ORDER',
+      invoiceNumber: order.order_number,
+      invoiceDate: fmtDate(order.created_at),
+      dueDate: order.due_date ? fmtDate(order.due_date) : undefined,
+      company: { name: co.name, gstin: co.gstin, address: co.address, state: co.state, phone: co.phone, logoAbsPath: co.logoAbsPath },
+      customer: { name: '', address: '' },
+      items: [],
+      invoiceDiscountAmount: 0, subtotal: 0, totalCgst: 0, totalSgst: 0, grandTotal: 0,
+      hidePricing: true,
+      hideCustomerBlock: true,
+      internalDocLabel: 'Internal production document — confidential.',
+      measurementGroups: [{
         designName:   order.design_name,
         colorFabric:  order.color_fabric ?? undefined,
-        photoAbsPath: (() => {
-          if (!order.design_photo) return undefined;
-          const abs = path.join(process.cwd(), 'public', order.design_photo);
-          return fs.existsSync(abs) ? abs : undefined;
-        })(),
-        qty:          1,
-        price:        Number(order.price),
-        notes:        order.notes ?? undefined,
+        photoAbsPath,
+        qty:          Number(order.quantity) || 1,
+        notes:        order.notes_tailor ?? undefined,
         measurements: measurements.map((m) => ({ fieldName: m.field_name, value: m.value, unit: m.unit })),
       }],
     });
@@ -858,6 +829,62 @@ export async function generateBatchTailoringPdf(batchId: string): Promise<string
     return generateTailoringCustomerPdf(res.rows[0].id);
   } catch (err) {
     console.error('[pdf-generator] generateBatchTailoringPdf failed:', err);
+    return null;
+  }
+}
+
+// ─── Measurement Version — thermal receipt ───────────────────────────────────
+
+export async function generateMeasurementThermalPdf(versionId: string): Promise<string | null> {
+  try {
+    const [verRes, valRes] = await Promise.all([
+      query<{
+        version_number: number; created_at: string; taken_by_name: string | null;
+        design_name: string; customer_name: string;
+      }>(
+        `SELECT mv.version_number, mv.created_at::text, u.name AS taken_by_name,
+                d.name AS design_name, c.name AS customer_name
+         FROM measurement_versions mv
+         JOIN designs d   ON d.id = mv.design_id
+         JOIN customers c ON c.id = mv.customer_id
+         LEFT JOIN users u ON u.id = mv.taken_by
+         WHERE mv.id = $1`,
+        [versionId]
+      ),
+      query<{ field_name: string; value: string; unit: string | null }>(
+        `SELECT f.field_name, v.value, f.unit
+         FROM measurement_values v
+         JOIN design_measurement_fields f ON f.id = v.field_id
+         WHERE v.version_id = $1
+         ORDER BY f.sort_order, f.field_name`,
+        [versionId]
+      ),
+    ]);
+
+    const ver = verRes.rows[0];
+    if (!ver) return null;
+    const co = await getCompany();
+
+    const logoDataUrl = co.logoAbsPath
+      ? `data:image/${path.extname(co.logoAbsPath).slice(1).replace('jpg', 'jpeg')};base64,${fs.readFileSync(co.logoAbsPath).toString('base64')}`
+      : undefined;
+
+    const buffer = await renderMeasurementThermalPdf({
+      companyName: co.name,
+      logoDataUrl,
+      designName: ver.design_name,
+      customerName: ver.customer_name,
+      versionNumber: ver.version_number,
+      createdAt: fmtDate(ver.created_at),
+      takenByName: ver.taken_by_name,
+      measurements: valRes.rows.map((r) => ({ fieldName: r.field_name, value: r.value, unit: r.unit })),
+    });
+
+    const filePath = `/tmp/measurement_v${ver.version_number}_${versionId}.pdf`;
+    fs.writeFileSync(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error('[pdf-generator] generateMeasurementThermalPdf failed:', err);
     return null;
   }
 }

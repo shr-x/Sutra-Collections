@@ -117,16 +117,30 @@ export default function StoreSection({ defaults }: Props) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Terms &amp; Conditions</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Retail Terms &amp; Conditions</label>
         <textarea
-          name="terms_and_conditions"
-          defaultValue={defaults.terms_and_conditions ?? ''}
+          name="retail_terms_and_conditions"
+          defaultValue={defaults.retail_terms_and_conditions ?? defaults.terms_and_conditions ?? ''}
           rows={5}
-          placeholder={'e.g.\nExchange within 7 days with receipt.\nAlterations are free within 30 days.'}
+          placeholder={'e.g.\nExchange within 7 days with receipt.\nGoods once sold are not returnable.'}
           className={inputCls}
         />
         <p className="mt-1 text-xs text-gray-400">
-          One line per bullet. Printed near the bottom of every invoice PDF (A4 and thermal). Leave empty to print nothing.
+          One line per bullet. Printed on retail invoices/receipts (A4 and thermal) only. Leave empty to print nothing.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Tailoring Terms &amp; Conditions</label>
+        <textarea
+          name="tailoring_terms_and_conditions"
+          defaultValue={defaults.tailoring_terms_and_conditions ?? defaults.terms_and_conditions ?? ''}
+          rows={5}
+          placeholder={'e.g.\nAlterations are free within 30 days of delivery.\nAdvance paid is non-refundable.'}
+          className={inputCls}
+        />
+        <p className="mt-1 text-xs text-gray-400">
+          One line per bullet. Printed on order confirmations, the Customer PDF and the delivered tailoring invoice only. Leave empty to print nothing.
         </p>
       </div>
 

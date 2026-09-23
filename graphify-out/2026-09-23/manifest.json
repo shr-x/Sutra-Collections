@@ -170,8 +170,8 @@
     "semantic_hash": "4ff886f0f4153b01ccb250f65c7576a8"
   },
   "app/(auth)/billing/invoices/actions.ts": {
-    "mtime": 1790102033.4657104,
-    "ast_hash": "e2dd82bf365a1664c5fcfa0efdef4a43",
+    "mtime": 1787234237.046759,
+    "ast_hash": "6cd9c36f78b12410b9af41075dc059ba",
     "semantic_hash": ""
   },
   "app/(auth)/billing/invoices/invoice-builder.tsx": {
@@ -260,8 +260,8 @@
     "semantic_hash": ""
   },
   "app/(auth)/customers/dues/page.tsx": {
-    "mtime": 1790102041.4551342,
-    "ast_hash": "944e3c830dfe1de0017a9685213f4a0c",
+    "mtime": 1783193534.4263997,
+    "ast_hash": "f7e074f775c5e699c521c665798ac1ee",
     "semantic_hash": ""
   },
   "app/(auth)/customers/import/customers-import-form.tsx": {
@@ -285,8 +285,8 @@
     "semantic_hash": ""
   },
   "app/(auth)/dashboard/page.tsx": {
-    "mtime": 1790101551.4489982,
-    "ast_hash": "6d963b79d386e387a74c8a9843fdfd67",
+    "mtime": 1785232504.6649969,
+    "ast_hash": "7c632fd074af8098e63a8595584f6d58",
     "semantic_hash": ""
   },
   "app/(auth)/designs/[id]/add-field-form.tsx": {
@@ -295,13 +295,13 @@
     "semantic_hash": "c66a20237dd4bfed4002926751ac0d26"
   },
   "app/(auth)/designs/[id]/edit/edit-design-form.tsx": {
-    "mtime": 1790099123.871405,
-    "ast_hash": "df1bc162bc492b76faa26c921d09a991",
+    "mtime": 1785500037.1392589,
+    "ast_hash": "2786807257c5df8c888a16050df9e271",
     "semantic_hash": ""
   },
   "app/(auth)/designs/[id]/edit/page.tsx": {
-    "mtime": 1790099139.1683648,
-    "ast_hash": "2a18eed97abe9a82a4ee1f48226d067b",
+    "mtime": 1785500077.4085379,
+    "ast_hash": "0c8464af07f1c9de8cf388cc52df2967",
     "semantic_hash": ""
   },
   "app/(auth)/designs/[id]/page.tsx": {
@@ -310,13 +310,13 @@
     "semantic_hash": ""
   },
   "app/(auth)/designs/actions.ts": {
-    "mtime": 1790099112.6626115,
-    "ast_hash": "89fb181b72c41fb2d9523a21e43063b7",
+    "mtime": 1788326417.1769247,
+    "ast_hash": "5d622f5ae5d4803a2429453277a3b696",
     "semantic_hash": ""
   },
   "app/(auth)/designs/new/design-form.tsx": {
-    "mtime": 1790099119.0844324,
-    "ast_hash": "16391654a51f279a59952113cee34227",
+    "mtime": 1785499963.1970677,
+    "ast_hash": "70d46362f45a86e0b17b62a6708b017b",
     "semantic_hash": ""
   },
   "app/(auth)/designs/new/page.tsx": {
@@ -440,13 +440,13 @@
     "semantic_hash": ""
   },
   "app/(auth)/settings/business/actions.ts": {
-    "mtime": 1790099604.96818,
-    "ast_hash": "34470cf166cfcf20d6d58ecaff805c03",
+    "mtime": 1785412803.976986,
+    "ast_hash": "354d4918464c171b72889f00b48dca54",
     "semantic_hash": ""
   },
   "app/(auth)/settings/page.tsx": {
-    "mtime": 1790099620.3947892,
-    "ast_hash": "b9aea589d7f394d0a83a4513fd8d7dc0",
+    "mtime": 1785484909.4636264,
+    "ast_hash": "146c24592dab5f472bb14584b618dd7f",
     "semantic_hash": ""
   },
   "app/(auth)/settings/reminders/[id]/edit/page.tsx": {
@@ -625,18 +625,18 @@
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/actions.ts": {
-    "mtime": 1790099812.3674662,
-    "ast_hash": "5148c9ea1e449ae7e28b6828207416c5",
+    "mtime": 1788326577.5344288,
+    "ast_hash": "d60d8232f6c95f0ebc86a4b1c5e8ed1a",
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/new/order-wizard.tsx": {
-    "mtime": 1790099180.3202448,
-    "ast_hash": "1e4522aef4d46da4c8f3c9d985403ec1",
+    "mtime": 1785231055.0038195,
+    "ast_hash": "3c9d56fbd87a8c470e7002cdbe942c02",
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/new/page.tsx": {
-    "mtime": 1790099147.0288737,
-    "ast_hash": "17e8600c332073564fc3d2d80cc4e71d",
+    "mtime": 1782747148.29154,
+    "ast_hash": "8f6d96c67c826724bac2d589f7eb8357",
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/page.tsx": {
@@ -960,8 +960,8 @@
     "semantic_hash": ""
   },
   "components/size-color-manager.tsx": {
-    "mtime": 1790098878.8349264,
-    "ast_hash": "8874e10f8fe0179d2d2b43d78d843c81",
+    "mtime": 1783015296.0864885,
+    "ast_hash": "7ef343401b92ab64b54dbc6d3ffb1867",
     "semantic_hash": ""
   },
   "components/wa-toast.tsx": {
@@ -1035,13 +1035,13 @@
     "semantic_hash": "0a7af51daf991c84b03da5965f1c4232"
   },
   "lib/pdf/invoice-template.tsx": {
-    "mtime": 1790099592.7567272,
-    "ast_hash": "30a2ac93e70e7535296298acdf5087cc",
+    "mtime": 1787234887.0379577,
+    "ast_hash": "34d6e206a6123d215f9940baaee2e80b",
     "semantic_hash": ""
   },
   "lib/pdf/thermal-template.tsx": {
-    "mtime": 1790099679.1339076,
-    "ast_hash": "2ad8294c3166f9a59ef13b5ac5ec20ff",
+    "mtime": 1787234905.1184957,
+    "ast_hash": "16ef3d95b87cf2d03bb20ceaf71bdda5",
     "semantic_hash": ""
   },
   "lib/reminders.ts": {
@@ -1165,8 +1165,8 @@
     "semantic_hash": ""
   },
   "app/(auth)/settings/store-section.tsx": {
-    "mtime": 1790099614.5418987,
-    "ast_hash": "74610cef9c0f9870ec97a3a4e34785b6",
+    "mtime": 1785484914.9357073,
+    "ast_hash": "9b67a3fad1da6ecaf96c772e6e23636e",
     "semantic_hash": ""
   },
   "app/(auth)/stickers/page.tsx": {
@@ -1185,8 +1185,8 @@
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/[id]/order-details-panel.tsx": {
-    "mtime": 1790099792.8248844,
-    "ast_hash": "b9babd3308121ee796f626b3de5509f4",
+    "mtime": 1785304853.5022068,
+    "ast_hash": "b15d199fa79f3a401ae456880b028f64",
     "semantic_hash": ""
   },
   "app/(auth)/tailoring/new/fabric-combobox.tsx": {
@@ -1440,8 +1440,8 @@
     "semantic_hash": ""
   },
   "lib/pdf-generator.ts": {
-    "mtime": 1790099703.518014,
-    "ast_hash": "27a42f91cd16b9dd2394c65ef08ec376",
+    "mtime": 1786547010.996638,
+    "ast_hash": "da9e2b8e535cb4bd32b567a9c54962b7",
     "semantic_hash": ""
   },
   "lib/pdf/sticker-template.tsx": {
@@ -1687,21 +1687,6 @@
   "lib/stock-variant.ts": {
     "mtime": 1787234127.7741864,
     "ast_hash": "d1c73c94658b2de007ff32d25068bd0c",
-    "semantic_hash": ""
-  },
-  "app/(auth)/dashboard/todays-payments-button.tsx": {
-    "mtime": 1790100254.9079175,
-    "ast_hash": "0366b42593f5d9493ef0f1bba8ac1292",
-    "semantic_hash": ""
-  },
-  "app/api/tailoring/measurement-versions/[id]/thermal/route.ts": {
-    "mtime": 1790099713.4556916,
-    "ast_hash": "647d3392695f58413e1c496685477eb2",
-    "semantic_hash": ""
-  },
-  "db/migrations/017_design_price_order_qty_tailor_notes_terms.sql": {
-    "mtime": 1790099092.6705225,
-    "ast_hash": "505150c8000759314406f075326054bf",
     "semantic_hash": ""
   }
 }

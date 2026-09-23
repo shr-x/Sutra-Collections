@@ -753,17 +753,18 @@ async function syncInvoicePaymentToTailoringOrder(
 
 // ─── Record Payment ───────────────────────────────────────────────────────────
 
-export async function recordPaymentAction(
+// Core payment-application logic shared by recordPaymentAction (the normal,
+// customer-notifying "Collect Payment" flow) and clearCustomerDuesAction (the
+// silent internal correction from Outstanding Dues — see opts.skipNotify).
+// Returns the WhatsApp send outcome so recordPaymentAction can still build its
+// redirect query string; clearCustomerDuesAction ignores it.
+async function applyInvoicePayment(
   id: string,
-  formData: FormData
-): Promise<void> {
-  const session = await requireRole('admin', 'staff');
-
-  const amount = parseFloat(formData.get('amount') as string);
-  const mode = formData.get('payment_mode') as string;
-
-  if (!amount || amount <= 0) return;
-
+  amount: number,
+  mode: string,
+  session: { userId: string },
+  opts?: { skipNotify?: boolean }
+): Promise<{ waResult: 'sent' | 'failed' | 'skip'; waError: string; invoiceNumber: string }> {
   const invRes = await query<{
     grand_total: string; amount_paid: string; invoice_number: string;
     customer_id: string | null; customer_phone: string | null; customer_name: string | null;
@@ -777,7 +778,7 @@ export async function recordPaymentAction(
      WHERE i.id=$1`,
     [id]
   );
-  if (!invRes.rows[0]) return;
+  if (!invRes.rows[0]) return { waResult: 'skip', waError: '', invoiceNumber: '' };
 
   const grandTotal = Number(invRes.rows[0].grand_total);
   const newPaid = Number(invRes.rows[0].amount_paid) + amount;
@@ -816,11 +817,23 @@ export async function recordPaymentAction(
   // Keep the Production Board (and the order's own detail page) in sync —
   // without this, a payment recorded here left both showing the stale
   // pre-payment balance until some unrelated action forced a refetch.
+  // sendFullyPaidNotification (below) sends its own "sutra_payment_received"
+  // WhatsApp with the A4 GST invoice attached — the canonical single message
+  // for a tailoring order crossing into fully-paid. When it fires, the
+  // generic thermal-receipt send further down MUST be skipped for this same
+  // payment event, or the customer gets two "payment received" messages
+  // back-to-back (one A4, one thermal) for the same payment.
+  let firedFullyPaidNotification = false;
+
   if (tailoringSync) {
     revalidatePath('/tailoring/production');
     revalidatePath('/tailoring');
     revalidatePath(`/tailoring/${tailoringSync.orderId}`);
-    if (tailoringSync.justBecameFullyPaid) {
+    // Silent internal correction (clearCustomerDuesAction): this order becoming
+    // fully paid here is not a real customer payment event, so never fire the
+    // customer-facing "payment received" WhatsApp for it either.
+    if (tailoringSync.justBecameFullyPaid && !opts?.skipNotify) {
+      firedFullyPaidNotification = true;
       sendFullyPaidNotification(tailoringSync.orderId, amount).catch((e) => console.error('[recordPaymentAction] fully-paid WA failed:', e));
     }
   }
@@ -840,40 +853,88 @@ export async function recordPaymentAction(
     }
   }
 
-  // Generate receipt PDF then send sutra_payment_received
-  // {{1}}=name, {{2}}=amount, {{3}}=invoice# (template body already reads "Rs.{{2}}" — send the bare number)
-  const receiptPath = await generateThermalInvoicePdf(id).catch(() => null);
-
   let waResult: 'sent' | 'failed' | 'skip' = 'skip';
   let waError = '';
-  const phone = invRes.rows[0]?.customer_phone;
-  if (phone) {
-    try {
-      const waSent = await sendWhatsAppTemplate(
-        phone,
-        'sutra_payment_received',
-        [
-          invRes.rows[0].customer_name ?? 'Customer',
-          amount.toFixed(2),
-          invRes.rows[0].invoice_number,
-        ],
-        receiptPath
-      );
-      waResult = waSent.success ? 'sent' : 'failed';
-      if (!waSent.success) {
-        waError = waSent.error ?? 'unknown error';
+
+  // Silent internal correction (Outstanding Dues > clear due): never send the
+  // customer-facing "payment received" WhatsApp/receipt for this — it isn't a
+  // real payment event from the customer's point of view. Also skipped when
+  // sendFullyPaidNotification already sent the canonical message above (a
+  // tailoring order crossing into fully-paid) — never both for one payment.
+  if (!opts?.skipNotify && !firedFullyPaidNotification) {
+    // Generate receipt PDF then send sutra_payment_received
+    // {{1}}=name, {{2}}=amount, {{3}}=invoice# (template body already reads "Rs.{{2}}" — send the bare number)
+    const receiptPath = await generateThermalInvoicePdf(id).catch(() => null);
+
+    const phone = invRes.rows[0]?.customer_phone;
+    if (phone) {
+      try {
+        const waSent = await sendWhatsAppTemplate(
+          phone,
+          'sutra_payment_received',
+          [
+            invRes.rows[0].customer_name ?? 'Customer',
+            amount.toFixed(2),
+            invRes.rows[0].invoice_number,
+          ],
+          receiptPath
+        );
+        waResult = waSent.success ? 'sent' : 'failed';
+        if (!waSent.success) {
+          waError = waSent.error ?? 'unknown error';
+        }
+      } catch (err) {
+        waResult = 'failed';
+        waError = (err as Error).message ?? 'unknown error';
       }
-    } catch (err) {
-      waResult = 'failed';
-      waError = (err as Error).message ?? 'unknown error';
     }
   }
+
+  return { waResult, waError, invoiceNumber: invRes.rows[0].invoice_number };
+}
+
+export async function recordPaymentAction(
+  id: string,
+  formData: FormData
+): Promise<void> {
+  const session = await requireRole('admin', 'staff');
+
+  const amount = parseFloat(formData.get('amount') as string);
+  const mode = formData.get('payment_mode') as string;
+
+  if (!amount || amount <= 0) return;
+
+  const { waResult, waError } = await applyInvoicePayment(id, amount, mode, session);
 
   const waQuery = waResult === 'failed' && waError
     ? `?wa=failed&reason=${encodeURIComponent(waError)}`
     : `?wa=${waResult}`;
   const returnTo = (formData.get('return_to') as string) || `/billing/invoices/${id}${waQuery}`;
   redirect(returnTo);
+}
+
+// ─── Outstanding Dues: silently clear a customer's dues ────────────────────
+// Marks every open invoice for this customer as fully paid via the same
+// payment pipeline as recordPaymentAction (accounting posting, tailoring
+// sync, loyalty earn) but with skipNotify — no "payment received" WhatsApp,
+// since this is an internal correction, not a real customer payment event.
+export async function clearCustomerDuesAction(customerId: string, _formData: FormData): Promise<void> {
+  const session = await requireRole('admin', 'accountant');
+
+  const duesRes = await query<{ id: string; balance: string; payment_mode: string | null }>(
+    `SELECT id, (grand_total - amount_paid)::text AS balance, payment_mode
+     FROM invoices
+     WHERE customer_id=$1 AND status IN ('issued','partially_paid') AND grand_total > amount_paid`,
+    [customerId]
+  );
+
+  for (const row of duesRes.rows) {
+    const balance = Number(row.balance);
+    if (balance <= 0) continue;
+    await applyInvoicePayment(row.id, balance, row.payment_mode ?? 'cash', session, { skipNotify: true });
+  }
+
+  revalidatePath('/customers/dues');
 }
 
 // ─── Send WhatsApp Reminder ───────────────────────────────────────────────────

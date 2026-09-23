@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import TourTrigger from '@/components/tour/tour-trigger';
+import TodaysPaymentsButton from './todays-payments-button';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -20,22 +21,27 @@ export default async function DashboardPage() {
 
   const [
     todaySalesRes,
-    todayInvoiceRes,
+    todaySalesBySourceRes,
     outstandingRes,
     lowStockRes,
     tailoringRes,
     recentInvoicesRes,
     lowStockItemsRes,
+    retailPaymentsRes,
+    duePaymentsRes,
+    tailoringPaymentsRes,
   ] = await Promise.all([
-    // Today's total sales amount
+    // Today's total sales amount (all sources combined)
     pool.query<{ total: string }>(
       `SELECT COALESCE(SUM(grand_total),0)::numeric AS total
        FROM invoices WHERE invoice_date=$1 AND status NOT IN ('draft','cancelled')`,
       [today]
     ),
-    // Today's invoice count
-    pool.query<{ cnt: string }>(
-      `SELECT COUNT(*)::text AS cnt FROM invoices WHERE invoice_date=$1 AND status != 'draft'`,
+    // Today's sales split by source — 'pos' (retail) vs 'tailoring'
+    pool.query<{ source: string; total: string }>(
+      `SELECT source, COALESCE(SUM(grand_total),0)::numeric AS total
+       FROM invoices WHERE invoice_date=$1 AND status NOT IN ('draft','cancelled')
+       GROUP BY source`,
       [today]
     ),
     // Outstanding dues
@@ -89,10 +95,66 @@ export default async function DashboardPage() {
        LIMIT 8`,
       [lowStockThreshold]
     ),
+    // Today's Payments bucket 1 — retail (POS) invoices created & paid today.
+    // amount_paid here is the amount collected at sale time (walk-in checkout).
+    pool.query<{ id: string; label: string; amount: string; mode: string | null; ts: string; customer_name: string | null }>(
+      `SELECT i.id, i.invoice_number AS label, i.amount_paid::text AS amount,
+              i.payment_mode AS mode, i.created_at::text AS ts, c.name AS customer_name
+       FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
+       WHERE i.invoice_date = $1 AND i.amount_paid > 0 AND i.source = 'pos'
+         AND i.status NOT IN ('draft','cancelled')`,
+      [today]
+    ),
+    // Today's Payments bucket 2 — payments recorded today against invoices
+    // NOT created today (dues cleared / later top-ups), via recordPaymentAction
+    // or clearCustomerDuesAction — both log an audit_log 'payment' entry.
+    // Excluding invoice_date=today avoids double-counting bucket 1.
+    pool.query<{ id: string; label: string; amount: string; mode: string | null; ts: string; customer_name: string | null }>(
+      `SELECT a.id, i.invoice_number AS label,
+              (a.new_value::jsonb->>'amount')::numeric::text AS amount,
+              (a.new_value::jsonb->>'mode') AS mode,
+              a.created_at::text AS ts, c.name AS customer_name
+       FROM audit_log a
+       JOIN invoices i ON i.id = a.entity_id
+       LEFT JOIN customers c ON c.id = i.customer_id
+       WHERE a.action = 'payment' AND a.entity_type = 'invoice'
+         AND a.created_at::date = $1 AND i.invoice_date <> $1`,
+      [today]
+    ),
+    // Today's Payments bucket 3 — tailoring payments (advance, balance,
+    // dues cleared), from the tailoring_payments event ledger.
+    pool.query<{ id: string; label: string; amount: string; mode: string | null; ts: string; customer_name: string | null }>(
+      `SELECT tp.id, o.order_number AS label, tp.amount::text AS amount,
+              tp.payment_mode AS mode, tp.recorded_at::text AS ts, c.name AS customer_name
+       FROM tailoring_payments tp
+       JOIN tailoring_orders o ON o.id = tp.tailoring_order_id
+       JOIN customers c ON c.id = o.customer_id
+       WHERE tp.recorded_at::date = $1`,
+      [today]
+    ),
   ]);
 
+  const todaysPayments = [
+    ...retailPaymentsRes.rows.map((r) => ({ ...r, kind: 'Retail Sale' as const })),
+    ...duePaymentsRes.rows.map((r) => ({ ...r, kind: 'Due Payment' as const })),
+    ...tailoringPaymentsRes.rows.map((r) => ({ ...r, kind: 'Tailoring Payment' as const })),
+  ]
+    .map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      label: r.label,
+      customerName: r.customer_name,
+      amount: Number(r.amount),
+      mode: r.mode,
+      time: r.ts,
+    }))
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+  const todaysPaymentsTotal = todaysPayments.reduce((sum, p) => sum + p.amount, 0);
+
   const todaySales      = Number(todaySalesRes.rows[0]?.total ?? 0);
-  const todayInvoices   = Number(todayInvoiceRes.rows[0]?.cnt ?? 0);
+  const todayRetailSales    = Number(todaySalesBySourceRes.rows.find((r) => r.source === 'pos')?.total ?? 0);
+  const todayTailoringSales = Number(todaySalesBySourceRes.rows.find((r) => r.source === 'tailoring')?.total ?? 0);
   const outstanding     = Number(outstandingRes.rows[0]?.total ?? 0);
   const lowStockCount   = Number(lowStockRes.rows[0]?.cnt ?? 0);
   const tailoringActive = Number(tailoringRes.rows[0]?.cnt ?? 0);
@@ -107,11 +169,12 @@ export default async function DashboardPage() {
   };
 
   const kpis = [
-    { label: "Today's Sales",    value: formatInr(todaySales),   color: 'text-green-700',  grad: 'from-green-50 to-white',  ring: 'ring-green-100',  icon: '₹',  iconBg: 'bg-green-100 text-green-700' },
-    { label: "Today's Invoices", value: String(todayInvoices),   color: 'text-blue-700',   grad: 'from-blue-50 to-white',   ring: 'ring-blue-100',   icon: '🧾', iconBg: 'bg-blue-100 text-blue-700' },
-    { label: 'Outstanding Dues', value: formatInr(outstanding),  color: 'text-red-700',    grad: 'from-red-50 to-white',    ring: 'ring-red-100',    icon: '⏳', iconBg: 'bg-red-100 text-red-700' },
-    { label: 'Low Stock Items',  value: String(lowStockCount),   color: 'text-amber-700',  grad: 'from-amber-50 to-white',  ring: 'ring-amber-100',  icon: '📦', iconBg: 'bg-amber-100 text-amber-700' },
-    { label: 'Active Tailoring', value: String(tailoringActive), color: 'text-purple-700', grad: 'from-purple-50 to-white', ring: 'ring-purple-100', icon: '✂️', iconBg: 'bg-purple-100 text-purple-700' },
+    { label: "Today's Sales",          value: formatInr(todaySales),          color: 'text-green-700',  grad: 'from-green-50 to-white',  ring: 'ring-green-100',  icon: '₹',  iconBg: 'bg-green-100 text-green-700' },
+    { label: "Today's Retail Sales",   value: formatInr(todayRetailSales),    color: 'text-blue-700',   grad: 'from-blue-50 to-white',   ring: 'ring-blue-100',   icon: '🛍️', iconBg: 'bg-blue-100 text-blue-700' },
+    { label: "Today's Tailoring Sales",value: formatInr(todayTailoringSales), color: 'text-indigo-700', grad: 'from-indigo-50 to-white', ring: 'ring-indigo-100', icon: '✂️', iconBg: 'bg-indigo-100 text-indigo-700' },
+    { label: 'Outstanding Dues',       value: formatInr(outstanding),         color: 'text-red-700',    grad: 'from-red-50 to-white',    ring: 'ring-red-100',    icon: '⏳', iconBg: 'bg-red-100 text-red-700' },
+    { label: 'Low Stock Items',        value: String(lowStockCount),          color: 'text-amber-700',  grad: 'from-amber-50 to-white',  ring: 'ring-amber-100',  icon: '📦', iconBg: 'bg-amber-100 text-amber-700' },
+    { label: 'Active Tailoring',       value: String(tailoringActive),        color: 'text-purple-700', grad: 'from-purple-50 to-white', ring: 'ring-purple-100', icon: '🧵', iconBg: 'bg-purple-100 text-purple-700' },
   ];
 
   return (
@@ -122,7 +185,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* KPI cards */}
-      <div data-tour="dashboard-stats" className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+      <div data-tour="dashboard-stats" className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
         {kpis.map((k) => (
           <div
             key={k.label}
@@ -157,6 +220,7 @@ export default async function DashboardPage() {
               {a.label}
             </Link>
           ))}
+          <TodaysPaymentsButton payments={todaysPayments} total={todaysPaymentsTotal} />
         </div>
       </div>
 

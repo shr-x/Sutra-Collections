@@ -28,7 +28,8 @@ export async function saveBusinessSettingsAction(
     loyalty_earn_rate:     (formData.get('loyalty_earn_rate') as string | null) ?? '1',
     loyalty_redemption_rate: (formData.get('loyalty_redemption_rate') as string | null) ?? '10',
     shop_anniversary_date: (formData.get('shop_anniversary_date') as string | null) ?? '',
-    terms_and_conditions: (formData.get('terms_and_conditions') as string | null) ?? '',
+    retail_terms_and_conditions: (formData.get('retail_terms_and_conditions') as string | null) ?? '',
+    tailoring_terms_and_conditions: (formData.get('tailoring_terms_and_conditions') as string | null) ?? '',
   };
 
   // Handle logo upload
