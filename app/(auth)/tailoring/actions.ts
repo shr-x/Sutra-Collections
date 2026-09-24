@@ -141,6 +141,68 @@ async function sendDeliveredWhatsApp(orderId: string): Promise<void> {
   }
 }
 
+// Sends the "credit due" notice, honoring batch holds exactly like
+// sendDeliveredWhatsApp — called from BOTH markDeliveredPaidAction and
+// markDeliveredOnCreditAction (either one could be the last sibling in a
+// batch to reach 'delivered'), so whichever call actually completes the
+// batch is the one that fires it. Only orders marked delivered-on-credit
+// have credit_amount > 0, so a batch where every sibling was paid in full
+// simply has nothing to sum and never sends anything. When multiple
+// siblings went to credit, ONE message reports their COMBINED total —
+// never one per order.
+async function sendCreditDueWhatsApp(orderId: string): Promise<void> {
+  try {
+    const { rows } = await query<{
+      phone: string | null; name: string; order_number: string; group_number: string | null;
+      batch_id: string | null; credit_amount: string;
+    }>(
+      `SELECT c.phone, c.name, o.order_number, o.group_number, o.batch_id, o.credit_amount::text
+       FROM tailoring_orders o
+       JOIN customers c ON c.id = o.customer_id
+       WHERE o.id=$1`,
+      [orderId]
+    );
+    const r = rows[0];
+    if (!r?.phone) return;
+
+    const displayRef = r.group_number ?? r.order_number;
+
+    if (!r.batch_id) {
+      const ownAmount = Number(r.credit_amount);
+      if (ownAmount <= 0) return;
+      const pdfPath = await generateTailoringCreditDuePdf(orderId).catch(() => null);
+      await sendWhatsAppTemplate(r.phone, 'sutra_invoice_notification', [
+        r.name, `${displayRef} (Credit Due)`, ownAmount.toFixed(2),
+      ], pdfPath);
+      return;
+    }
+
+    const allDone = await isBatchFullyAt(r.batch_id, 'delivered', []);
+    if (!allDone) {
+      console.log(`[sendCreditDueWhatsApp] Batch ${r.batch_id}: holding — siblings not yet delivered`);
+      return;
+    }
+
+    const totalRes = await query<{ total: string }>(
+      `SELECT COALESCE(SUM(credit_amount), 0)::text AS total FROM tailoring_orders WHERE batch_id=$1 AND credit_amount > 0`,
+      [r.batch_id]
+    );
+    const combinedTotal = Math.round(Number(totalRes.rows[0]?.total ?? 0) * 100) / 100;
+    if (combinedTotal <= 0) return; // no sibling in this batch went to credit
+
+    const first = await batchFirstOrder(r.batch_id);
+    const batchDisplayRef = first?.group_number ?? first?.order_number ?? displayRef;
+    // Best-effort representative document — attaches whichever order's credit
+    // notice just finalized the batch; the message text carries the combined total.
+    const pdfPath = await generateTailoringCreditDuePdf(orderId).catch(() => null);
+    await sendWhatsAppTemplate(r.phone, 'sutra_invoice_notification', [
+      r.name, `${batchDisplayRef} (Credit Due)`, combinedTotal.toFixed(2),
+    ], pdfPath);
+  } catch (e) {
+    console.error('[sendCreditDueWhatsApp] failed:', e);
+  }
+}
+
 // Sends the ready-for-pickup notification, honoring batch holds. Branches
 // between sutra_order_ready (first time) and sutra_order_alteration_completed
 // (if this order has any alteration history) — same threshold-gating as
@@ -639,6 +701,11 @@ export async function markDeliveredPaidAction(orderId: string): Promise<ActionRe
   revalidatePath('/tailoring');
 
   sendDeliveredWhatsApp(orderId).catch(() => {});
+  // This order itself was paid in full (no credit), but it may be the last
+  // sibling in a batch where an EARLIER order was marked on-credit — that
+  // credit notice is held until the whole batch is delivered, so it must be
+  // re-checked here too, not only from markDeliveredOnCreditAction.
+  sendCreditDueWhatsApp(orderId).catch(() => {});
 
   return { success: true };
 }
@@ -691,21 +758,10 @@ export async function markDeliveredOnCreditAction(orderId: string): Promise<Acti
   // template (see generateTailoringCreditDuePdf) but is NOT a real accounting
   // credit note, and reuses the generic invoice-notification template since
   // sutra_refund_issued is specifically worded for refunds (the opposite
-  // direction — money owed to the customer, not by them).
-  if (balance > 0) {
-    Promise.resolve().then(async () => {
-      const custRes = await query<{ name: string; phone: string | null }>(
-        `SELECT name, phone FROM customers WHERE id=$1`, [order.customer_id]
-      );
-      const cust = custRes.rows[0];
-      if (!cust?.phone) return;
-      const pdfPath = await generateTailoringCreditDuePdf(orderId).catch(() => null);
-      const displayRef = order.group_number ?? order.order_number;
-      sendWhatsAppTemplate(cust.phone, 'sutra_invoice_notification', [
-        cust.name, `${displayRef} (Credit Due)`, balance.toFixed(2),
-      ], pdfPath).catch((e) => console.error('[markDeliveredOnCreditAction] credit-due WhatsApp failed:', e));
-    });
-  }
+  // direction — money owed to the customer, not by them). Batch-aware: see
+  // sendCreditDueWhatsApp — holds until every sibling in the batch has been
+  // delivered, then sends ONE message with the combined credit total.
+  sendCreditDueWhatsApp(orderId).catch((e) => console.error('[markDeliveredOnCreditAction] credit-due WhatsApp failed:', e));
 
   return { success: true };
 }

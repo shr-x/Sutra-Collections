@@ -1543,7 +1543,7 @@
       "label": "recordPaymentAction()",
       "file_type": "code",
       "source_file": "app/(auth)/billing/invoices/actions.ts",
-      "source_location": "L896",
+      "source_location": "L882",
       "_origin": "ast",
       "id": "invoices_actions_recordpaymentaction",
       "community": 44,
@@ -1553,7 +1553,7 @@
       "label": "clearCustomerDuesAction()",
       "file_type": "code",
       "source_file": "app/(auth)/billing/invoices/actions.ts",
-      "source_location": "L921",
+      "source_location": "L907",
       "_origin": "ast",
       "id": "invoices_actions_clearcustomerduesaction",
       "community": 45,
@@ -1563,7 +1563,7 @@
       "label": "sendReminderAction()",
       "file_type": "code",
       "source_file": "app/(auth)/billing/invoices/actions.ts",
-      "source_location": "L942",
+      "source_location": "L928",
       "_origin": "ast",
       "id": "invoices_actions_sendreminderaction",
       "community": 58,
@@ -1573,7 +1573,7 @@
       "label": "applyStoreCreditAction()",
       "file_type": "code",
       "source_file": "app/(auth)/billing/invoices/actions.ts",
-      "source_location": "L1031",
+      "source_location": "L1017",
       "_origin": "ast",
       "id": "invoices_actions_applystorecreditaction",
       "community": 35,
@@ -1583,7 +1583,7 @@
       "label": "retryInvoiceWaAction()",
       "file_type": "code",
       "source_file": "app/(auth)/billing/invoices/actions.ts",
-      "source_location": "L1107",
+      "source_location": "L1093",
       "_origin": "ast",
       "id": "invoices_actions_retryinvoicewaaction",
       "community": 35,
@@ -1593,7 +1593,7 @@
       "label": "DraftLineSchema",
       "file_type": "code",
       "source_file": "app/(auth)/billing/invoices/actions.ts",
-      "source_location": "L1157",
+      "source_location": "L1143",
       "_origin": "ast",
       "id": "invoices_actions_draftlineschema",
       "community": 44,
@@ -1603,7 +1603,7 @@
       "label": "DraftBillSchema",
       "file_type": "code",
       "source_file": "app/(auth)/billing/invoices/actions.ts",
-      "source_location": "L1175",
+      "source_location": "L1161",
       "_origin": "ast",
       "id": "invoices_actions_draftbillschema",
       "community": 44,
@@ -1613,7 +1613,7 @@
       "label": "saveDraftBillAction()",
       "file_type": "code",
       "source_file": "app/(auth)/billing/invoices/actions.ts",
-      "source_location": "L1193",
+      "source_location": "L1179",
       "_origin": "ast",
       "id": "invoices_actions_savedraftbillaction",
       "community": 0,
@@ -1623,7 +1623,7 @@
       "label": "DraftBillSummary",
       "file_type": "code",
       "source_file": "app/(auth)/billing/invoices/actions.ts",
-      "source_location": "L1228",
+      "source_location": "L1214",
       "_origin": "ast",
       "id": "invoices_actions_draftbillsummary",
       "community": 0,
@@ -1633,7 +1633,7 @@
       "label": "listDraftBillsAction()",
       "file_type": "code",
       "source_file": "app/(auth)/billing/invoices/actions.ts",
-      "source_location": "L1237",
+      "source_location": "L1223",
       "_origin": "ast",
       "id": "invoices_actions_listdraftbillsaction",
       "community": 0,
@@ -1643,7 +1643,7 @@
       "label": "recallDraftBillAction()",
       "file_type": "code",
       "source_file": "app/(auth)/billing/invoices/actions.ts",
-      "source_location": "L1262",
+      "source_location": "L1248",
       "_origin": "ast",
       "id": "invoices_actions_recalldraftbillaction",
       "community": 0,
@@ -3936,7 +3936,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "export_page",
-      "community": 7,
+      "community": 84,
       "norm_label": "page.tsx"
     },
     {
@@ -3946,7 +3946,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "export_page_metadata",
-      "community": 7,
+      "community": 84,
       "norm_label": "metadata"
     },
     {
@@ -3956,7 +3956,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "export_page_exports",
-      "community": 7,
+      "community": 84,
       "norm_label": "exports"
     },
     {
@@ -3966,7 +3966,7 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "export_page_dataexportpage",
-      "community": 7,
+      "community": 84,
       "norm_label": "dataexportpage()"
     },
     {
@@ -7496,7 +7496,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "app_api_accounting_hsn_pdf_route_ts_pdf_route",
-      "community": 7,
+      "community": 79,
       "norm_label": "route.ts"
     },
     {
@@ -7506,7 +7506,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "app_api_accounting_hsn_pdf_route_ts_pdf_route_s",
-      "community": 7,
+      "community": 79,
       "norm_label": "s"
     },
     {
@@ -7516,7 +7516,7 @@
       "source_location": "L36",
       "_origin": "ast",
       "id": "app_api_accounting_hsn_pdf_route_ts_pdf_route_fmtinr",
-      "community": 7,
+      "community": 79,
       "norm_label": "fmtinr()"
     },
     {
@@ -7526,7 +7526,7 @@
       "source_location": "L40",
       "_origin": "ast",
       "id": "app_api_accounting_hsn_pdf_route_ts_pdf_route_get",
-      "community": 7,
+      "community": 79,
       "norm_label": "get()"
     },
     {
@@ -7666,7 +7666,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "attendance_route",
-      "community": 79,
+      "community": 7,
       "norm_label": "route.ts"
     },
     {
@@ -7676,7 +7676,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "attendance_route_valid_status",
-      "community": 79,
+      "community": 7,
       "norm_label": "valid_status"
     },
     {
@@ -7686,7 +7686,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "attendance_route_attendancestatus",
-      "community": 79,
+      "community": 7,
       "norm_label": "attendancestatus"
     },
     {
@@ -7696,7 +7696,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "attendance_route_post",
-      "community": 79,
+      "community": 7,
       "norm_label": "post()"
     },
     {
@@ -7706,7 +7706,7 @@
       "source_location": "L39",
       "_origin": "ast",
       "id": "attendance_route_delete",
-      "community": 79,
+      "community": 7,
       "norm_label": "delete()"
     },
     {
@@ -11732,7 +11732,7 @@
       "source_location": "L99",
       "_origin": "ast",
       "id": "lib_low_stock_checklowstockforitems",
-      "community": 10,
+      "community": 44,
       "norm_label": "checklowstockforitems()"
     },
     {
@@ -11909,7 +11909,7 @@
       "label": "generateTailoringOrderConfirmationPdf()",
       "file_type": "code",
       "source_file": "lib/pdf-generator.ts",
-      "source_location": "L255",
+      "source_location": "L248",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatetailoringorderconfirmationpdf",
       "community": 3,
@@ -11919,7 +11919,7 @@
       "label": "generateTailoringCreditDuePdf()",
       "file_type": "code",
       "source_file": "lib/pdf-generator.ts",
-      "source_location": "L313",
+      "source_location": "L306",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatetailoringcreditduepdf",
       "community": 3,
@@ -11929,7 +11929,7 @@
       "label": "generateThermalInvoicePdf()",
       "file_type": "code",
       "source_file": "lib/pdf-generator.ts",
-      "source_location": "L374",
+      "source_location": "L367",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatethermalinvoicepdf",
       "community": 44,
@@ -11939,7 +11939,7 @@
       "label": "generateCreditNotePdf()",
       "file_type": "code",
       "source_file": "lib/pdf-generator.ts",
-      "source_location": "L465",
+      "source_location": "L458",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatecreditnotepdf",
       "community": 3,
@@ -11949,7 +11949,7 @@
       "label": "generateDebitNotePdf()",
       "file_type": "code",
       "source_file": "lib/pdf-generator.ts",
-      "source_location": "L533",
+      "source_location": "L526",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatedebitnotepdf",
       "community": 3,
@@ -11959,7 +11959,7 @@
       "label": "getTailoringOrderData()",
       "file_type": "code",
       "source_file": "lib/pdf-generator.ts",
-      "source_location": "L600",
+      "source_location": "L593",
       "_origin": "ast",
       "id": "lib_pdf_generator_gettailoringorderdata",
       "community": 3,
@@ -11969,7 +11969,7 @@
       "label": "generateTailoringCustomerPdf()",
       "file_type": "code",
       "source_file": "lib/pdf-generator.ts",
-      "source_location": "L642",
+      "source_location": "L635",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatetailoringcustomerpdf",
       "community": 3,
@@ -11979,7 +11979,7 @@
       "label": "generateTailoringTailorPdf()",
       "file_type": "code",
       "source_file": "lib/pdf-generator.ts",
-      "source_location": "L695",
+      "source_location": "L688",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatetailoringtailorpdf",
       "community": 3,
@@ -11989,7 +11989,7 @@
       "label": "generateAlterationTailorPdf()",
       "file_type": "code",
       "source_file": "lib/pdf-generator.ts",
-      "source_location": "L745",
+      "source_location": "L737",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatealterationtailorpdf",
       "community": 3,
@@ -11999,7 +11999,7 @@
       "label": "generateBatchTailoringPdf()",
       "file_type": "code",
       "source_file": "lib/pdf-generator.ts",
-      "source_location": "L822",
+      "source_location": "L814",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatebatchtailoringpdf",
       "community": 3,
@@ -12009,7 +12009,7 @@
       "label": "generateMeasurementThermalPdf()",
       "file_type": "code",
       "source_file": "lib/pdf-generator.ts",
-      "source_location": "L838",
+      "source_location": "L830",
       "_origin": "ast",
       "id": "lib_pdf_generator_generatemeasurementthermalpdf",
       "community": 3,
@@ -12109,7 +12109,7 @@
       "label": "PdfInvoiceData",
       "file_type": "code",
       "source_file": "lib/pdf/invoice-template.tsx",
-      "source_location": "L238",
+      "source_location": "L235",
       "_origin": "ast",
       "id": "pdf_invoice_template_pdfinvoicedata",
       "community": 63,
@@ -12119,7 +12119,7 @@
       "label": "InvoiceDoc()",
       "file_type": "code",
       "source_file": "lib/pdf/invoice-template.tsx",
-      "source_location": "L285",
+      "source_location": "L282",
       "_origin": "ast",
       "id": "pdf_invoice_template_invoicedoc",
       "community": 63,
@@ -12129,7 +12129,7 @@
       "label": "renderInvoicePdf()",
       "file_type": "code",
       "source_file": "lib/pdf/invoice-template.tsx",
-      "source_location": "L710",
+      "source_location": "L706",
       "_origin": "ast",
       "id": "pdf_invoice_template_renderinvoicepdf",
       "community": 63,
@@ -12892,7 +12892,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "id": "lib_whatsapp_cansendmarketing",
-      "community": 10,
+      "community": 57,
       "norm_label": "cansendmarketing()"
     },
     {
@@ -19966,9 +19966,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L761",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions",
-      "target": "invoices_actions_applyinvoicepayment"
+      "target": "invoices_actions_applyinvoicepayment",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -19996,9 +19996,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L907",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions",
-      "target": "invoices_actions_clearcustomerduesaction"
+      "target": "invoices_actions_clearcustomerduesaction",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -20894,9 +20894,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L807",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_applyinvoicepayment",
-      "target": "invoices_actions_syncinvoicepaymenttotailoringorder"
+      "target": "invoices_actions_syncinvoicepaymenttotailoringorder",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -20916,9 +20916,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L798",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_applyinvoicepayment",
-      "target": "lib_accounting_postpaymentreceived"
+      "target": "lib_accounting_postpaymentreceived",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -20927,9 +20927,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L815",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_applyinvoicepayment",
-      "target": "lib_audit_logaudit"
+      "target": "lib_audit_logaudit",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -20938,9 +20938,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L788",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_applyinvoicepayment",
-      "target": "lib_db"
+      "target": "lib_db",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -20949,9 +20949,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L832",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_applyinvoicepayment",
-      "target": "lib_db_query"
+      "target": "lib_db_query",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -20960,9 +20960,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L840",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_applyinvoicepayment",
-      "target": "lib_loyalty_earnpoints"
+      "target": "lib_loyalty_earnpoints",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -20971,9 +20971,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L836",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_applyinvoicepayment",
-      "target": "lib_loyalty_getloyaltyrates"
+      "target": "lib_loyalty_getloyaltyrates",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -20982,9 +20982,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L853",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_applyinvoicepayment",
-      "target": "lib_pdf_generator_generatethermalinvoicepdf"
+      "target": "lib_pdf_generator_generatethermalinvoicepdf",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -20993,9 +20993,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L858",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_applyinvoicepayment",
-      "target": "lib_whatsapp_sendwhatsapptemplate"
+      "target": "lib_whatsapp_sendwhatsapptemplate",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -21004,9 +21004,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L825",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_applyinvoicepayment",
-      "target": "tailoring_actions_sendfullypaidnotification"
+      "target": "tailoring_actions_sendfullypaidnotification",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -21015,9 +21015,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L920",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_clearcustomerduesaction",
-      "target": "invoices_actions_applyinvoicepayment"
+      "target": "invoices_actions_applyinvoicepayment",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -21026,9 +21026,9 @@
       "source_file": "app/(auth)/billing/invoices/actions.ts",
       "source_location": "L893",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "invoices_actions_recordpaymentaction",
-      "target": "invoices_actions_applyinvoicepayment"
+      "target": "invoices_actions_applyinvoicepayment",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -21169,9 +21169,9 @@
       "source_file": "app/(auth)/customers/dues/page.tsx",
       "source_location": "L6",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "dues_page",
-      "target": "invoices_actions_clearcustomerduesaction"
+      "target": "invoices_actions_clearcustomerduesaction",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -24913,9 +24913,9 @@
       "source_file": "app/(auth)/customers/dues/page.tsx",
       "source_location": "L8",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "dues_page",
-      "target": "components_confirm_form"
+      "target": "components_confirm_form",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -24924,9 +24924,9 @@
       "source_file": "app/(auth)/customers/dues/page.tsx",
       "source_location": "L8",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "dues_page",
-      "target": "components_confirm_form_confirmform"
+      "target": "components_confirm_form_confirmform",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -25459,9 +25459,9 @@
       "source_file": "app/(auth)/dashboard/page.tsx",
       "source_location": "L7",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "dashboard_page",
-      "target": "dashboard_todays_payments_button"
+      "target": "dashboard_todays_payments_button",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -25568,9 +25568,9 @@
       "source_file": "app/(auth)/dashboard/todays-payments-button.tsx",
       "source_location": "L21",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "dashboard_todays_payments_button",
-      "target": "dashboard_todays_payments_button_kind_badge"
+      "target": "dashboard_todays_payments_button_kind_badge",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -25578,9 +25578,9 @@
       "source_file": "app/(auth)/dashboard/todays-payments-button.tsx",
       "source_location": "L6",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "dashboard_todays_payments_button",
-      "target": "dashboard_todays_payments_button_paymentrow"
+      "target": "dashboard_todays_payments_button_paymentrow",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -25588,9 +25588,9 @@
       "source_file": "app/(auth)/dashboard/todays-payments-button.tsx",
       "source_location": "L16",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "dashboard_todays_payments_button",
-      "target": "dashboard_todays_payments_button_props"
+      "target": "dashboard_todays_payments_button_props",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -25598,9 +25598,9 @@
       "source_file": "app/(auth)/dashboard/todays-payments-button.tsx",
       "source_location": "L27",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "dashboard_todays_payments_button",
-      "target": "dashboard_todays_payments_button_todayspaymentsbutton"
+      "target": "dashboard_todays_payments_button_todayspaymentsbutton",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -25609,9 +25609,9 @@
       "source_file": "app/(auth)/dashboard/todays-payments-button.tsx",
       "source_location": "L4",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "dashboard_todays_payments_button",
-      "target": "lib_gst"
+      "target": "lib_gst",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -25620,9 +25620,9 @@
       "source_file": "app/(auth)/dashboard/todays-payments-button.tsx",
       "source_location": "L4",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "dashboard_todays_payments_button",
-      "target": "lib_gst_formatinr"
+      "target": "lib_gst_formatinr",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -35173,9 +35173,9 @@
       "source_file": "app/(auth)/tailoring/[id]/order-details-panel.tsx",
       "source_location": "L6",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "id_order_details_panel",
-      "target": "components_confirm_dialog"
+      "target": "components_confirm_dialog",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -35184,9 +35184,9 @@
       "source_file": "app/(auth)/tailoring/[id]/order-details-panel.tsx",
       "source_location": "L6",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "id_order_details_panel",
-      "target": "components_confirm_dialog_confirmdialog"
+      "target": "components_confirm_dialog_confirmdialog",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -35277,9 +35277,9 @@
       "source_file": "app/(auth)/tailoring/[id]/order-details-panel.tsx",
       "source_location": "L7",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "id_order_details_panel",
-      "target": "tailoring_actions_deletemeasurementversionaction"
+      "target": "tailoring_actions_deletemeasurementversionaction",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -36340,9 +36340,9 @@
       "source_file": "app/(auth)/tailoring/actions.ts",
       "source_location": "L1343",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "tailoring_actions",
-      "target": "tailoring_actions_deletemeasurementversionaction"
+      "target": "tailoring_actions_deletemeasurementversionaction",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -41471,9 +41471,9 @@
       "source_file": "app/api/invoices/[id]/thermal/route.ts",
       "source_location": "L10",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_invoices_id_thermal_route_ts_thermal_route",
-      "target": "app_api_invoices_id_thermal_route_ts_thermal_route_get"
+      "target": "app_api_invoices_id_thermal_route_ts_thermal_route_get",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -41482,9 +41482,9 @@
       "source_file": "app/api/invoices/[id]/thermal/route.ts",
       "source_location": "L6",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_invoices_id_thermal_route_ts_thermal_route",
-      "target": "lib_db"
+      "target": "lib_db",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -41493,9 +41493,9 @@
       "source_file": "app/api/invoices/[id]/thermal/route.ts",
       "source_location": "L6",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_invoices_id_thermal_route_ts_thermal_route",
-      "target": "lib_db_query"
+      "target": "lib_db_query",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -41504,9 +41504,9 @@
       "source_file": "app/api/invoices/[id]/thermal/route.ts",
       "source_location": "L5",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_invoices_id_thermal_route_ts_thermal_route",
-      "target": "lib_session"
+      "target": "lib_session",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -41515,9 +41515,9 @@
       "source_file": "app/api/invoices/[id]/thermal/route.ts",
       "source_location": "L5",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_invoices_id_thermal_route_ts_thermal_route",
-      "target": "lib_session_verifysession"
+      "target": "lib_session_verifysession",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -41526,9 +41526,9 @@
       "source_file": "app/api/invoices/[id]/thermal/route.ts",
       "source_location": "L8",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_invoices_id_thermal_route_ts_thermal_route",
-      "target": "pdf_invoice_template"
+      "target": "pdf_invoice_template",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -41537,9 +41537,9 @@
       "source_file": "app/api/invoices/[id]/thermal/route.ts",
       "source_location": "L8",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_invoices_id_thermal_route_ts_thermal_route",
-      "target": "pdf_invoice_template_pdfinvoicedata"
+      "target": "pdf_invoice_template_pdfinvoicedata",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -41548,9 +41548,9 @@
       "source_file": "app/api/invoices/[id]/thermal/route.ts",
       "source_location": "L7",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_invoices_id_thermal_route_ts_thermal_route",
-      "target": "pdf_thermal_template"
+      "target": "pdf_thermal_template",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -41559,9 +41559,9 @@
       "source_file": "app/api/invoices/[id]/thermal/route.ts",
       "source_location": "L7",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_invoices_id_thermal_route_ts_thermal_route",
-      "target": "pdf_thermal_template_renderthermalpdf"
+      "target": "pdf_thermal_template_renderthermalpdf",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -45358,9 +45358,9 @@
       "source_file": "app/api/tailoring/measurement-versions/[id]/thermal/route.ts",
       "source_location": "L6",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_tailoring_measurement_versions_id_thermal_route_ts_thermal_route",
-      "target": "app_api_tailoring_measurement_versions_id_thermal_route_ts_thermal_route_get"
+      "target": "app_api_tailoring_measurement_versions_id_thermal_route_ts_thermal_route_get",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -45369,9 +45369,9 @@
       "source_file": "app/api/tailoring/measurement-versions/[id]/thermal/route.ts",
       "source_location": "L3",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_tailoring_measurement_versions_id_thermal_route_ts_thermal_route",
-      "target": "lib_auth"
+      "target": "lib_auth",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -45380,9 +45380,9 @@
       "source_file": "app/api/tailoring/measurement-versions/[id]/thermal/route.ts",
       "source_location": "L3",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_tailoring_measurement_versions_id_thermal_route_ts_thermal_route",
-      "target": "lib_auth_requirerole"
+      "target": "lib_auth_requirerole",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -45391,9 +45391,9 @@
       "source_file": "app/api/tailoring/measurement-versions/[id]/thermal/route.ts",
       "source_location": "L4",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_tailoring_measurement_versions_id_thermal_route_ts_thermal_route",
-      "target": "lib_pdf_generator"
+      "target": "lib_pdf_generator",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -45402,9 +45402,9 @@
       "source_file": "app/api/tailoring/measurement-versions/[id]/thermal/route.ts",
       "source_location": "L4",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "app_api_tailoring_measurement_versions_id_thermal_route_ts_thermal_route",
-      "target": "lib_pdf_generator_generatemeasurementthermalpdf"
+      "target": "lib_pdf_generator_generatemeasurementthermalpdf",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -49720,9 +49720,9 @@
       "source_file": "lib/pdf-generator.ts",
       "source_location": "L830",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "lib_pdf_generator",
-      "target": "lib_pdf_generator_generatemeasurementthermalpdf"
+      "target": "lib_pdf_generator_generatemeasurementthermalpdf",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -49800,9 +49800,9 @@
       "source_file": "lib/pdf-generator.ts",
       "source_location": "L18",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "lib_pdf_generator",
-      "target": "lib_pdf_generator_splitterms"
+      "target": "lib_pdf_generator_splitterms",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports_from",
@@ -49921,9 +49921,9 @@
       "source_file": "lib/pdf-generator.ts",
       "source_location": "L12",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "lib_pdf_generator",
-      "target": "pdf_thermal_template_rendermeasurementthermalpdf"
+      "target": "pdf_thermal_template_rendermeasurementthermalpdf",
+      "confidence_score": 1.0
     },
     {
       "relation": "imports",
@@ -49998,9 +49998,9 @@
       "source_file": "lib/pdf-generator.ts",
       "source_location": "L870",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "lib_pdf_generator_generatemeasurementthermalpdf",
-      "target": "lib_pdf_generator_fmtdate"
+      "target": "lib_pdf_generator_fmtdate",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -50064,9 +50064,9 @@
       "source_file": "lib/pdf-generator.ts",
       "source_location": "L36",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "lib_pdf_generator_getcompany",
-      "target": "lib_pdf_generator_splitterms"
+      "target": "lib_pdf_generator_splitterms",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -50119,9 +50119,9 @@
       "source_file": "lib/pdf-generator.ts",
       "source_location": "L858",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "lib_pdf_generator_generatemeasurementthermalpdf",
-      "target": "lib_pdf_generator_getcompany"
+      "target": "lib_pdf_generator_getcompany",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -50218,9 +50218,9 @@
       "source_file": "lib/pdf-generator.ts",
       "source_location": "L637",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "lib_pdf_generator_generatetailoringcustomerpdf",
-      "target": "lib_pdf_generator_fetchgroupedtailoringdata"
+      "target": "lib_pdf_generator_fetchgroupedtailoringdata",
+      "confidence_score": 1.0
     },
     {
       "relation": "calls",
@@ -50474,9 +50474,9 @@
       "source_file": "lib/pdf/invoice-template.tsx",
       "source_location": "L224",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "pdf_invoice_template",
-      "target": "pdf_invoice_template_pdfmeasurementgroup"
+      "target": "pdf_invoice_template_pdfmeasurementgroup",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -51053,9 +51053,9 @@
       "source_file": "lib/pdf/thermal-template.tsx",
       "source_location": "L240",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "pdf_thermal_template",
-      "target": "pdf_thermal_template_measurementthermaldata"
+      "target": "pdf_thermal_template_measurementthermaldata",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -51063,9 +51063,9 @@
       "source_file": "lib/pdf/thermal-template.tsx",
       "source_location": "L251",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "pdf_thermal_template",
-      "target": "pdf_thermal_template_measurementthermaldoc"
+      "target": "pdf_thermal_template_measurementthermaldoc",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -51073,9 +51073,9 @@
       "source_file": "lib/pdf/thermal-template.tsx",
       "source_location": "L306",
       "weight": 1.0,
-      "confidence_score": 1.0,
       "source": "pdf_thermal_template",
-      "target": "pdf_thermal_template_rendermeasurementthermalpdf"
+      "target": "pdf_thermal_template_rendermeasurementthermalpdf",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -54208,5 +54208,5 @@
       "source_file": "docker-compose.yml"
     }
   ],
-  "built_at_commit": "f1224f488dac7cd3dc4eab0d89bedc1db8393721"
+  "built_at_commit": "c9b1a3ecd2c605bb9da805ed139079b52fe5ba40"
 }

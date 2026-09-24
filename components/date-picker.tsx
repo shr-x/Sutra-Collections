@@ -53,6 +53,7 @@ export default function DatePicker({
   const current = safeIso(controlled ? (value ?? '') : internal);
 
   const [open, setOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const [view, setView] = useState<'cal' | 'my'>('cal');
   const seed = current || todayIso();
   const [viewYear, setViewYear] = useState(() => parseIsoYear(seed));
@@ -76,11 +77,22 @@ export default function DatePicker({
     };
   }, [open]);
 
+  // Approximate rendered height of the popup panel (nav + day headers + up to
+  // 6 week rows + padding) — good enough for a flip decision without having
+  // to measure after render, which would cause a visible jump.
+  const POPUP_HEIGHT_ESTIMATE = 360;
+
   function openPicker() {
     const v = current || todayIso();
     setViewYear(parseIsoYear(v));
     setViewMonth(parseIsoMonth(v));
     setView('cal');
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      setOpenUpward(spaceBelow < POPUP_HEIGHT_ESTIMATE && spaceAbove > spaceBelow);
+    }
     setOpen(true);
   }
 
@@ -152,7 +164,11 @@ export default function DatePicker({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-xl">
+        <div
+          className={`absolute left-0 z-50 w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-xl ${
+            openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
+          }`}
+        >
           {view === 'cal' ? (
             <>
               {/* Month navigation */}

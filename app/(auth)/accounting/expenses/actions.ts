@@ -17,6 +17,63 @@ const ExpenseSchema = z.object({
   notes: z.string().max(500).nullable().optional(),
 });
 
+// ─── Create a custom expense category inline (from the Record Expense form) ──
+// Gets its own dedicated GL account (account_type='expense', next available
+// numeric code) so it reports distinctly in the P&L/trial balance, matching
+// how the seeded categories (Salaries/Rent/Utilities/Miscellaneous) are each
+// wired to their own account rather than lumped into one generic bucket.
+const CategoryNameSchema = z.string().trim().min(1).max(100);
+
+export async function createExpenseCategoryAction(
+  name: string
+): Promise<{ success: boolean; category?: { id: string; name: string }; error?: string }> {
+  await requireRole('accountant', 'admin');
+
+  const parsed = CategoryNameSchema.safeParse(name);
+  if (!parsed.success) return { success: false, error: 'Enter a category name.' };
+  const trimmedName = parsed.data;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const existing = await client.query<{ id: string; name: string }>(
+      `SELECT id, name FROM expense_categories WHERE lower(name) = lower($1) LIMIT 1`,
+      [trimmedName]
+    );
+    if (existing.rows[0]) {
+      await client.query('ROLLBACK');
+      return { success: true, category: existing.rows[0] }; // already exists — just reuse it
+    }
+
+    const codeRes = await client.query<{ next_code: string }>(
+      `SELECT (COALESCE(MAX(account_code::int), 5100) + 1)::text AS next_code
+       FROM accounts WHERE account_type='expense'`
+    );
+    const nextCode = codeRes.rows[0].next_code;
+
+    const acctRes = await client.query<{ id: string }>(
+      `INSERT INTO accounts (account_code, account_name, account_type, is_system)
+       VALUES ($1, $2, 'expense', false) RETURNING id`,
+      [nextCode, `${trimmedName} Expense`]
+    );
+
+    const catRes = await client.query<{ id: string; name: string }>(
+      `INSERT INTO expense_categories (name, account_id) VALUES ($1, $2) RETURNING id, name`,
+      [trimmedName, acctRes.rows[0].id]
+    );
+
+    await client.query('COMMIT');
+    return { success: true, category: catRes.rows[0] };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[createExpenseCategoryAction]', err);
+    return { success: false, error: 'Failed to create category.' };
+  } finally {
+    client.release();
+  }
+}
+
 export async function createExpenseAction(
   _prev: ActionResult,
   formData: FormData

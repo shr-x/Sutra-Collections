@@ -13,6 +13,7 @@ interface Props {
   companyName?: string;
   logoPath?: string;
   staffModuleEnabled?: boolean;
+  sidebarOrder?: string[];
   children: React.ReactNode;
 }
 
@@ -22,6 +23,7 @@ export default function MobileNav({
   companyName,
   logoPath,
   staffModuleEnabled,
+  sidebarOrder,
   children,
 }: Props) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -50,6 +52,7 @@ export default function MobileNav({
             companyName={companyName}
             logoPath={logoPath}
             staffModuleEnabled={staffModuleEnabled}
+            sidebarOrder={sidebarOrder}
             onNavClick={() => setDrawerOpen(false)}
             isMobileDrawer={true}
           />

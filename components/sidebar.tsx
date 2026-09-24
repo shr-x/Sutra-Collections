@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import { logoutAction } from '@/app/login/actions';
+import { saveSidebarOrderAction } from '@/app/(auth)/sidebar-actions';
 import type { Role } from '@/types';
 
 interface NavItem {
@@ -115,17 +116,60 @@ interface Props {
   companyName?: string;
   logoPath?: string;
   staffModuleEnabled?: boolean;
+  sidebarOrder?: string[];
   onNavClick?: () => void;
   isMobileDrawer?: boolean;
 }
 
-export default function Sidebar({ role, userName, companyName, logoPath, staffModuleEnabled = false, onNavClick, isMobileDrawer = false }: Props) {
+export default function Sidebar({ role, userName, companyName, logoPath, staffModuleEnabled = false, sidebarOrder, onNavClick, isMobileDrawer = false }: Props) {
   const pathname = usePathname();
   const navItems = NAV_ITEMS[role];
   const displayName = companyName || 'Sutra Collections';
   const initial = displayName.charAt(0).toUpperCase();
   const [imgError, setImgError] = useState(false);
   const showLogo = !!logoPath && !imgError;
+
+  // ── Drag-to-reorder top-level menu items ────────────────────────────────
+  const defaultOrder = useMemo(() => navItems.map((i) => i.href), [navItems]);
+  const mergedOrder = useMemo(() => {
+    const saved = (sidebarOrder ?? []).filter((h) => defaultOrder.includes(h));
+    const missing = defaultOrder.filter((h) => !saved.includes(h));
+    return [...saved, ...missing];
+  }, [sidebarOrder, defaultOrder]);
+
+  const [localOrder, setLocalOrder] = useState<string[]>(mergedOrder);
+  useEffect(() => { setLocalOrder(mergedOrder); }, [mergedOrder]);
+
+  const orderedNavItems = useMemo(
+    () => localOrder.map((href) => navItems.find((i) => i.href === href)).filter((i): i is NavItem => !!i),
+    [localOrder, navItems]
+  );
+
+  const [editMode, setEditMode] = useState(false);
+  const [draggedHref, setDraggedHref] = useState<string | null>(null);
+  const [, startSaveTransition] = useTransition();
+
+  function handleDrop(targetHref: string) {
+    if (!draggedHref || draggedHref === targetHref) return;
+    setLocalOrder((prev) => {
+      const next = [...prev];
+      const from = next.indexOf(draggedHref);
+      const to = next.indexOf(targetHref);
+      if (from === -1 || to === -1) return prev;
+      next.splice(from, 1);
+      next.splice(to, 0, draggedHref);
+      return next;
+    });
+    setDraggedHref(null);
+  }
+
+  function toggleEditMode() {
+    if (editMode) {
+      // Leaving edit mode — persist the new order.
+      startSaveTransition(() => { saveSidebarOrderAction(localOrder); });
+    }
+    setEditMode((prev) => !prev);
+  }
 
   // Accordion state — used only when isMobileDrawer is true.
   // Initialise to the currently-active top-level section so it auto-expands on open.
@@ -160,12 +204,33 @@ export default function Sidebar({ role, userName, companyName, logoPath, staffMo
       {/* Navigation — min-h-0 lets this flex child scroll instead of growing
           and pushing the Sign out block off-screen (#2). */}
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
-        {navItems.map((item) => {
+        {orderedNavItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + '/');
           const childActive = item.children?.some((c) => pathname.startsWith(c.href));
           // Staff link is disabled when staff module is not enabled
           const isStaffItem = item.href === '/staff' || item.href === '/staff/attendance';
           const isDisabled = isStaffItem && !staffModuleEnabled;
+
+          // ── Edit mode: draggable row, replaces normal nav/accordion behavior ──
+          if (editMode) {
+            return (
+              <div
+                key={item.href}
+                draggable
+                onDragStart={() => setDraggedHref(item.href)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => handleDrop(item.href)}
+                onDragEnd={() => setDraggedHref(null)}
+                className={`flex cursor-move items-center gap-2 rounded-lg border border-dashed border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 transition-opacity ${
+                  draggedHref === item.href ? 'opacity-40' : ''
+                }`}
+              >
+                <span className="text-gray-300" aria-hidden="true">⠿</span>
+                <span className="text-base">{item.icon}</span>
+                <span className="flex-1 truncate">{item.label}</span>
+              </div>
+            );
+          }
 
           // ── Accordion mode (mobile drawer only) ──────────────────────────
           if (isMobileDrawer) {
@@ -339,6 +404,21 @@ export default function Sidebar({ role, userName, companyName, logoPath, staffMo
           );
         })}
       </nav>
+
+      {/* Edit menu order — toggles drag-to-reorder mode for top-level items */}
+      <div className="shrink-0 border-t border-gray-100 px-3 py-1.5">
+        <button
+          type="button"
+          onClick={toggleEditMode}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-600"
+        >
+          {editMode ? (
+            <>✓ Done</>
+          ) : (
+            <>✎ Edit Menu</>
+          )}
+        </button>
+      </div>
 
       {/* User info + logout — always pinned to the bottom */}
       <div className="shrink-0 border-t border-gray-200 px-3 py-3">

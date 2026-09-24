@@ -937,6 +937,67 @@ export async function clearCustomerDuesAction(customerId: string, _formData: For
   revalidatePath('/customers/dues');
 }
 
+// ─── Outstanding Dues: collect multiple invoices for one customer at once ───
+// Same "accumulate then send once" pattern as the tailoring bulk-credit fix:
+// each invoice is paid in full via applyInvoicePayment with skipNotify (so no
+// individual "payment received" message fires per invoice), then ONE combined
+// WhatsApp message is sent afterward with the total collected across all of
+// them. Collecting one invoice at a time from the normal single "Collect"
+// button is unaffected — that still goes through recordPaymentAction and
+// fires its own individual message per payment, since that IS a single,
+// genuine payment event.
+export async function bulkCollectDuesAction(invoiceIds: string[]): Promise<{ success: boolean; error?: string }> {
+  const session = await requireRole('admin', 'accountant');
+
+  if (!Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+    return { success: false, error: 'No invoices selected.' };
+  }
+
+  const res = await query<{
+    id: string; balance: string; payment_mode: string | null; invoice_number: string;
+    customer_id: string | null; customer_name: string | null; customer_phone: string | null;
+  }>(
+    `SELECT i.id, (i.grand_total - i.amount_paid)::text AS balance, i.payment_mode, i.invoice_number,
+            i.customer_id, c.name AS customer_name, c.phone AS customer_phone
+     FROM invoices i
+     LEFT JOIN customers c ON c.id = i.customer_id
+     WHERE i.id = ANY($1::uuid[]) AND i.status IN ('issued','partially_paid') AND i.grand_total > i.amount_paid`,
+    [invoiceIds]
+  );
+
+  if (res.rows.length === 0) {
+    return { success: false, error: 'Selected invoices are no longer outstanding.' };
+  }
+
+  const customerIds = new Set(res.rows.map((r) => r.customer_id));
+  if (customerIds.size > 1) {
+    return { success: false, error: 'Bulk collect only supports invoices from the same customer.' };
+  }
+
+  let totalCollected = 0;
+  let lastInvoiceId = '';
+  for (const row of res.rows) {
+    const balance = Number(row.balance);
+    if (balance <= 0) continue;
+    await applyInvoicePayment(row.id, balance, row.payment_mode ?? 'cash', session, { skipNotify: true });
+    totalCollected = Math.round((totalCollected + balance) * 100) / 100;
+    lastInvoiceId = row.id;
+  }
+
+  revalidatePath('/customers/dues');
+
+  const cust = res.rows[0];
+  if (totalCollected > 0 && cust.customer_phone) {
+    const invoiceRefs = res.rows.map((r) => r.invoice_number).join(', ');
+    const receiptPath = await generateThermalInvoicePdf(lastInvoiceId).catch(() => null);
+    sendWhatsAppTemplate(cust.customer_phone, 'sutra_payment_received', [
+      cust.customer_name ?? 'Customer', totalCollected.toFixed(2), invoiceRefs,
+    ], receiptPath).catch((e) => console.error('[bulkCollectDuesAction] combined payment WA failed:', e));
+  }
+
+  return { success: true };
+}
+
 // ─── Send WhatsApp Reminder ───────────────────────────────────────────────────
 
 export async function sendReminderAction(

@@ -1,9 +1,10 @@
 'use client';
 
+import { useState, useTransition } from 'react';
 import DatePicker from '@/components/date-picker';
 
 import { useFormState, useFormStatus } from 'react-dom';
-import { createExpenseAction } from './actions';
+import { createExpenseAction, createExpenseCategoryAction } from './actions';
 import type { ActionResult } from '@/types';
 
 const INIT: ActionResult = { success: false, error: '' };
@@ -23,9 +24,44 @@ function SubmitBtn() {
   );
 }
 
-export default function ExpenseForm({ categories }: { categories: Category[] }) {
+export default function ExpenseForm({ categories: initialCategories }: { categories: Category[] }) {
   const [state, action] = useFormState(createExpenseAction, INIT);
   const today = new Date().toISOString().slice(0, 10);
+
+  const [categories, setCategories] = useState(initialCategories);
+  const [categoryId, setCategoryId] = useState('');
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [categoryError, setCategoryError] = useState('');
+  const [isPending, startTransition] = useTransition();
+
+  function handleCategorySelect(value: string) {
+    if (value === '__new__') {
+      setAddingCategory(true);
+      setCategoryError('');
+      return;
+    }
+    setCategoryId(value);
+  }
+
+  function handleSaveCategory() {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    setCategoryError('');
+    startTransition(async () => {
+      const res = await createExpenseCategoryAction(name);
+      if (res.success && res.category) {
+        setCategories((prev) => (
+          prev.some((c) => c.id === res.category!.id) ? prev : [...prev, res.category!].sort((a, b) => a.name.localeCompare(b.name))
+        ));
+        setCategoryId(res.category.id);
+        setAddingCategory(false);
+        setNewCategoryName('');
+      } else {
+        setCategoryError(res.error ?? 'Failed to create category.');
+      }
+    });
+  }
 
   return (
     <form action={action} className="space-y-6 max-w-2xl">
@@ -44,12 +80,51 @@ export default function ExpenseForm({ categories }: { categories: Category[] }) 
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-gray-500">Category</label>
-            <select name="category_id" required className="input w-full">
+            <select
+              name="category_id"
+              required
+              value={categoryId}
+              onChange={(e) => handleCategorySelect(e.target.value)}
+              className="input w-full"
+            >
               <option value="">— select category —</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
+              <option value="__new__">+ Add new category</option>
             </select>
+
+            {addingCategory && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-purple-200 bg-purple-50 p-2.5">
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={newCategoryName}
+                    onChange={(e) => { setNewCategoryName(e.target.value); setCategoryError(''); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveCategory(); } }}
+                    placeholder="New category name"
+                    className="input w-full text-sm"
+                  />
+                  {categoryError && <p className="mt-1 text-xs text-red-600">{categoryError}</p>}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveCategory}
+                  disabled={isPending || !newCategoryName.trim()}
+                  className="rounded-lg bg-purple-600 px-3 py-2 text-xs font-semibold text-white hover:bg-purple-700 disabled:opacity-50"
+                >
+                  {isPending ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAddingCategory(false); setNewCategoryName(''); setCategoryError(''); }}
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         </div>
 

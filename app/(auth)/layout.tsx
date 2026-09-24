@@ -7,13 +7,14 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
 
   const [{ rows }, userRows] = await Promise.all([
     query(`SELECT key, value FROM settings WHERE key IN ('company_name', 'company_logo_path', 'staff_module_enabled')`),
-    query<{ name: string }>(`SELECT name FROM users WHERE id=$1`, [session.userId]),
+    query<{ name: string; sidebar_order: string[] | null }>(`SELECT name, sidebar_order FROM users WHERE id=$1`, [session.userId]),
   ]);
   const settings          = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   const companyName       = settings.company_name || undefined;
   const logoPath          = settings.company_logo_path || undefined;
   const staffModuleEnabled = settings.staff_module_enabled === 'true';
   const liveUserName      = userRows.rows[0]?.name ?? session.email;
+  const sidebarOrder      = userRows.rows[0]?.sidebar_order ?? undefined;
 
   return (
     <MobileNav
@@ -22,6 +23,7 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
       companyName={companyName}
       logoPath={logoPath}
       staffModuleEnabled={staffModuleEnabled}
+      sidebarOrder={sidebarOrder}
     >
       {children}
     </MobileNav>
