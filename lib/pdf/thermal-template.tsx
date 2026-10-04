@@ -70,7 +70,7 @@ function ThermalDoc({ data }: { data: ThermalData }) {
 
           {/* Invoice meta */}
           <Text style={[S.center, S.bold, { marginBottom: 2 }]}>
-            {data.docType === 'QUOTATION' ? 'QUOTATION' : 'TAX INVOICE'}
+            {data.docType === 'QUOTATION' ? 'QUOTATION' : 'INVOICE'}
           </Text>
           <View style={S.row}>
             <Text>Invoice #</Text>

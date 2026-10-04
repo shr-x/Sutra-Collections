@@ -140,7 +140,7 @@ export default function StoreSection({ defaults }: Props) {
           className={inputCls}
         />
         <p className="mt-1 text-xs text-gray-400">
-          One line per bullet. Printed on order confirmations, the Customer PDF and the delivered tailoring invoice only. Leave empty to print nothing.
+          One line per bullet. Printed on tailoring invoices, the Customer PDF and the delivered tailoring invoice only. Leave empty to print nothing.
         </p>
       </div>
 

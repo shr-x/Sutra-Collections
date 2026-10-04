@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
+import { taxableSql } from '@/lib/gstr';
 import MonthSelector from '@/components/month-selector';
 
 export const metadata: Metadata = { title: 'GSTR-1' };
@@ -11,7 +12,7 @@ interface InvoiceRow {
   invoice_date: string;
   customer_name: string;
   gstin: string | null;
-  subtotal: number;
+  taxable: number;
   total_cgst: number;
   total_sgst: number;
   grand_total: number;
@@ -33,10 +34,11 @@ export default async function Gstr1Page({ searchParams }: { searchParams: { mont
     `SELECT i.invoice_number, i.invoice_date,
             COALESCE(i.customer_name_snapshot, c.name, 'Walk-in') AS customer_name,
             COALESCE(i.customer_gstin_snapshot, c.gstin) AS gstin,
-            i.subtotal, i.total_cgst, i.total_sgst, i.grand_total
+            ${taxableSql('i')} AS taxable, i.total_cgst, i.total_sgst, i.grand_total
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      WHERE i.status NOT IN ('cancelled','draft')
+       AND i.invoice_type = 'gst'
        AND i.invoice_date BETWEEN $1 AND $2
      ORDER BY i.invoice_date, i.invoice_number`,
     [from, to]
@@ -44,7 +46,7 @@ export default async function Gstr1Page({ searchParams }: { searchParams: { mont
 
   const rows = res.rows.map((r) => ({
     ...r,
-    subtotal:    Number(r.subtotal),
+    taxable:     Number(r.taxable),
     total_cgst:  Number(r.total_cgst),
     total_sgst:  Number(r.total_sgst),
     grand_total: Number(r.grand_total),
@@ -52,7 +54,7 @@ export default async function Gstr1Page({ searchParams }: { searchParams: { mont
 
   const totals = rows.reduce(
     (s, r) => ({
-      taxable: s.taxable + r.subtotal,
+      taxable: s.taxable + r.taxable,
       cgst:    s.cgst    + r.total_cgst,
       sgst:    s.sgst    + r.total_sgst,
       total:   s.total   + r.grand_total,
@@ -121,7 +123,7 @@ export default async function Gstr1Page({ searchParams }: { searchParams: { mont
                 <td className="px-4 py-3 text-gray-600">{new Date(row.invoice_date).toLocaleDateString('en-IN')}</td>
                 <td className="px-4 py-3 text-gray-700">{row.customer_name}</td>
                 <td className="px-4 py-3 text-gray-500 font-mono text-xs">{row.gstin ?? '—'}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{formatInr(row.subtotal)}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{formatInr(row.taxable)}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{formatInr(row.total_cgst)}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{formatInr(row.total_sgst)}</td>
                 <td className="px-4 py-3 text-right tabular-nums font-medium">{formatInr(row.grand_total)}</td>

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
+import { taxableSql } from '@/lib/gstr';
 import MonthSelector from '@/components/month-selector';
 
 export const metadata: Metadata = { title: 'GSTR-3B Summary' };
@@ -22,25 +23,26 @@ export default async function Gstr3bPage({ searchParams }: { searchParams: { mon
     total_taxable: string; total_cgst: string; total_sgst: string; total_grand: string;
   }>(
     `SELECT
-       COALESCE(SUM(subtotal),0)    AS total_taxable,
-       COALESCE(SUM(total_cgst),0)  AS total_cgst,
-       COALESCE(SUM(total_sgst),0)  AS total_sgst,
-       COALESCE(SUM(grand_total),0) AS total_grand
-     FROM invoices
-     WHERE status NOT IN ('cancelled','draft')
-       AND invoice_date BETWEEN $1 AND $2`,
+       COALESCE(SUM(${taxableSql('i')}),0) AS total_taxable,
+       COALESCE(SUM(i.total_cgst),0)  AS total_cgst,
+       COALESCE(SUM(i.total_sgst),0)  AS total_sgst,
+       COALESCE(SUM(i.grand_total),0) AS total_grand
+     FROM invoices i
+     WHERE i.status NOT IN ('cancelled','draft')
+       AND i.invoice_type = 'gst'
+       AND i.invoice_date BETWEEN $1 AND $2`,
     [from, to]
   );
 
   // Credit notes (reduces output tax)
   const cnRes = await pool.query<{ total_taxable: string; total_cgst: string; total_sgst: string; }>(
     `SELECT
-       COALESCE(SUM(subtotal),0)   AS total_taxable,
-       COALESCE(SUM(total_cgst),0) AS total_cgst,
-       COALESCE(SUM(total_sgst),0) AS total_sgst
-     FROM credit_notes
-     WHERE status IN ('issued','settled')
-       AND created_at::date BETWEEN $1 AND $2`,
+       COALESCE(SUM(${taxableSql('cn')}),0) AS total_taxable,
+       COALESCE(SUM(cn.total_cgst),0) AS total_cgst,
+       COALESCE(SUM(cn.total_sgst),0) AS total_sgst
+     FROM credit_notes cn
+     WHERE cn.status IN ('issued','settled')
+       AND (cn.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1 AND $2`,
     [from, to]
   );
 

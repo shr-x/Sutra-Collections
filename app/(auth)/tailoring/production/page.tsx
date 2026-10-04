@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requireRole } from '@/lib/auth';
 import { query } from '@/lib/db';
 import ProductionColumn, { type OrderRow, type ColumnKey } from './production-column';
+import { loadCollapsedGroups } from '@/lib/production-board-collapsed';
 
 export const metadata: Metadata = { title: 'Production Board' };
 
@@ -23,7 +24,7 @@ const COLUMNS: { key: ColumnKey; label: string; hdr: string; border: string }[] 
 ];
 
 export default async function ProductionBoardPage() {
-  await requireRole('admin');
+  const session = await requireRole('admin');
 
   const orderQuery = `
     SELECT o.id, o.order_number, o.group_number, o.suffix, o.status,
@@ -55,6 +56,13 @@ export default async function ProductionBoardPage() {
 
   const allOrders = [...res.rows, ...deliveredRes.rows];
   const byColumn = (key: ColumnKey) => allOrders.filter((o) => columnOf(o) === key);
+
+  // Saved collapsed groups for this admin, per column. Each column is its own
+  // scope, so a group only stays collapsed while it sits in that column.
+  const collapsedByColumn = await loadCollapsedGroups(
+    session.userId,
+    allOrders.flatMap((o) => (o.customer_id ? [{ column: columnOf(o), customerId: o.customer_id }] : [])),
+  );
 
   return (
     <div className="md:flex md:flex-col md:h-[calc(100vh-120px)]">
@@ -88,7 +96,11 @@ export default async function ProductionBoardPage() {
 
               {/* Scrollable cards */}
               <div className="flex-1 space-y-3 md:overflow-y-auto p-3">
-                <ProductionColumn columnKey={key} orders={orders} />
+                <ProductionColumn
+                  columnKey={key}
+                  orders={orders}
+                  initialCollapsed={collapsedByColumn[key]}
+                />
               </div>
 
               {key === 'delivered' && deliveredRes.rows.length === 30 && (

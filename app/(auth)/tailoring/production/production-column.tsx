@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { formatInr } from '@/lib/gst';
+import { setProductionGroupCollapsedAction } from './actions';
 import AssignTailorButton from './assign-tailor-button';
 import StageButton from './stage-button';
 import RecordPaymentButton from '../[id]/record-payment-button';
@@ -197,6 +198,7 @@ function GroupSummaryCard({
           {combinedBalanceDue > 0 ? formatInr(combinedBalanceDue) : '—'}
         </p>
       </div>
+      {/* Collapsed card -> down-arrow: "expand to show orders" */}
       <button
         type="button"
         onClick={onExpand}
@@ -205,7 +207,7 @@ function GroupSummaryCard({
         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-500 transition-colors hover:bg-purple-50 hover:text-purple-700"
       >
         <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
         </svg>
       </button>
     </div>
@@ -221,15 +223,44 @@ function CollapseToggle({ onCollapse }: { onCollapse: () => void }) {
       aria-label="Collapse this customer's orders"
       className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-gray-500 transition-colors hover:bg-purple-50 hover:text-purple-700"
     >
+      {/* Expanded group -> up-arrow: "collapse" */}
       <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
       </svg>
     </button>
   );
 }
 
-export default function ProductionColumn({ columnKey, orders }: { columnKey: ColumnKey; orders: OrderRow[] }) {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+export default function ProductionColumn({
+  columnKey, orders, initialCollapsed,
+}: {
+  columnKey: ColumnKey; orders: OrderRow[]; initialCollapsed: string[];
+}) {
+  // Seeded from the saved per-user state; groups not in the list render expanded.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(initialCollapsed));
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [, startSave] = useTransition();
+
+  // Updates the view immediately, then saves. If the save fails the group
+  // snaps back to its previous state and the admin is told why.
+  function setGroupCollapsed(customerId: string | null, customerKey: string, next: boolean) {
+    const apply = (value: boolean) => setCollapsed((prev) => {
+      const s = new Set(prev);
+      if (value) s.add(customerKey); else s.delete(customerKey);
+      return s;
+    });
+    apply(next);
+    if (!customerId) return;
+
+    startSave(async () => {
+      setSaveError(null);
+      const res = await setProductionGroupCollapsedAction({ column: columnKey, customerId, collapsed: next });
+      if (!res.success) {
+        apply(!next);
+        setSaveError(res.error ?? 'Could not save. Please try again.');
+      }
+    });
+  }
 
   if (orders.length === 0) {
     return <p className="py-8 text-center text-xs text-gray-400">No orders</p>;
@@ -238,13 +269,13 @@ export default function ProductionColumn({ columnKey, orders }: { columnKey: Col
   // Group consecutive-in-list orders by customer, preserving overall order —
   // a customer's cards may not be adjacent (list is sorted by due date), so
   // group by key across the whole column, keyed on first occurrence position.
-  const groups: { customerKey: string; customerName: string; orders: OrderRow[] }[] = [];
+  const groups: { customerKey: string; customerId: string | null; customerName: string; orders: OrderRow[] }[] = [];
   const indexByKey = new Map<string, number>();
   for (const o of orders) {
     const key = o.customer_id ?? o.customer_name;
     if (!indexByKey.has(key)) {
       indexByKey.set(key, groups.length);
-      groups.push({ customerKey: key, customerName: o.customer_name, orders: [o] });
+      groups.push({ customerKey: key, customerId: o.customer_id, customerName: o.customer_name, orders: [o] });
     } else {
       groups[indexByKey.get(key)!].orders.push(o);
     }
@@ -252,6 +283,9 @@ export default function ProductionColumn({ columnKey, orders }: { columnKey: Col
 
   return (
     <>
+      {saveError && (
+        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{saveError}</p>
+      )}
       {groups.map((group) => {
         const isGrouped = group.orders.length > 1;
         const isCollapsed = isGrouped && collapsed.has(group.customerKey);
@@ -267,11 +301,7 @@ export default function ProductionColumn({ columnKey, orders }: { columnKey: Col
               customerName={group.customerName}
               count={group.orders.length}
               combinedBalanceDue={combinedBalanceDue}
-              onExpand={() => setCollapsed((prev) => {
-                const next = new Set(prev);
-                next.delete(group.customerKey);
-                return next;
-              })}
+              onExpand={() => setGroupCollapsed(group.customerId, group.customerKey, false)}
             />
           );
         }
@@ -282,7 +312,7 @@ export default function ProductionColumn({ columnKey, orders }: { columnKey: Col
             {isGrouped && i === 0 && (
               <div className="absolute -top-1.5 -right-1.5">
                 <CollapseToggle
-                  onCollapse={() => setCollapsed((prev) => new Set(prev).add(group.customerKey))}
+                  onCollapse={() => setGroupCollapsed(group.customerId, group.customerKey, true)}
                 />
               </div>
             )}

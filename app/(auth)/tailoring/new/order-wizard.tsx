@@ -658,7 +658,7 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
             className="input w-full"
             placeholder="Special instructions, alterations, etc."
           />
-          <p className="mt-1 text-xs text-gray-400">Shown to the customer (order confirmation, customer PDF).</p>
+          <p className="mt-1 text-xs text-gray-400">Shown to the customer (tailoring invoice, customer PDF).</p>
         </div>
 
         {showTailorNotes && (

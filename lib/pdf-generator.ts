@@ -289,8 +289,9 @@ export async function generateTailoringOrderConfirmationPdf(orderId: string): Pr
       customTerms: co.tailoringTerms.length > 0 ? co.tailoringTerms : undefined,
     });
 
-    const safe = `${displayRef}_confirmation`.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filePath = `/tmp/order_confirmation_${safe}.pdf`;
+    // File name is what the customer sees on the WhatsApp attachment.
+    const safe = displayRef.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = `/tmp/tailoring_invoice_${safe}.pdf`;
     fs.writeFileSync(filePath, buffer);
     return filePath;
   } catch (err) {

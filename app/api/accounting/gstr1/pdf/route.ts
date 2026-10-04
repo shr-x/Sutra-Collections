@@ -2,6 +2,7 @@ import React from 'react';
 import { NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
+import { taxableSql } from '@/lib/gstr';
 import { Document, Page, View, Text, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
 
 const PURPLE = '#7C3AED';
@@ -61,10 +62,11 @@ export async function GET(req: NextRequest) {
     `SELECT i.invoice_number, i.invoice_date,
             COALESCE(i.customer_name_snapshot, c.name, 'Walk-in') AS customer_name,
             COALESCE(i.customer_gstin_snapshot, c.gstin, '') AS gstin,
-            i.subtotal::numeric, i.total_cgst::numeric, i.total_sgst::numeric, i.grand_total::numeric
+            ${taxableSql('i')}::numeric AS taxable, i.total_cgst::numeric, i.total_sgst::numeric, i.grand_total::numeric
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
      WHERE i.status NOT IN ('cancelled','draft')
+       AND i.invoice_type = 'gst'
        AND i.invoice_date BETWEEN $1 AND $2
      ORDER BY i.invoice_date, i.invoice_number`,
     [from, to]
@@ -72,14 +74,14 @@ export async function GET(req: NextRequest) {
 
   const rows = res.rows.map((r) => ({
     ...r,
-    subtotal:    Number(r.subtotal),
+    taxable:     Number(r.taxable),
     total_cgst:  Number(r.total_cgst),
     total_sgst:  Number(r.total_sgst),
     grand_total: Number(r.grand_total),
   }));
 
   const totals = rows.reduce(
-    (s, r) => ({ taxable: s.taxable + r.subtotal, cgst: s.cgst + r.total_cgst, sgst: s.sgst + r.total_sgst, total: s.total + r.grand_total }),
+    (s, r) => ({ taxable: s.taxable + r.taxable, cgst: s.cgst + r.total_cgst, sgst: s.sgst + r.total_sgst, total: s.total + r.grand_total }),
     { taxable: 0, cgst: 0, sgst: 0, total: 0 }
   );
 
@@ -115,7 +117,7 @@ export async function GET(req: NextRequest) {
           React.createElement(View, { style: S.c2 }, React.createElement(Text, {}, new Date(row.invoice_date).toLocaleDateString('en-IN'))),
           React.createElement(View, { style: S.c3 }, React.createElement(Text, {}, row.customer_name)),
           React.createElement(View, { style: S.c4 }, React.createElement(Text, { style: { color: MUTED, fontSize: 8 } }, row.gstin || '—')),
-          React.createElement(View, { style: S.c5 }, React.createElement(Text, { style: S.right }, fmtInr(row.subtotal))),
+          React.createElement(View, { style: S.c5 }, React.createElement(Text, { style: S.right }, fmtInr(row.taxable))),
           React.createElement(View, { style: S.c6 }, React.createElement(Text, { style: S.right }, fmtInr(row.total_cgst))),
           React.createElement(View, { style: S.c7 }, React.createElement(Text, { style: S.right }, fmtInr(row.total_sgst))),
           React.createElement(View, { style: S.c8 }, React.createElement(Text, { style: [S.right, S.bold] }, fmtInr(row.grand_total)))

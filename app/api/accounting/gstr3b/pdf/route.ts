@@ -2,6 +2,7 @@ import React from 'react';
 import { NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
+import { taxableSql } from '@/lib/gstr';
 import { Document, Page, View, Text, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
 
 const PURPLE = '#7C3AED';
@@ -75,15 +76,15 @@ export async function GET(req: NextRequest) {
 
   const [salesRes, cnRes, itcRes, dnItcRes] = await Promise.all([
     pool.query<{ total_taxable: string; total_cgst: string; total_sgst: string; total_grand: string }>(
-      `SELECT COALESCE(SUM(subtotal),0) AS total_taxable, COALESCE(SUM(total_cgst),0) AS total_cgst,
-              COALESCE(SUM(total_sgst),0) AS total_sgst, COALESCE(SUM(grand_total),0) AS total_grand
-       FROM invoices WHERE status NOT IN ('cancelled','draft') AND invoice_date BETWEEN $1 AND $2`,
+      `SELECT COALESCE(SUM(${taxableSql('i')}),0) AS total_taxable, COALESCE(SUM(i.total_cgst),0) AS total_cgst,
+              COALESCE(SUM(i.total_sgst),0) AS total_sgst, COALESCE(SUM(i.grand_total),0) AS total_grand
+       FROM invoices i WHERE i.status NOT IN ('cancelled','draft') AND i.invoice_type = 'gst' AND i.invoice_date BETWEEN $1 AND $2`,
       [from, to]
     ),
     pool.query<{ total_taxable: string; total_cgst: string; total_sgst: string }>(
-      `SELECT COALESCE(SUM(subtotal),0) AS total_taxable, COALESCE(SUM(total_cgst),0) AS total_cgst,
-              COALESCE(SUM(total_sgst),0) AS total_sgst
-       FROM credit_notes WHERE status IN ('issued','settled') AND created_at::date BETWEEN $1 AND $2`,
+      `SELECT COALESCE(SUM(${taxableSql('cn')}),0) AS total_taxable, COALESCE(SUM(cn.total_cgst),0) AS total_cgst,
+              COALESCE(SUM(cn.total_sgst),0) AS total_sgst
+       FROM credit_notes cn WHERE cn.status IN ('issued','settled') AND (cn.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1 AND $2`,
       [from, to]
     ),
     pool.query<{ total_cgst: string; total_sgst: string }>(

@@ -359,9 +359,9 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                 : data.docType === 'CREDIT NOTE' ? 'CREDIT NOTE'
                 : data.docType === 'DEBIT NOTE' ? 'DEBIT NOTE'
                 : data.docType === 'PROFORMA' ? 'INVOICE'
-                : data.docType === 'ORDER_CONFIRMATION' ? 'ORDER CONFIRMATION'
+                : data.docType === 'ORDER_CONFIRMATION' ? 'TAILORING INVOICE'
                 : data.docType === 'PRODUCTION_ORDER' ? 'PRODUCTION ORDER'
-                : 'TAX INVOICE'}
+                : 'INVOICE'}
             </Text>
             {isReturnDoc ? (
               <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: accent, marginTop: 2 }}>
