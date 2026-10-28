@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth';
 import { query } from '@/lib/db';
+import { notTailoringJournal } from '@/lib/accounting-scope';
 
 function csv(rows: string[][]): string {
   return rows.map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
@@ -158,7 +159,8 @@ export async function GET(
       if (!isAdmin && session.role !== 'accountant') return NextResponse.json({ error: 'Accountant or Admin only' }, { status: 403 });
       const from = req.nextUrl.searchParams.get('from');
       const to   = req.nextUrl.searchParams.get('to');
-      const jConds: string[] = [];
+      // Tailoring is outside accounting — its older postings are left out.
+      const jConds: string[] = [notTailoringJournal('je')];
       const jParams: unknown[] = [];
       if (from) { jParams.push(from); jConds.push(`je.entry_date >= $${jParams.length}`); }
       if (to)   { jParams.push(to);   jConds.push(`je.entry_date <= $${jParams.length}`); }

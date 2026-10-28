@@ -171,7 +171,8 @@ export default async function DashboardPage() {
   const kpis = [
     { label: "Today's Sales",          value: formatInr(todaySales),          color: 'text-green-700',  grad: 'from-green-50 to-white',  ring: 'ring-green-100',  icon: '₹',  iconBg: 'bg-green-100 text-green-700' },
     { label: "Today's Retail Sales",   value: formatInr(todayRetailSales),    color: 'text-blue-700',   grad: 'from-blue-50 to-white',   ring: 'ring-blue-100',   icon: '🛍️', iconBg: 'bg-blue-100 text-blue-700' },
-    { label: "Today's Tailoring Sales",value: formatInr(todayTailoringSales), color: 'text-indigo-700', grad: 'from-indigo-50 to-white', ring: 'ring-indigo-100', icon: '✂️', iconBg: 'bg-indigo-100 text-indigo-700' },
+    // Tailoring is billing/record-keeping only — zero tax, outside accounting.
+    { label: "Today's Tailoring Sales",value: formatInr(todayTailoringSales), color: 'text-indigo-700', grad: 'from-indigo-50 to-white', ring: 'ring-indigo-100', icon: '✂️', iconBg: 'bg-indigo-100 text-indigo-700', note: 'Not in accounting' },
     { label: 'Outstanding Dues',       value: formatInr(outstanding),         color: 'text-red-700',    grad: 'from-red-50 to-white',    ring: 'ring-red-100',    icon: '⏳', iconBg: 'bg-red-100 text-red-700' },
     { label: 'Low Stock Items',        value: String(lowStockCount),          color: 'text-amber-700',  grad: 'from-amber-50 to-white',  ring: 'ring-amber-100',  icon: '📦', iconBg: 'bg-amber-100 text-amber-700' },
     { label: 'Active Tailoring',       value: String(tailoringActive),        color: 'text-purple-700', grad: 'from-purple-50 to-white', ring: 'ring-purple-100', icon: '🧵', iconBg: 'bg-purple-100 text-purple-700' },
@@ -196,6 +197,9 @@ export default async function DashboardPage() {
             </div>
             <p className={`text-2xl font-bold ${k.color}`}>{k.value}</p>
             <p className="mt-0.5 text-xs font-medium text-gray-500">{k.label}</p>
+            {'note' in k && k.note && (
+              <p className="mt-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">{k.note}</p>
+            )}
           </div>
         ))}
       </div>

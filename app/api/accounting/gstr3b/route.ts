@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     pool.query(
       `SELECT COALESCE(SUM(${taxableSql('i')}),0) AS taxable, COALESCE(SUM(i.total_cgst),0) AS cgst, COALESCE(SUM(i.total_sgst),0) AS sgst
        FROM invoices i
-       WHERE i.status NOT IN ('cancelled','draft') AND i.invoice_type = 'gst' AND i.invoice_date BETWEEN $1 AND $2`,
+       WHERE i.status NOT IN ('cancelled','draft') AND i.source <> 'tailoring' AND i.invoice_type = 'gst' AND i.invoice_date BETWEEN $1 AND $2`,
       [from, to]
     ),
     pool.query(
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     // Non-GST invoices: not taxable outward supplies, reported separately.
     pool.query(
       `SELECT COUNT(*)::int AS count, COALESCE(SUM(grand_total),0) AS value
-       FROM invoices WHERE status NOT IN ('cancelled','draft') AND invoice_type = 'non_gst' AND invoice_date BETWEEN $1 AND $2`,
+       FROM invoices WHERE status NOT IN ('cancelled','draft') AND source <> 'tailoring' AND invoice_type = 'non_gst' AND invoice_date BETWEEN $1 AND $2`,
       [from, to]
     ),
   ]);

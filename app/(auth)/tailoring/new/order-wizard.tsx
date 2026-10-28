@@ -580,6 +580,7 @@ export default function OrderWizard({ designs, customers, initialDesignId }: Pro
             {design?.price != null && (
               <p className="mt-1 text-xs text-gray-400">Prefilled from design's fixed price — editable.</p>
             )}
+            <p className="mt-1 text-xs text-gray-400">Final price, GST 0% — tailoring isn&apos;t taxed or entered in accounting.</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>

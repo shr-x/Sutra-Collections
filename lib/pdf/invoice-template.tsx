@@ -280,6 +280,9 @@ export interface PdfInvoiceData {
   measurementGroups?: PdfMeasurementGroup[];
   // Footer override for internal (non-customer-facing) documents.
   internalDocLabel?: string;
+  // Tailoring is zero-tax (Oct 2026): show one "GST 0%" line instead of the
+  // GST summary table and the CGST/SGST rows.
+  zeroTax?: boolean;
 }
 
 function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
@@ -491,7 +494,8 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
 
           {/* ── GST Summary + Totals ── */}
           <View style={S.summaryRow}>
-            {/* GST Summary */}
+            {/* GST Summary — replaced by a single GST 0% line for zero-tax tailoring docs */}
+            {data.zeroTax ? <View style={S.gstBox} /> : (
             <View style={S.gstBox}>
               <Text style={S.sectionLabel}>GST Summary (Rs.)</Text>
               <View style={S.gstHead}>
@@ -515,6 +519,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                 </View>
               ))}
             </View>
+            )}
 
             {/* Totals */}
             <View style={S.totalsBox}>
@@ -532,14 +537,23 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
                 <Text style={S.totalsLabel}>Taxable Value</Text>
                 <Text style={S.totalsValue}>{fmt(taxableSum)}</Text>
               </View>
-              <View style={S.totalsLine}>
-                <Text style={S.totalsLabel}>CGST</Text>
-                <Text style={S.totalsValue}>{fmt(data.totalCgst)}</Text>
-              </View>
-              <View style={S.totalsLine}>
-                <Text style={S.totalsLabel}>SGST</Text>
-                <Text style={S.totalsValue}>{fmt(data.totalSgst)}</Text>
-              </View>
+              {data.zeroTax ? (
+                <View style={S.totalsLine}>
+                  <Text style={S.totalsLabel}>GST 0%</Text>
+                  <Text style={S.totalsValue}>{fmt(0)}</Text>
+                </View>
+              ) : (
+                <>
+                  <View style={S.totalsLine}>
+                    <Text style={S.totalsLabel}>CGST</Text>
+                    <Text style={S.totalsValue}>{fmt(data.totalCgst)}</Text>
+                  </View>
+                  <View style={S.totalsLine}>
+                    <Text style={S.totalsLabel}>SGST</Text>
+                    <Text style={S.totalsValue}>{fmt(data.totalSgst)}</Text>
+                  </View>
+                </>
+              )}
               {/* Scheme + loyalty discounts shown between subtotal and grand total (#1) */}
               {schemeDisc > 0 && (
                 <View style={S.totalsLine}>

@@ -14,8 +14,7 @@ import {
   generateTailoringCreditDuePdf, generateTailoringOrderConfirmationPdf,
   generateAlterationTailorPdf, generateInvoicePdf,
 } from '@/lib/pdf-generator';
-import { createTailoringInvoice, syncTailoringInvoiceAfterAlteration } from '@/lib/tailoring-invoice';
-import { postPaymentReceived } from '@/lib/accounting';
+import { createTailoringInvoice, syncTailoringInvoiceAfterAlteration, TAILORING_GST_RATE } from '@/lib/tailoring-invoice';
 import { logAudit } from '@/lib/audit';
 import type { PoolClient } from 'pg';
 import type { ActionResult, TailoringStatus, TailoringPaymentMode } from '@/types';
@@ -28,16 +27,12 @@ import type { ActionResult, TailoringStatus, TailoringPaymentMode } from '@/type
 // invoice's amount_paid was frozen at whatever was collected when the invoice
 // was created, so every invoice-balance-based view (Outstanding Dues report/
 // page, customer profile, customer list) showed the order as still owing even
-// after it was fully paid. Posts the AR payment to the ledger per applied
-// portion, mirroring billing/invoices/actions.ts recordPaymentAction, so the
-// invoice record and the double-entry ledger move together. Best-effort: never
-// throws (a sync failure must not roll back the tailoring payment itself).
+// after it was fully paid. No ledger posting: tailoring is outside accounting
+// (lib/accounting-scope.ts).
 async function syncPaymentToInvoices(
   client: PoolClient,
   rootInvoiceId: string,
   amount: number,
-  paymentMode: string,
-  createdBy: string,
 ): Promise<void> {
   // Root + supplementary invoices, oldest first, only those still outstanding.
   const invRes = await client.query<{ id: string; invoice_number: string; grand_total: string; amount_paid: string }>(
@@ -65,18 +60,6 @@ async function syncPaymentToInvoices(
       `UPDATE invoices SET amount_paid=$1, status=$2 WHERE id=$3`,
       [newPaid, newStatus, inv.id],
     );
-    try {
-      await postPaymentReceived({
-        invoiceId: inv.id,
-        invoiceNumber: inv.invoice_number,
-        paymentDate: new Date().toISOString().slice(0, 10),
-        amount: applied,
-        paymentMode,
-        createdBy,
-      }, client);
-    } catch (acctErr) {
-      console.error('[syncPaymentToInvoices] accounting post failed:', acctErr);
-    }
     remaining = Math.round((remaining - applied) * 100) / 100;
   }
 }
@@ -365,13 +348,10 @@ export async function createTailoringOrder(raw: unknown): Promise<{
   const customerPhone = custRes.rows[0].phone!;
   const customerName  = custRes.rows[0].name;
 
-  // GST rate is fixed per design (set in the Design Catalog) and copied onto
-  // the order at creation time — orders never had this set before, so every
-  // order silently defaulted to tailoring_orders.gst_rate's DB default of 0%.
-  const designRes = await query<{ gst_rate: string }>(
-    'SELECT gst_rate::text FROM designs WHERE id=$1', [designId]
-  );
-  const designGstRate = Number(designRes.rows[0]?.gst_rate ?? 0);
+  // Tailoring is zero-tax and outside accounting (Oct 2026). New orders are
+  // stored at TAILORING_GST_RATE (0%); the design's gst_rate column is kept
+  // in the DB but intentionally ignored.
+  const orderGstRate = TAILORING_GST_RATE;
 
   // Tailoring orders don't have a warehouse picker in the wizard — resolve one
   // server-side (needed so the real GST invoice created later has a valid
@@ -493,7 +473,7 @@ export async function createTailoringOrder(raw: unknown): Promise<{
         invoiceId || null,
         customerName, customerPhone,
         batchId || null,
-        groupNumber, suffix, orderWarehouseId, designGstRate,
+        groupNumber, suffix, orderWarehouseId, orderGstRate,
       ]
     );
 
@@ -1073,7 +1053,7 @@ export async function recordTailoringPaymentAction(data: {
     // ready_for_pickup (which is when the real invoice is created); before
     // that invoice_id is null and there is nothing to sync.
     if (res.rows[0].invoice_id) {
-      await syncPaymentToInvoices(client, res.rows[0].invoice_id, data.amount, data.paymentMode, session.userId);
+      await syncPaymentToInvoices(client, res.rows[0].invoice_id, data.amount);
     }
 
     await client.query('COMMIT');

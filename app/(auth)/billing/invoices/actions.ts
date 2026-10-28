@@ -768,10 +768,10 @@ async function applyInvoicePayment(
   const invRes = await query<{
     grand_total: string; amount_paid: string; invoice_number: string;
     customer_id: string | null; customer_phone: string | null; customer_name: string | null;
-    loyalty_points_redeemed: string;
+    loyalty_points_redeemed: string; source: string;
   }>(
     `SELECT i.grand_total, i.amount_paid, i.invoice_number, i.customer_id,
-            i.loyalty_points_redeemed,
+            i.loyalty_points_redeemed, i.source,
             c.phone AS customer_phone, c.name AS customer_name
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
@@ -794,16 +794,20 @@ async function applyInvoicePayment(
       [capped, mode, newStatus, id]
     );
     const deltaApplied = capped - Number(invRes.rows[0].amount_paid);
-    try {
-      await postPaymentReceived({
-        invoiceId: id,
-        invoiceNumber: invRes.rows[0].invoice_number,
-        paymentDate: new Date().toISOString().slice(0, 10),
-        amount: deltaApplied,
-        paymentMode: mode,
-        createdBy: session.userId,
-      }, client);
-    } catch (acctErr) { console.error('Accounting post failed:', acctErr); }
+    // Tailoring invoices are outside accounting — update the invoice and the
+    // linked order, but post nothing to the ledger.
+    if (invRes.rows[0].source !== 'tailoring') {
+      try {
+        await postPaymentReceived({
+          invoiceId: id,
+          invoiceNumber: invRes.rows[0].invoice_number,
+          paymentDate: new Date().toISOString().slice(0, 10),
+          amount: deltaApplied,
+          paymentMode: mode,
+          createdBy: session.userId,
+        }, client);
+      } catch (acctErr) { console.error('Accounting post failed:', acctErr); }
+    }
     tailoringSync = await syncInvoicePaymentToTailoringOrder(id, deltaApplied, client);
     await client.query('COMMIT');
   } catch (err) {
@@ -1104,10 +1108,10 @@ export async function applyStoreCreditAction(
 
     const invRes = await client.query<{
       grand_total: string; amount_paid: string; invoice_number: string;
-      customer_id: string | null; store_credit_balance: string;
+      customer_id: string | null; store_credit_balance: string; source: string;
     }>(
       `SELECT i.grand_total, i.amount_paid, i.invoice_number, i.customer_id,
-              c.store_credit_balance
+              c.store_credit_balance, i.source
        FROM invoices i
        JOIN customers c ON c.id = i.customer_id
        WHERE i.id = $1 FOR UPDATE`,
@@ -1138,19 +1142,22 @@ export async function applyStoreCreditAction(
       [inv.customer_id, -capped, id, `Applied to invoice ${inv.invoice_number}`, session.userId]
     );
 
-    try {
-      await postJournalEntry({
-        entryDate:     new Date().toISOString().slice(0, 10),
-        description:   `Store credit applied — ${inv.invoice_number}`,
-        referenceType: 'payment',
-        referenceId:   id,
-        createdBy:     session.userId,
-        lines: [
-          { accountCode: '1001', debit: capped, credit: 0 },
-          { accountCode: '1100', debit: 0, credit: capped },
-        ],
-      }, client);
-    } catch (acctErr) { console.error('Journal post failed:', acctErr); }
+    // No ledger posting for tailoring invoices (outside accounting).
+    if (inv.source !== 'tailoring') {
+      try {
+        await postJournalEntry({
+          entryDate:     new Date().toISOString().slice(0, 10),
+          description:   `Store credit applied — ${inv.invoice_number}`,
+          referenceType: 'payment',
+          referenceId:   id,
+          createdBy:     session.userId,
+          lines: [
+            { accountCode: '1001', debit: capped, credit: 0 },
+            { accountCode: '1100', debit: 0, credit: capped },
+          ],
+        }, client);
+      } catch (acctErr) { console.error('Journal post failed:', acctErr); }
+    }
 
     await client.query('COMMIT');
   } catch (err) {

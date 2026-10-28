@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
     pool.query<{ total_taxable: string; total_cgst: string; total_sgst: string; total_grand: string }>(
       `SELECT COALESCE(SUM(${taxableSql('i')}),0) AS total_taxable, COALESCE(SUM(i.total_cgst),0) AS total_cgst,
               COALESCE(SUM(i.total_sgst),0) AS total_sgst, COALESCE(SUM(i.grand_total),0) AS total_grand
-       FROM invoices i WHERE i.status NOT IN ('cancelled','draft') AND i.invoice_type = 'gst' AND i.invoice_date BETWEEN $1 AND $2`,
+       FROM invoices i WHERE i.status NOT IN ('cancelled','draft') AND i.source <> 'tailoring' AND i.invoice_type = 'gst' AND i.invoice_date BETWEEN $1 AND $2`,
       [from, to]
     ),
     pool.query<{ total_taxable: string; total_cgst: string; total_sgst: string }>(

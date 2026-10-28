@@ -38,7 +38,7 @@ export default async function HsnPage({ searchParams }: { searchParams: { month?
        SUM(ii.total_amount)             AS total_amount
      FROM invoice_items ii
      JOIN invoices i ON i.id = ii.invoice_id
-     WHERE i.status NOT IN ('cancelled','draft')
+     WHERE i.status NOT IN ('cancelled','draft') AND i.source <> 'tailoring'
        AND i.invoice_date BETWEEN $1 AND $2
      GROUP BY ii.hsn_code, ii.gst_rate
      ORDER BY total_amount DESC`,

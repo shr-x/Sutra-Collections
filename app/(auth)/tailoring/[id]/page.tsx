@@ -307,12 +307,15 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
             payments={payments}
           />
 
-          {/* GST Invoices — the real, filed accounting document(s) for this
-              order. Kept out of the general Billing > Invoices list but always
-              viewable here. */}
+          {/* Invoices for this order (record-keeping only — tailoring is
+              zero-tax and outside accounting). Kept out of the general
+              Billing > Invoices list but always viewable here. */}
           {orderInvoices.length > 0 && (
             <div className="card">
-              <h2 className="mb-3 text-sm font-semibold text-gray-700">GST Invoice{orderInvoices.length > 1 ? 's' : ''}</h2>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
+                Invoice{orderInvoices.length > 1 ? 's' : ''}
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">Not in accounting</span>
+              </h2>
               <ul className="space-y-2">
                 {orderInvoices.map((inv) => (
                   <li key={inv.id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">

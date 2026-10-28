@@ -6,6 +6,7 @@
 
 import { pool } from '@/lib/db';
 import type { PoolClient } from 'pg';
+import { notTailoringJournal } from '@/lib/accounting-scope';
 
 type AccountCode =
   | '1001' | '1002' | '1100' | '1200' | '1201' | '1300'
@@ -348,14 +349,15 @@ export async function getAccountBalances(opts?: {
   toDate?: string;
   type?: string;
 }): Promise<AccountBalance[]> {
-  const conditions: string[] = [];
+  // Tailoring is outside accounting (lib/accounting-scope.ts): journal entries
+  // that older tailoring invoices/payments posted are left out of balances.
+  const conditions: string[] = [notTailoringJournal('je')];
   const params: unknown[] = [];
 
   if (opts?.fromDate) { params.push(opts.fromDate); conditions.push(`je.entry_date >= $${params.length}`); }
   if (opts?.toDate) { params.push(opts.toDate); conditions.push(`je.entry_date <= $${params.length}`); }
-
-  const whereJe = conditions.length ? `AND ${conditions.join(' AND ')}` : '';
-  const whereType = opts?.type ? `WHERE a.account_type = '${opts.type}'` : '';
+  if (opts?.type) { params.push(opts.type); }
+  const typeParam = opts?.type ? `AND a.account_type = $${params.length}` : '';
 
   const client = await pool.connect();
   try {
@@ -370,10 +372,16 @@ export async function getAccountBalances(opts?: {
            ELSE COALESCE(SUM(jl.credit_amount),0) - COALESCE(SUM(jl.debit_amount),0)
          END AS balance
        FROM accounts a
-       LEFT JOIN journal_lines jl ON jl.account_id = a.id
-       LEFT JOIN journal_entries je ON je.id = jl.journal_entry_id ${whereJe}
-       ${whereType}
-       WHERE a.is_active = TRUE
+       -- Filter lines through their entry BEFORE joining to accounts, so the
+       -- date range and tailoring exclusion actually drop the lines (a plain
+       -- LEFT JOIN on journal_entries would keep them with a NULL entry).
+       LEFT JOIN (
+         SELECT jl.account_id, jl.debit_amount, jl.credit_amount
+         FROM journal_lines jl
+         JOIN journal_entries je ON je.id = jl.journal_entry_id
+         WHERE ${conditions.join(' AND ')}
+       ) jl ON jl.account_id = a.id
+       WHERE a.is_active = TRUE ${typeParam}
        GROUP BY a.id, a.account_code, a.account_name, a.account_type
        ORDER BY a.account_code`,
       params

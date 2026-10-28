@@ -37,7 +37,7 @@ export default async function Gstr1Page({ searchParams }: { searchParams: { mont
             ${taxableSql('i')} AS taxable, i.total_cgst, i.total_sgst, i.grand_total
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
-     WHERE i.status NOT IN ('cancelled','draft')
+     WHERE i.status NOT IN ('cancelled','draft') AND i.source <> 'tailoring'
        AND i.invoice_type = 'gst'
        AND i.invoice_date BETWEEN $1 AND $2
      ORDER BY i.invoice_date, i.invoice_number`,

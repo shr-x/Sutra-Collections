@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import DatePicker from '@/components/date-picker';
+import { notTailoringJournal } from '@/lib/accounting-scope';
 
 export const metadata: Metadata = { title: 'Journal' };
 
@@ -27,7 +28,8 @@ export default async function JournalPage({
   const limit = 50;
   const offset = (page - 1) * limit;
 
-  const conditions: string[] = [];
+  // Tailoring is outside accounting — its older postings are hidden.
+  const conditions: string[] = [notTailoringJournal('je')];
   const params: unknown[] = [];
   if (searchParams.from) { params.push(searchParams.from); conditions.push(`je.entry_date >= $${params.length}`); }
   if (searchParams.to)   { params.push(searchParams.to);   conditions.push(`je.entry_date <= $${params.length}`); }

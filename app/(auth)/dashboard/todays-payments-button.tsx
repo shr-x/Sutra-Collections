@@ -68,6 +68,9 @@ export default function TodaysPaymentsButton({ payments, total }: Props) {
                           <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${KIND_BADGE[p.kind]}`}>
                             {p.kind}
                           </span>
+                          {p.kind === 'Tailoring Payment' && (
+                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">Not in accounting</span>
+                          )}
                           <span className="truncate text-xs font-mono text-gray-500">{p.label}</span>
                         </div>
                         <p className="mt-0.5 truncate text-sm font-medium text-gray-800">

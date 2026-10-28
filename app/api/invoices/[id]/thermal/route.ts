@@ -104,6 +104,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     subtotal:    Number(inv.subtotal),
     totalCgst:   Number(inv.total_cgst),
     totalSgst:   Number(inv.total_sgst),
+    // Zero-tax tailoring invoice → single "GST 0%" line instead of CGST/SGST.
+    zeroTax:     inv.source === 'tailoring' && Number(inv.total_cgst) + Number(inv.total_sgst) === 0,
     grandTotal:  Number(inv.grand_total),
     amountPaid:  Number(inv.amount_paid),
     paymentMode: inv.payment_mode,

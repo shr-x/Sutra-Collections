@@ -65,7 +65,7 @@ export default function DesignForm() {
           <option value="18">18%</option>
           <option value="28">28%</option>
         </select>
-        <p className="mt-1 text-xs text-gray-400">Used for GST calculation on tailoring orders for this design</p>
+        <p className="mt-1 text-xs text-gray-400">No longer applied — tailoring orders are billed at 0% GST and kept outside accounting.</p>
       </div>
 
       <div>

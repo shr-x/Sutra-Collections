@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
             i.total_cgst, i.total_sgst, i.grand_total
      FROM invoices i
      LEFT JOIN customers c ON c.id = i.customer_id
-     WHERE i.status NOT IN ('cancelled','draft')
+     WHERE i.status NOT IN ('cancelled','draft') AND i.source <> 'tailoring'
        AND i.invoice_type = 'gst'
        AND i.invoice_date BETWEEN $1 AND $2
      ORDER BY i.invoice_date, i.invoice_number`,
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
   const nonGstRes = await pool.query(
     `SELECT COUNT(*)::int AS count, COALESCE(SUM(grand_total), 0)::numeric(12,2) AS value
      FROM invoices
-     WHERE status NOT IN ('cancelled','draft')
+     WHERE status NOT IN ('cancelled','draft') AND source <> 'tailoring'
        AND invoice_type = 'non_gst'
        AND invoice_date BETWEEN $1 AND $2`,
     [from, to]

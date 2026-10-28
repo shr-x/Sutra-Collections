@@ -28,7 +28,7 @@ export default async function Gstr3bPage({ searchParams }: { searchParams: { mon
        COALESCE(SUM(i.total_sgst),0)  AS total_sgst,
        COALESCE(SUM(i.grand_total),0) AS total_grand
      FROM invoices i
-     WHERE i.status NOT IN ('cancelled','draft')
+     WHERE i.status NOT IN ('cancelled','draft') AND i.source <> 'tailoring'
        AND i.invoice_type = 'gst'
        AND i.invoice_date BETWEEN $1 AND $2`,
     [from, to]

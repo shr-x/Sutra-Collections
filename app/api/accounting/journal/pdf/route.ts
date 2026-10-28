@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { Document, Page, View, Text, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
+import { notTailoringJournal } from '@/lib/accounting-scope';
 
 const PURPLE = '#7C3AED';
 const DARK   = '#111827';
@@ -40,7 +41,8 @@ export async function GET(req: NextRequest) {
   const from = searchParams.get('from') ?? '';
   const to   = searchParams.get('to')   ?? '';
 
-  const conditions: string[] = [];
+  // Tailoring is outside accounting — its older postings are hidden.
+  const conditions: string[] = [notTailoringJournal('je')];
   const params: unknown[] = [];
   if (from) { params.push(from); conditions.push(`je.entry_date >= $${params.length}`); }
   if (to)   { params.push(to);   conditions.push(`je.entry_date <= $${params.length}`); }

@@ -141,14 +141,23 @@ function ThermalDoc({ data }: { data: ThermalData }) {
             <Text>Taxable</Text>
             <Text>{fmt(data.subtotal - data.totalCgst - data.totalSgst)}</Text>
           </View>
-          <View style={S.totRow}>
-            <Text>CGST</Text>
-            <Text>{fmt(data.totalCgst)}</Text>
-          </View>
-          <View style={S.totRow}>
-            <Text>SGST</Text>
-            <Text>{fmt(data.totalSgst)}</Text>
-          </View>
+          {data.zeroTax ? (
+            <View style={S.totRow}>
+              <Text>GST 0%</Text>
+              <Text>{fmt(0)}</Text>
+            </View>
+          ) : (
+            <>
+              <View style={S.totRow}>
+                <Text>CGST</Text>
+                <Text>{fmt(data.totalCgst)}</Text>
+              </View>
+              <View style={S.totRow}>
+                <Text>SGST</Text>
+                <Text>{fmt(data.totalSgst)}</Text>
+              </View>
+            </>
+          )}
           {/* Scheme + loyalty discounts between subtotal and total (#1) */}
           {schemeDisc > 0 && (
             <View style={S.totRow}>

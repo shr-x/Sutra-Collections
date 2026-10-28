@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import DatePicker from '@/components/date-picker';
+import { notTailoringJournal } from '@/lib/accounting-scope';
 
 export const metadata: Metadata = { title: 'General Ledger' };
 
@@ -47,13 +48,14 @@ export default async function LedgerPage({
            END AS balance
          FROM journal_lines jl
          JOIN journal_entries je ON je.id = jl.journal_entry_id
-         WHERE jl.account_id = $1 AND je.entry_date < $2`,
+         WHERE jl.account_id = $1 AND je.entry_date < $2 AND ${notTailoringJournal('je')}`,
         [selectedId, searchParams.from]
       );
       openingBalance = Number(obRes.rows[0]?.balance ?? 0);
     }
 
-    const conditions = [`jl.account_id = $1`];
+    // Tailoring is outside accounting — its older postings are hidden.
+    const conditions = [`jl.account_id = $1`, notTailoringJournal('je')];
     const qParams: unknown[] = [selectedId];
     if (searchParams.from) { qParams.push(searchParams.from); conditions.push(`je.entry_date >= $${qParams.length}`); }
     if (searchParams.to)   { qParams.push(searchParams.to);   conditions.push(`je.entry_date <= $${qParams.length}`); }

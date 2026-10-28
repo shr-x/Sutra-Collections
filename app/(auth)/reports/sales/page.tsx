@@ -163,6 +163,11 @@ export default async function SalesReportPage({
             </Link>
           );
         })}
+        {mode !== 'retail' && (
+          <span className="ml-1 self-center rounded bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
+            {mode === 'tailoring' ? 'Not in accounting' : 'Includes tailoring (not in accounting)'}
+          </span>
+        )}
       </div>
 
       {/* Filters */}

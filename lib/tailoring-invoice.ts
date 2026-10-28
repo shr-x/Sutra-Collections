@@ -1,5 +1,11 @@
 /**
- * Real GST tax invoice generation for tailoring orders.
+ * Invoice generation for tailoring orders.
+ *
+ * Oct 2026 rule: tailoring is billing/record-keeping only — ZERO tax and
+ * OUTSIDE accounting (see lib/accounting-scope.ts). Every tailoring invoice
+ * created from now on (root, supplementary/alteration) is 0% GST with
+ * taxable value = total, and posts NO journal entries. Invoices/journal
+ * entries created before this rule are left exactly as stored.
  *
  * Tailoring orders reference a `design`, not a real `items` row, so we route
  * every tailoring invoice line through one system item ("Tailoring Services",
@@ -15,10 +21,15 @@ import type { PoolClient } from 'pg';
 import { pool, query } from '@/lib/db';
 import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
-import { postSalesInvoice, postJournalEntry, type JournalLine } from '@/lib/accounting';
 import { logAudit } from '@/lib/audit';
 
 const SERVICE_ITEM_NAME = 'Tailoring Services';
+
+/**
+ * GST rate for every new tailoring order and tailoring invoice. The
+ * design-level gst_rate column is kept in the DB but no longer used.
+ */
+export const TAILORING_GST_RATE = 0;
 
 async function getOrCreateServiceItemId(client: PoolClient): Promise<string> {
   const existing = await client.query<{ id: string }>(
@@ -39,49 +50,6 @@ function invoiceStatus(amountPaid: number, grandTotal: number): string {
   if (amountPaid >= grandTotal) return 'paid';
   if (amountPaid > 0) return 'partially_paid';
   return 'issued';
-}
-
-/** Reverses a previously-posted journal entry for a reference (debit/credit swapped), same-day. */
-async function reverseJournalEntry(
-  referenceType: 'invoice',
-  referenceId: string,
-  description: string,
-  entryDate: string,
-  createdBy: string,
-  client: PoolClient
-): Promise<void> {
-  const entries = await client.query<{ id: string }>(
-    `SELECT id FROM journal_entries WHERE reference_type=$1 AND reference_id=$2 ORDER BY entry_date ASC`,
-    [referenceType, referenceId]
-  );
-  if (!entries.rows.length) return;
-
-  const lines: JournalLine[] = [];
-  for (const entry of entries.rows) {
-    const ls = await client.query<{ account_code: string; debit_amount: string; credit_amount: string }>(
-      `SELECT a.account_code, jl.debit_amount, jl.credit_amount
-       FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
-       WHERE jl.journal_entry_id=$1`,
-      [entry.id]
-    );
-    for (const l of ls.rows) {
-      const debit = Number(l.debit_amount);
-      const credit = Number(l.credit_amount);
-      if (debit === 0 && credit === 0) continue;
-      // swap debit/credit to reverse
-      lines.push({ accountCode: l.account_code, debit: credit, credit: debit });
-    }
-  }
-  if (!lines.length) return;
-
-  await postJournalEntry({
-    entryDate,
-    description,
-    referenceType,
-    referenceId,
-    createdBy,
-    lines,
-  }, client);
 }
 
 interface TailoringOrderRow {
@@ -118,10 +86,10 @@ async function fetchOrderPlain(orderId: string): Promise<TailoringOrderRow | nul
 }
 
 /**
- * Creates the real, final GST tax invoice for a tailoring order the FIRST
- * time it reaches ready_for_pickup. Posts the same journal entry a normal
- * sales invoice would (postSalesInvoice) and links tailoring_orders.invoice_id.
- * No-op (returns null) if the order already has an invoice.
+ * Creates the final invoice for a tailoring order the FIRST time it reaches
+ * ready_for_pickup, at 0% GST (TAILORING_GST_RATE), and links
+ * tailoring_orders.invoice_id. No journal entry — tailoring is outside
+ * accounting. No-op (returns null) if the order already has an invoice.
  */
 export async function createTailoringInvoice(
   orderId: string,
@@ -139,7 +107,9 @@ export async function createTailoringInvoice(
 
     const serviceItemId = await getOrCreateServiceItemId(client);
     const grandTotal = Number(order.total_amount);
-    const gstRate = Number(order.gst_rate);
+    // Always 0% now — even for an order created before the rule changed,
+    // because this invoice is new and tailoring is no longer GST-filed.
+    const gstRate = TAILORING_GST_RATE;
     const amountPaid = Math.min(Number(order.amount_paid), grandTotal);
 
     const lr = calcLine({ quantity: 1, rate: grandTotal, gstRate, isScheme: false });
@@ -177,14 +147,6 @@ export async function createTailoringInvoice(
        lr.taxableValue, lr.cgstAmount, lr.sgstAmount, lr.totalAmount]
     );
 
-    await postSalesInvoice({
-      invoiceId, invoiceNumber, invoiceDate,
-      grandTotal: lr.totalAmount, taxableValue: lr.taxableValue,
-      totalCgst: lr.cgstAmount, totalSgst: lr.sgstAmount,
-      paymentMode: null, amountPaid,
-      createdBy: order.created_by ?? actingUserId,
-    }, client);
-
     await client.query(`UPDATE tailoring_orders SET invoice_id=$1 WHERE id=$2`, [invoiceId, orderId]);
 
     await client.query('COMMIT');
@@ -215,9 +177,9 @@ async function alreadyInvoicedTotal(rootInvoiceId: string, rootGrandTotal: numbe
 }
 
 /**
- * Creates a new, normal invoice (standard invoice_sequences numbering, full
- * journal/ledger posting via postSalesInvoice — additive, NOT a reversal) for
- * just the price DIFFERENCE on top of a locked root invoice. The root invoice
+ * Creates a new invoice (standard invoice_sequences numbering, 0% GST, no
+ * journal posting — tailoring is outside accounting) for just the price
+ * DIFFERENCE on top of a locked root invoice. The root invoice
  * itself is never touched. Returns null if the delta isn't positive (a
  * decrease on a locked invoice has no "sales debit note" equivalent in this
  * codebase and is handled by the locked_flagged path instead).
@@ -235,7 +197,7 @@ async function createSupplementaryInvoice(
     await client.query('BEGIN');
 
     const serviceItemId = await getOrCreateServiceItemId(client);
-    const gstRate = Number(order.gst_rate);
+    const gstRate = TAILORING_GST_RATE;
     const lr = calcLine({ quantity: 1, rate: deltaAmount, gstRate, isScheme: false });
     const invoiceNumber = await nextInvoiceNumber('INV', client);
     const invoiceDate = new Date().toISOString().slice(0, 10);
@@ -269,14 +231,6 @@ async function createSupplementaryInvoice(
        lr.taxableValue, lr.cgstAmount, lr.sgstAmount, lr.totalAmount]
     );
 
-    await postSalesInvoice({
-      invoiceId, invoiceNumber, invoiceDate,
-      grandTotal: lr.totalAmount, taxableValue: lr.taxableValue,
-      totalCgst: lr.cgstAmount, totalSgst: lr.sgstAmount,
-      paymentMode: null, amountPaid: 0,
-      createdBy: order.created_by ?? actingUserId,
-    }, client);
-
     await client.query('COMMIT');
 
     logAudit({
@@ -308,12 +262,12 @@ async function createSupplementaryInvoice(
  *   be pointless).
  * - Total increased, invoice still within the 1-hour edit grace window (same
  *   rule billing/invoices/actions.ts's updateInvoiceAction uses) -> amend the
- *   invoice in place (same invoice_number), reversing and reposting its
- *   journal entry so the ledger reflects the corrected total.
+ *   invoice in place (same invoice_number), keeping the GST rate already on
+ *   that invoice (so an invoice issued before the 0% rule is never re-taxed).
+ *   No journal activity — tailoring is outside accounting.
  * - Total increased, invoice locked (>1hr old) -> the root invoice is a filed
- *   tax document and is NEVER modified. Instead, a new standard invoice is
- *   created for just the delta (nextInvoiceNumber, full journal posting via
- *   postSalesInvoice — additive, not a reversal), linked back to the root via
+ *   document and is NEVER modified. Instead, a new 0% invoice is created for
+ *   just the delta (nextInvoiceNumber, no journal posting), linked back to the root via
  *   invoices.supplementary_of_invoice_id, with notes referencing the root
  *   invoice number. Sent to the customer the same way a ready-for-pickup
  *   invoice is sent.
@@ -393,7 +347,12 @@ export async function syncTailoringInvoiceAfterAlteration(
   try {
     await client.query('BEGIN');
 
-    const gstRate = Number(orderRow.gst_rate);
+    // Keep the rate already on this invoice: 0% for anything issued under the
+    // current rule, the original rate for an invoice issued before it.
+    const rateRes = await client.query<{ gst_rate: string }>(
+      `SELECT gst_rate::text FROM invoice_items WHERE invoice_id=$1 ORDER BY sort_order LIMIT 1`, [invoice.id]
+    );
+    const gstRate = Number(rateRes.rows[0]?.gst_rate ?? TAILORING_GST_RATE);
 
     // Break the total into a base-garment line (sort_order=0, set at order
     // creation) plus a separate "Alteration Charges" line (sort_order=1) for
@@ -453,16 +412,6 @@ export async function syncTailoringInvoiceAfterAlteration(
       // from a prior amendment rather than leaving a stale ₹0 row.
       await client.query(`DELETE FROM invoice_items WHERE invoice_id=$1 AND sort_order=1`, [invoice.id]);
     }
-
-    const today = new Date().toISOString().slice(0, 10);
-    await reverseJournalEntry('invoice', invoice.id, `Reversal — amended invoice ${invoice.invoice_number}`, today, actingUserId, client);
-    await postSalesInvoice({
-      invoiceId: invoice.id, invoiceNumber: invoice.invoice_number, invoiceDate: today,
-      grandTotal: totals.grandTotal, taxableValue: totals.subtotal - totals.totalCgst - totals.totalSgst,
-      totalCgst: totals.totalCgst, totalSgst: totals.totalSgst,
-      paymentMode: null, amountPaid,
-      createdBy: actingUserId,
-    }, client);
 
     await client.query('COMMIT');
 
