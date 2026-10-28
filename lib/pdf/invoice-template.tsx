@@ -1,4 +1,5 @@
 import React from 'react';
+import { stampDataUrl } from './stamp';
 import {
   Document, Page, View, Text, Image, StyleSheet, renderToBuffer,
 } from '@react-pdf/renderer';
@@ -135,14 +136,14 @@ const S = StyleSheet.create({
   grandLabel: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: DARK },
   grandValue: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: DARK },
 
-  // ── Payment / QR / Notes / Signature row ──
+  // ── Payment / QR / Notes / Stamp row ──
   bottomRow: {
     flexDirection: 'row', marginTop: 16,
     borderTopWidth: 0.5, borderTopColor: RULE, paddingTop: 12,
   },
   payBox:  { width: 130, marginRight: 16 },
   notesBox: { flex: 1, marginRight: 16 },
-  sigBox:  { width: 110 },
+  sigBox:  { width: 100, alignItems: 'flex-end' },
   boxLabel: {
     fontSize: 7, fontFamily: 'Helvetica-Bold',
     color: MUTED, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 5,
@@ -152,8 +153,7 @@ const S = StyleSheet.create({
     width: 64, height: 64, borderWidth: 0.5, borderColor: RULE,
     alignItems: 'center', justifyContent: 'center',
   },
-  sigLine: { borderTopWidth: 0.5, borderTopColor: RULE, marginTop: 36, paddingTop: 4 },
-  sigText: { fontSize: 7, color: MUTED, textAlign: 'center' },
+  stampImg: { width: 92, height: 92, alignSelf: 'flex-end' },
 
   // ── Terms ──
   termsBox: {
@@ -286,6 +286,7 @@ export interface PdfInvoiceData {
 }
 
 function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
+  const stamp = stampDataUrl();
   const balance    = data.grandTotal - (data.amountPaid ?? 0);
   const showEWay   = data.grandTotal > 50000;
   const taxableSum = data.subtotal - data.totalCgst - data.totalSgst;
@@ -605,7 +606,7 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
           </>
           )}
 
-          {/* ── Payment / Notes / Signature — skipped for no-pricing internal docs ── */}
+          {/* ── Payment / Notes / Stamp — skipped for no-pricing internal docs ── */}
           {!data.hidePricing && (
           <View style={S.bottomRow}>
             {(data.upiVpa || data.upiQrDataUrl) && (
@@ -633,12 +634,12 @@ function InvoiceDoc({ data }: { data: PdfInvoiceData }) {
               </View>
             )}
 
-            <View style={[S.sigBox, { marginLeft: 'auto' }]}>
-              <Text style={S.boxLabel}>For {data.company.name}</Text>
-              <View style={S.sigLine}>
-                <Text style={S.sigText}>Authorised Signatory</Text>
+            {/* Business stamp in place of the old "For … / Authorised Signatory" box. */}
+            {stamp && (
+              <View style={[S.sigBox, { marginLeft: 'auto' }]}>
+                <Image src={stamp} style={S.stampImg} />
               </View>
-            </View>
+            )}
           </View>
           )}
 

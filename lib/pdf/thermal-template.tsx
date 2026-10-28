@@ -1,6 +1,7 @@
 import React from 'react';
 import { Document, Page, View, Text, Image, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
 import type { PdfInvoiceData } from './invoice-template';
+import { thermalStampDataUrl } from './stamp';
 
 // 80 mm thermal roll: usable width ≈ 72 mm ≈ 204 pt
 const W = 204;
@@ -18,6 +19,7 @@ const S = StyleSheet.create({
   bold:     { fontFamily: 'Courier-Bold' },
   row:      { flexDirection: 'row', justifyContent: 'space-between' },
   logo:     { width: 36, height: 36, alignSelf: 'center', marginBottom: 3 },
+  watermark: { position: 'absolute', width: 150, height: 150, top: '50%', left: (W - 16 - 150) / 2, marginTop: -75, opacity: 0.55 },
   sep:      { textAlign: 'center', marginVertical: 4, fontSize: 7 },
   itemName: { fontFamily: 'Courier-Bold', marginBottom: 1 },
   itemSub:  { fontSize: 7.5 },
@@ -31,6 +33,7 @@ interface ThermalData extends PdfInvoiceData {
 }
 
 function ThermalDoc({ data }: { data: ThermalData }) {
+  const watermark = thermalStampDataUrl();
   const balance = data.grandTotal - (data.amountPaid ?? 0);
   const schemeDisc  = data.schemeDiscount ?? 0;
   const loyaltyDisc = data.loyaltyDiscount ?? 0;
@@ -42,7 +45,12 @@ function ThermalDoc({ data }: { data: ThermalData }) {
         wrap={false} on the inner View prevents page splits.
       */}
       <Page size={{ width: W, height: 'auto' as unknown as number }} style={S.page}>
-        <View wrap={false}>
+        <View wrap={false} style={{ position: 'relative' }}>
+          {/* Business stamp as a faint watermark, centred behind the receipt.
+              Drawn first so all text prints on top; light grey so a B/W
+              thermal printer dithers it to a sparse tint. */}
+          {watermark && <Image src={watermark} style={S.watermark} />}
+
           {/* Logo — only shown when data URL is provided (avoids file-path render split) */}
           {data.logoDataUrl && (
             <Image src={data.logoDataUrl} style={S.logo} />
