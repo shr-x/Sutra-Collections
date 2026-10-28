@@ -28,6 +28,8 @@ interface PickerItem {
   stock_qty: number;
   /** Quantity per "sizeId:colorId" for the selected warehouse (sums to stock_qty). */
   variant_stock?: Record<string, number>;
+  /** Total across all warehouses (what Inventory → Items shows). */
+  stock_qty_all?: number;
   low_stock_threshold: number | null;
   sizes: PickerSize[];
   colors: PickerColor[];
@@ -109,6 +111,8 @@ function StockBadge({ qty, unit, threshold }: { qty: number; unit: string; thres
   if (qty <= threshold) return <span className={`${base} bg-amber-100 text-amber-700`}>⚠ {qty} {unit}</span>;
   return <span className={`${base} bg-green-100 text-green-700`}>✓ {qty} {unit}</span>;
 }
+
+const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
 
 function variantsInStock(item: PickerItem): number {
   const vs = item.variant_stock ?? {};
@@ -246,7 +250,11 @@ export default function ItemPickerModal({ open, warehouseId, onAdd, onClose }: I
         hsn_code: item.hsn_code,
         gst_rate: item.gst_rate,
         quantity: qty,
-        stock_qty: item.stock_qty,
+        // Availability of THIS variant (drives the "Only N in stock" warning
+        // on the invoice line), not the whole item's total.
+        stock_qty: needsPicker(item)
+          ? (item.variant_stock?.[`${sizeId}:${colorId}`] ?? 0)
+          : item.stock_qty,
       };
     },
     []
@@ -326,6 +334,9 @@ export default function ItemPickerModal({ open, warehouseId, onAdd, onClose }: I
     !pickerItem || pickerItem.colors.some((c) => comboQty(sizeId, c.id) > 0);
   const colorHasStock = (colorId: string): boolean =>
     comboQty(selectedSizeId, colorId) > 0;
+  // Total for a size across its colours (shown on the size pill).
+  const sizeQty = (sizeId: string): number =>
+    pickerItem ? pickerItem.colors.reduce((t, c) => t + Math.max(0, comboQty(sizeId, c.id)), 0) : 0;
   const currentVariantQty = pickerItem
     ? (variantStock[`${selectedSizeId}:${selectedColorId}`] ?? 0)
     : 0;
@@ -397,6 +408,7 @@ export default function ItemPickerModal({ open, warehouseId, onAdd, onClose }: I
                 <div className="flex flex-wrap gap-2">
                   {pickerItem.sizes.map((s) => {
                     const avail = stockLoading || sizeHasStock(s.id);
+                    const qty = sizeQty(s.id);
                     return (
                       <button key={s.id} type="button" disabled={!avail}
                         onClick={() => { if (avail) setSelectedSizeId(s.id); }}
@@ -408,6 +420,11 @@ export default function ItemPickerModal({ open, warehouseId, onAdd, onClose }: I
                             : 'border-gray-300 bg-white text-gray-700 hover:border-purple-400'
                         }`}>
                         {s.size_name}
+                        {!stockLoading && (
+                          <span className={`ml-1.5 text-xs ${selectedSizeId === s.id ? 'text-purple-100' : qty > 0 ? 'text-green-700' : 'text-red-500 no-underline'}`}>
+                            {qty > 0 ? `· ${fmtQty(qty)}` : '· out'}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -424,6 +441,7 @@ export default function ItemPickerModal({ open, warehouseId, onAdd, onClose }: I
                     const hex = colorSwatch(c.color_name);
                     const isSelected = selectedColorId === c.id;
                     const avail = stockLoading || colorHasStock(c.id);
+                    const qty = comboQty(selectedSizeId, c.id);
                     return (
                       <button key={c.id} type="button" disabled={!avail}
                         onClick={() => { if (avail) setSelectedColorId(c.id); }}
@@ -439,6 +457,11 @@ export default function ItemPickerModal({ open, warehouseId, onAdd, onClose }: I
                             style={{ backgroundColor: hex }} />
                         )}
                         {c.color_name}
+                        {!stockLoading && (
+                          <span className={`text-xs ${isSelected ? 'text-purple-100' : qty > 0 ? 'text-green-700' : 'text-red-500'}`}>
+                            {qty > 0 ? `· ${fmtQty(qty)}` : '· out'}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -635,6 +658,11 @@ export default function ItemPickerModal({ open, warehouseId, onAdd, onClose }: I
                         )}
                         <div className="mt-auto">
                           <StockBadge qty={remaining} unit={item.unit} threshold={item.low_stock_threshold ?? 5} />
+                          {item.stock_qty_all != null && Math.abs(item.stock_qty_all - item.stock_qty) > 0.0005 && (
+                            <p className="mt-1 text-[10px] text-gray-500">
+                              {fmtQty(item.stock_qty_all)} {item.unit} across all warehouses
+                            </p>
+                          )}
                           {!simple && item.stock_qty > 0 && (
                             <p className="mt-1 text-[10px] text-gray-500">
                               {variantsInStock(item)} of {item.sizes.length * item.colors.length} variants in stock

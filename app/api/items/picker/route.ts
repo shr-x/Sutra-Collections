@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { query } from '@/lib/db';
+import { effectiveSizeSql, effectiveColorSql } from '@/lib/stock-sql';
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -16,25 +17,29 @@ export async function GET(req: NextRequest) {
          FILTER (WHERE s.id IS NOT NULL), '[]') AS sizes,
        COALESCE(json_agg(DISTINCT jsonb_build_object('id', c.id, 'color_name', c.color_name, 'is_default', c.is_default))
          FILTER (WHERE c.id IS NOT NULL), '[]') AS colors,
+       -- Stock in the selected warehouse (all warehouses when none is selected).
        COALESCE(
          (SELECT SUM(st.quantity) FROM stock st WHERE st.item_id = i.id
           AND ($1::uuid IS NULL OR st.warehouse_id = $1::uuid)),
          0
-       )::int AS stock_qty,
-       -- Per-variant availability, keyed "sizeId:colorId", built from the SAME
-       -- stock rows as stock_qty (so the variants always add up to the card
-       -- total) and with the same legacy-NULL → default mapping as
-       -- /api/items/[id]/stock-by-variant and the invoice pre-flight check.
+       )::float AS stock_qty,
+       -- Across ALL warehouses — the figure Inventory → Items shows.
+       COALESCE((SELECT SUM(st.quantity) FROM stock st WHERE st.item_id = i.id), 0)::float AS stock_qty_all,
+       -- Per-variant availability in the selected warehouse, keyed
+       -- "sizeId:colorId". Built from the same rows as stock_qty, with legacy
+       -- NULL size/colour rows attributed by lib/stock-sql.ts, so the variants
+       -- add up to the card total. Rows that still can't be attributed (an
+       -- item with no size/colour at all) are skipped here instead of making
+       -- json_object_agg fail the whole picker on a NULL key.
        COALESCE((
          SELECT json_object_agg(v.k, v.q) FROM (
-           SELECT COALESCE(st.size_id,  (SELECT id FROM item_sizes  WHERE item_id = i.id AND is_default = TRUE LIMIT 1))::text
-                  || ':' ||
-                  COALESCE(st.color_id, (SELECT id FROM item_colors WHERE item_id = i.id AND is_default = TRUE LIMIT 1))::text AS k,
+           SELECT ${effectiveSizeSql('st', 'i.id')}::text || ':' || ${effectiveColorSql('st', 'i.id')}::text AS k,
                   SUM(st.quantity)::float AS q
            FROM stock st
            WHERE st.item_id = i.id AND ($1::uuid IS NULL OR st.warehouse_id = $1::uuid)
            GROUP BY 1
          ) v
+         WHERE v.k IS NOT NULL
        ), '{}'::json) AS variant_stock
      FROM items i
      LEFT JOIN item_sizes s ON s.item_id = i.id

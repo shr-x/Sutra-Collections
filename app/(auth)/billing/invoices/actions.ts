@@ -16,6 +16,7 @@ import { checkLowStockForItems } from '@/lib/low-stock';
 import { resolveStockVariant, StockVariantError } from '@/lib/stock-variant';
 import type { ActionResult } from '@/types';
 import { todayIST } from '@/lib/ist-date';
+import { effectiveSizeSql, effectiveColorSql } from '@/lib/stock-sql';
 import { applyInvoicePayment } from '@/lib/invoice-payment';
 import { logAppError } from '@/lib/app-error-log';
 
@@ -155,13 +156,13 @@ export async function createInvoiceAction(
     );
     if (typeRow.rows[0]?.item_type !== 'finished') continue;
 
+    // Same variant attribution as the item picker (lib/stock-sql.ts), so the
+    // availability checked here is exactly what the picker showed.
     const stockRow = await query<{ quantity: string }>(
-      `SELECT COALESCE(SUM(quantity), 0) AS quantity FROM stock
-       WHERE item_id=$1 AND warehouse_id=$2
-         AND COALESCE(size_id,  (SELECT id FROM item_sizes  WHERE item_id=$1 AND is_default=TRUE LIMIT 1))
-             IS NOT DISTINCT FROM COALESCE($3::uuid, (SELECT id FROM item_sizes  WHERE item_id=$1 AND is_default=TRUE LIMIT 1))
-         AND COALESCE(color_id, (SELECT id FROM item_colors WHERE item_id=$1 AND is_default=TRUE LIMIT 1))
-             IS NOT DISTINCT FROM COALESCE($4::uuid, (SELECT id FROM item_colors WHERE item_id=$1 AND is_default=TRUE LIMIT 1))`,
+      `SELECT COALESCE(SUM(st.quantity), 0) AS quantity FROM stock st
+       WHERE st.item_id=$1 AND st.warehouse_id=$2
+         AND ${effectiveSizeSql('st', '$1')}  IS NOT DISTINCT FROM COALESCE($3::uuid, (SELECT id FROM item_sizes  WHERE item_id=$1 ORDER BY is_default DESC, sort_order, size_name LIMIT 1))
+         AND ${effectiveColorSql('st', '$1')} IS NOT DISTINCT FROM COALESCE($4::uuid, (SELECT id FROM item_colors WHERE item_id=$1 ORDER BY is_default DESC, sort_order, color_name LIMIT 1))`,
       [item.item_id, header.warehouse_id, item.size_id ?? null, item.color_id ?? null]
     );
     const available = Number(stockRow.rows[0]?.quantity ?? 0);
