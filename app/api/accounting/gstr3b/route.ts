@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { taxableSql } from '@/lib/gstr';
+import { retailCreditNote } from '@/lib/accounting-scope';
+
+// GST scope: ALL tailoring (invoices and refunds against them, past and
+// future, no cutoff) is excluded on purpose — see lib/accounting-scope.ts.
 
 export async function GET(req: NextRequest) {
   await requireRole('accountant', 'admin');
@@ -24,7 +28,7 @@ export async function GET(req: NextRequest) {
     pool.query(
       `SELECT COALESCE(SUM(${taxableSql('cn')}),0) AS taxable, COALESCE(SUM(cn.total_cgst),0) AS cgst, COALESCE(SUM(cn.total_sgst),0) AS sgst
        FROM credit_notes cn
-       WHERE cn.status IN ('issued','settled') AND (cn.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1 AND $2`,
+       WHERE cn.status IN ('issued','settled') AND ${retailCreditNote('cn')} AND (cn.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1 AND $2`,
       [from, to]
     ),
     pool.query(

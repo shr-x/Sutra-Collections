@@ -5,6 +5,7 @@ import { requireRole } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import DatePicker from '@/components/date-picker';
+import IncludesTailoringNote from '@/components/includes-tailoring-note';
 
 export const metadata: Metadata = { title: 'Staff Performance' };
 
@@ -15,11 +16,13 @@ export default async function StaffPerformancePage({
 }) {
   await requireRole('admin');
 
-  // Gate: only show when staff_module_enabled is true in settings
-  const settRes = await query<{ staff_module_enabled: boolean }>(
-    'SELECT staff_module_enabled FROM settings LIMIT 1'
+  // Gate: only show when staff_module_enabled is true in settings. settings is
+  // a key/value table (same read as the (auth) layout); there is no
+  // staff_module_enabled column, so the old column query always crashed.
+  const settRes = await query<{ value: string }>(
+    `SELECT value FROM settings WHERE key = 'staff_module_enabled'`
   );
-  if (!settRes.rows[0]?.staff_module_enabled) {
+  if (settRes.rows[0]?.value !== 'true') {
     redirect('/reports');
   }
 
@@ -85,6 +88,7 @@ export default async function StaffPerformancePage({
           </nav>
           <h1 className="page-title">Staff Performance</h1>
           <p className="text-xs text-amber-600 mt-1">Admin only</p>
+          <IncludesTailoringNote className="mt-1" />
         </div>
         <a
           href={`/api/reports/staff?from=${from}&to=${to}`}

@@ -8,6 +8,7 @@ import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { createInvoiceAction } from '@/app/(auth)/billing/invoices/actions';
 import type { ActionResult } from '@/types';
+import { todayIST } from '@/lib/ist-date';
 
 const LineSchema = z.object({
   item_id: z.string().uuid(),
@@ -107,7 +108,7 @@ export async function convertQuotationToInvoiceAction(id: string, _fd?: FormData
   fd.set('payload', JSON.stringify({
     customer_id: q.customer_id,
     warehouse_id: q.warehouse_id,
-    invoice_date: new Date().toISOString().slice(0, 10),
+    invoice_date: todayIST(),
     invoice_type: 'gst',
     is_scheme_invoice: q.is_scheme_invoice,
     notes: q.notes,

@@ -4,6 +4,10 @@ import { pool } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import { taxableSql } from '@/lib/gstr';
 import MonthSelector from '@/components/month-selector';
+import { retailCreditNote } from '@/lib/accounting-scope';
+
+// GST scope: ALL tailoring (invoices and refunds against them, past and
+// future, no cutoff) is excluded on purpose — see lib/accounting-scope.ts.
 
 export const metadata: Metadata = { title: 'GSTR-3B Summary' };
 
@@ -41,7 +45,7 @@ export default async function Gstr3bPage({ searchParams }: { searchParams: { mon
        COALESCE(SUM(cn.total_cgst),0) AS total_cgst,
        COALESCE(SUM(cn.total_sgst),0) AS total_sgst
      FROM credit_notes cn
-     WHERE cn.status IN ('issued','settled')
+     WHERE cn.status IN ('issued','settled') AND ${retailCreditNote('cn')}
        AND (cn.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1 AND $2`,
     [from, to]
   );

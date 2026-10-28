@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import DatePicker from '@/components/date-picker';
+import IncludesTailoringNote from '@/components/includes-tailoring-note';
 
 export const metadata: Metadata = { title: 'Best Sellers' };
 
@@ -34,10 +35,10 @@ export default async function BestSellersPage({
 
   let dbError: string | null = null;
   const rawData = await Promise.all([
-    // items table has no category column — use NULL so the display still works once added
+    // Category comes from item_categories via items.category_id.
     query(
       `SELECT it.id, it.name AS item_name,
-              NULL::text AS category, it.item_type,
+              cat.name AS category, it.item_type,
               SUM(ii.quantity)::numeric                        AS total_qty,
               SUM(ii.total_amount)                             AS total_revenue,
               SUM(ii.cgst_amount + ii.sgst_amount)            AS total_gst,
@@ -45,8 +46,9 @@ export default async function BestSellersPage({
        FROM invoice_items ii
        JOIN invoices i  ON i.id = ii.invoice_id
        JOIN items    it ON it.id = ii.item_id
+       LEFT JOIN item_categories cat ON cat.id = it.category_id
        WHERE ${where}
-       GROUP BY it.id, it.name, it.item_type
+       GROUP BY it.id, it.name, cat.name, it.item_type
        ORDER BY ${sort === 'revenue' ? 'total_revenue' : 'total_qty'} DESC
        LIMIT 50`,
       params
@@ -98,6 +100,7 @@ export default async function BestSellersPage({
             <Link href="/reports" className="hover:text-gray-600">Reports</Link> / Best Sellers
           </nav>
           <h1 className="page-title">Best Sellers</h1>
+          <IncludesTailoringNote className="mt-1" />
         </div>
         <div className="flex flex-wrap gap-2">
           <a

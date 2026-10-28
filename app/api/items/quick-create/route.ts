@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
-import { query } from '@/lib/db';
+import { pool } from '@/lib/db';
 
 const ALLOWED_GST = new Set([0, 5, 12, 18, 28]);
 
@@ -31,8 +31,10 @@ export async function POST(req: NextRequest) {
   const sale_price = salePrice != null && !Number.isNaN(salePrice) ? salePrice : null;
   const category_id = (body.category_id ?? null) || null;
 
+  const client = await pool.connect();
   try {
-    const { rows } = await query<{
+    await client.query('BEGIN');
+    const { rows } = await client.query<{
       id: string; name: string; gst_rate: string; hsn_code: string | null; unit: string; sale_price: string | null;
     }>(
       `INSERT INTO items (name, item_type, gst_rate, unit, hsn_code, sale_price, category_id, is_active)
@@ -40,9 +42,23 @@ export async function POST(req: NextRequest) {
        RETURNING id, name, gst_rate, hsn_code, unit, sale_price`,
       [name, gst_rate, unit, hsn_code, sale_price, category_id]
     );
-    return NextResponse.json(rows[0], { status: 201 });
+    // Every item needs at least one size and one colour, or its stock can't be
+    // recorded (lib/stock-variant.ts). Same defaults as Inventory → New Item.
+    const size = await client.query<{ id: string; size_name: string; is_default: boolean }>(
+      `INSERT INTO item_sizes (item_id, size_name, is_default, sort_order) VALUES ($1,'Regular',TRUE,0)
+       RETURNING id, size_name, is_default`, [rows[0].id]
+    );
+    const color = await client.query<{ id: string; color_name: string; is_default: boolean }>(
+      `INSERT INTO item_colors (item_id, color_name, is_default, sort_order) VALUES ($1,'Default',TRUE,0)
+       RETURNING id, color_name, is_default`, [rows[0].id]
+    );
+    await client.query('COMMIT');
+    return NextResponse.json({ ...rows[0], sizes: size.rows, colors: color.rows }, { status: 201 });
   } catch (e) {
+    await client.query('ROLLBACK');
     console.error('[POST /api/items/quick-create]', e);
     return NextResponse.json({ error: 'Failed to create product' }, { status: 500 });
+  } finally {
+    client.release();
   }
 }

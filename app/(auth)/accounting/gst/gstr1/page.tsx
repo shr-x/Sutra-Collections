@@ -5,6 +5,9 @@ import { formatInr } from '@/lib/gst';
 import { taxableSql } from '@/lib/gstr';
 import MonthSelector from '@/components/month-selector';
 
+// GST scope: ALL tailoring (invoices and refunds against them, past and
+// future, no cutoff) is excluded on purpose — see lib/accounting-scope.ts.
+
 export const metadata: Metadata = { title: 'GSTR-1' };
 
 interface InvoiceRow {

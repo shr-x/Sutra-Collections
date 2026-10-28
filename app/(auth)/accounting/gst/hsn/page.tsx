@@ -4,6 +4,9 @@ import { pool } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import MonthSelector from '@/components/month-selector';
 
+// GST scope: ALL tailoring (invoices and refunds against them, past and
+// future, no cutoff) is excluded on purpose — see lib/accounting-scope.ts.
+
 export const metadata: Metadata = { title: 'HSN Summary' };
 
 interface HsnRow {

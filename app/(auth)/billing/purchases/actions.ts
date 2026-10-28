@@ -9,7 +9,7 @@ import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { postPurchaseInvoice } from '@/lib/accounting';
 import { generateStickersForPurchase } from '@/lib/stickers';
-import { resolveStockVariant } from '@/lib/stock-variant';
+import { resolveStockVariant, StockVariantError } from '@/lib/stock-variant';
 import type { ActionResult } from '@/types';
 
 const LineSchema = z.object({
@@ -26,7 +26,11 @@ const LineSchema = z.object({
 const PurchaseSchema = z.object({
   supplier_id: z.string().uuid(),
   warehouse_id: z.string().uuid(),
-  supplier_invoice_number: z.string().max(100).optional(),
+  // Optional. The form sends null when empty; blank/whitespace is stored as
+  // NULL too, because UNIQUE (supplier_id, supplier_invoice_number) treats
+  // NULLs as distinct but would reject a second '' for the same supplier.
+  supplier_invoice_number: z.string().max(100).nullable().optional()
+    .transform((v) => (v ?? '').trim() || null),
   purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
   include_in_gst: z.boolean().default(true),
   is_tax_inclusive: z.boolean().default(true),
@@ -53,10 +57,10 @@ export async function createPurchaseInvoiceAction(
 
   const { items, ...header } = parsed;
 
-  if (header.supplier_invoice_number?.trim()) {
+  if (header.supplier_invoice_number) {
     const dupe = await query<{ id: string }>(
       `SELECT id FROM purchase_invoices WHERE supplier_id=$1 AND supplier_invoice_number=$2`,
-      [header.supplier_id, header.supplier_invoice_number.trim()]
+      [header.supplier_id, header.supplier_invoice_number]
     );
     if (dupe.rows[0]) {
       return { success: false, error: 'This invoice number already exists for this supplier.' };
@@ -154,6 +158,7 @@ export async function createPurchaseInvoiceAction(
     finally { client.release(); }
   } catch (err) {
     console.error(err);
+    if (err instanceof StockVariantError) return { success: false, error: err.message };
     return { success: false, error: 'Failed to create purchase invoice' };
   }
 

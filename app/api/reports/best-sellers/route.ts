@@ -21,7 +21,8 @@ export async function GET(req: NextRequest) {
   if (sp.get('warehouse_id')) { params.push(sp.get('warehouse_id')); conditions.push(`i.warehouse_id=$${params.length}`); }
 
   const res = await query(
-    `SELECT it.name AS item_name, it.category, it.item_type,
+    // Category comes from item_categories (items has category_id, no category column).
+    `SELECT it.name AS item_name, cat.name AS category, it.item_type,
             it.hsn_code, it.gst_rate,
             SUM(ii.quantity)                      AS total_qty,
             SUM(ii.total_amount)                  AS total_revenue,
@@ -30,8 +31,9 @@ export async function GET(req: NextRequest) {
      FROM invoice_items ii
      JOIN invoices i ON i.id=ii.invoice_id
      JOIN items it   ON it.id=ii.item_id
+     LEFT JOIN item_categories cat ON cat.id = it.category_id
      WHERE ${conditions.join(' AND ')}
-     GROUP BY it.id, it.name, it.category, it.item_type, it.hsn_code, it.gst_rate
+     GROUP BY it.id, it.name, cat.name, it.item_type, it.hsn_code, it.gst_rate
      ORDER BY ${sort} DESC LIMIT 200`,
     params
   );

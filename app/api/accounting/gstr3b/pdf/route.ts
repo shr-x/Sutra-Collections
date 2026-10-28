@@ -4,6 +4,10 @@ import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { taxableSql } from '@/lib/gstr';
 import { Document, Page, View, Text, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
+import { retailCreditNote } from '@/lib/accounting-scope';
+
+// GST scope: ALL tailoring (invoices and refunds against them, past and
+// future, no cutoff) is excluded on purpose — see lib/accounting-scope.ts.
 
 const PURPLE = '#7C3AED';
 const DARK   = '#111827';
@@ -84,7 +88,7 @@ export async function GET(req: NextRequest) {
     pool.query<{ total_taxable: string; total_cgst: string; total_sgst: string }>(
       `SELECT COALESCE(SUM(${taxableSql('cn')}),0) AS total_taxable, COALESCE(SUM(cn.total_cgst),0) AS total_cgst,
               COALESCE(SUM(cn.total_sgst),0) AS total_sgst
-       FROM credit_notes cn WHERE cn.status IN ('issued','settled') AND (cn.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1 AND $2`,
+       FROM credit_notes cn WHERE cn.status IN ('issued','settled') AND ${retailCreditNote('cn')} AND (cn.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1 AND $2`,
       [from, to]
     ),
     pool.query<{ total_cgst: string; total_sgst: string }>(

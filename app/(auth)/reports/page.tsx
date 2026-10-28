@@ -76,10 +76,11 @@ export default async function ReportsIndexPage() {
   const session = await requireRole('admin', 'accountant');
   const role    = session.role as Role;
 
-  const settingsRes = await query<{ staff_module_enabled: boolean }>(
-    'SELECT staff_module_enabled FROM settings LIMIT 1'
-  ).catch(() => ({ rows: [{ staff_module_enabled: false }] }));
-  const staffEnabled = settingsRes.rows[0]?.staff_module_enabled ?? false;
+  // settings is key/value (same read as the (auth) layout).
+  const settingsRes = await query<{ value: string }>(
+    `SELECT value FROM settings WHERE key = 'staff_module_enabled'`
+  ).catch(() => ({ rows: [] as { value: string }[] }));
+  const staffEnabled = settingsRes.rows[0]?.value === 'true';
 
   const available = ALL_REPORTS.filter((r) => r.roles.includes(role));
 

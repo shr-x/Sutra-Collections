@@ -29,7 +29,7 @@ const EXPORTS = [
   {
     type:        'invoices',
     label:       'All Invoices',
-    description: 'Invoice headers with customer, date, totals and status',
+    description: 'Invoice headers with customer, date, totals and status. Includes tailoring (not in accounting).',
     icon:        '🧾',
     adminOnly:   false,
   },

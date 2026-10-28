@@ -9,8 +9,9 @@ import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { postDebitNote } from '@/lib/accounting';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import { generateDebitNotePdf } from '@/lib/pdf-generator';
-import { resolveStockVariant } from '@/lib/stock-variant';
+import { resolveStockVariant, StockVariantError } from '@/lib/stock-variant';
 import type { ActionResult } from '@/types';
+import { todayIST } from '@/lib/ist-date';
 
 const optUuid = (s: z.ZodTypeAny) =>
   z.preprocess((v) => (v == null || v === '' ? null : v), s.nullable().optional());
@@ -132,7 +133,7 @@ export async function createDebitNoteAction(
         await postDebitNote({
           debitNoteId: dnId!,
           debitNoteNumber: num,
-          noteDate: new Date().toISOString().slice(0, 10),
+          noteDate: todayIST(),
           grandTotal: totals.grandTotal,
           taxableValue: totals.grandTotal - totals.totalCgst - totals.totalSgst,
           totalCgst: totals.totalCgst,
@@ -147,6 +148,7 @@ export async function createDebitNoteAction(
     finally { client.release(); }
   } catch (err) {
     console.error(err);
+    if (err instanceof StockVariantError) return { success: false, error: err.message };
     return { success: false, error: 'Failed to create debit note' };
   }
 

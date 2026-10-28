@@ -34,4 +34,13 @@ FROM (
 ) only_size
 WHERE s.item_id = only_size.item_id
   AND s.size_id IS NULL
-  AND s.color_id IS NOT NULL;
+  AND s.color_id IS NOT NULL
+  -- Oct 2026: skip rows that would collide with an existing row for the same
+  -- item/warehouse/size/colour (idx_stock_size_color). Without this guard a
+  -- single such row aborts the WHOLE migration run on every deploy.
+  -- Migration 020 reports these rows for manual merging.
+  AND NOT EXISTS (
+    SELECT 1 FROM stock o
+    WHERE o.item_id = s.item_id AND o.warehouse_id = s.warehouse_id
+      AND o.size_id = only_size.id AND o.color_id = s.color_id
+  );

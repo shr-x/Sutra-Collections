@@ -100,7 +100,8 @@ export async function POST(req: NextRequest) {
         const sizeList = (row.sizes ?? '').split(',').map((s) => s.trim()).filter(Boolean);
         const colorList = (row.colors ?? '').split(',').map((c) => c.trim()).filter(Boolean);
         const sizes = sizeList.length ? sizeList : ['Regular'];
-        const colors = colorList.length ? colorList : ['None'];
+        // New items only — existing 'None' colour rows are left as they are.
+        const colors = colorList.length ? colorList : ['Default'];
         for (let i = 0; i < sizes.length; i++) {
           await client.query(
             `INSERT INTO item_sizes (item_id, size_name, is_default, sort_order) VALUES ($1,$2,$3,$4)`,

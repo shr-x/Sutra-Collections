@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { query } from '@/lib/db';
+import { deleteItemVariant } from '@/lib/variant-delete';
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
@@ -65,11 +66,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const colorId = url.searchParams.get('color_id');
   if (!colorId) return NextResponse.json({ error: 'color_id required' }, { status: 400 });
 
-  const stockCheck = await query('SELECT COUNT(*) FROM stock WHERE color_id=$1 AND quantity > 0', [colorId]);
-  if (Number(stockCheck.rows[0].count) > 0) {
-    return NextResponse.json({ error: 'Cannot delete color with stock' }, { status: 409 });
-  }
-
-  await query('DELETE FROM item_colors WHERE id=$1 AND item_id=$2', [colorId, params.id]);
+  const result = await deleteItemVariant('color', params.id, colorId);
+  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   return NextResponse.json({ ok: true });
 }

@@ -169,7 +169,7 @@ export default async function DashboardPage() {
   };
 
   const kpis = [
-    { label: "Today's Sales",          value: formatInr(todaySales),          color: 'text-green-700',  grad: 'from-green-50 to-white',  ring: 'ring-green-100',  icon: '₹',  iconBg: 'bg-green-100 text-green-700' },
+    { label: "Today's Sales",          value: formatInr(todaySales),          color: 'text-green-700',  grad: 'from-green-50 to-white',  ring: 'ring-green-100',  icon: '₹',  iconBg: 'bg-green-100 text-green-700', note: 'Includes tailoring (not in accounting)' },
     { label: "Today's Retail Sales",   value: formatInr(todayRetailSales),    color: 'text-blue-700',   grad: 'from-blue-50 to-white',   ring: 'ring-blue-100',   icon: '🛍️', iconBg: 'bg-blue-100 text-blue-700' },
     // Tailoring is billing/record-keeping only — zero tax, outside accounting.
     { label: "Today's Tailoring Sales",value: formatInr(todayTailoringSales), color: 'text-indigo-700', grad: 'from-indigo-50 to-white', ring: 'ring-indigo-100', icon: '✂️', iconBg: 'bg-indigo-100 text-indigo-700', note: 'Not in accounting' },

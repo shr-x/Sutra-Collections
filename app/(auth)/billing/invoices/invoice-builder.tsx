@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useTransition, useEffect, useRef } from 'react';
+import { todayIST } from '@/lib/ist-date';
 import { useRouter } from 'next/navigation';
 import { useFormState } from 'react-dom';
 import { calcLine, calcInvoiceTotals, formatInr } from '@/lib/gst';
@@ -178,7 +179,7 @@ export default function InvoiceBuilder({
       });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIST();
 
   // ── Invoice header state ─────────────────────────────────────────────────────
   const [invoiceDate, setInvoiceDate] = useState(initialData?.invoice_date ?? today);

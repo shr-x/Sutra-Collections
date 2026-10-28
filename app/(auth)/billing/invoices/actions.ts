@@ -8,15 +8,16 @@ import type { PoolClient } from 'pg';
 import { requireRole } from '@/lib/auth';
 import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
-import { postSalesInvoice, postPaymentReceived, postJournalEntry } from '@/lib/accounting';
+import { postSalesInvoice, postPaymentReceived, postJournalEntry, postReversalFor } from '@/lib/accounting';
 import { sendWhatsAppText, interpolateTemplate, sendWhatsAppTemplate } from '@/lib/whatsapp';
 import { getLoyaltyRates, earnPoints, redeemPointsInTransaction } from '@/lib/loyalty';
 import { logAudit } from '@/lib/audit';
 import { generateThermalInvoicePdf, generateInvoicePdf } from '@/lib/pdf-generator';
 import { checkLowStockForItems } from '@/lib/low-stock';
-import { resolveStockVariant } from '@/lib/stock-variant';
+import { resolveStockVariant, StockVariantError } from '@/lib/stock-variant';
 import { sendFullyPaidNotification } from '@/app/(auth)/tailoring/actions';
 import type { ActionResult } from '@/types';
+import { todayIST } from '@/lib/ist-date';
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -369,6 +370,7 @@ export async function createInvoiceAction(
     }
   } catch (err) {
     console.error(err);
+    if (err instanceof StockVariantError) return { success: false, error: err.message };
     return { success: false, error: 'Failed to save invoice. Please try again.' };
   }
 
@@ -626,9 +628,9 @@ export async function cancelInvoiceAction(id: string, _fd?: FormData): Promise<v
       await client.query('BEGIN');
 
       const invRes = await client.query<{
-        status: string; warehouse_id: string; invoice_number: string; grand_total: string;
+        status: string; warehouse_id: string; invoice_number: string; grand_total: string; source: string;
       }>(
-        'SELECT status, warehouse_id, invoice_number, grand_total FROM invoices WHERE id=$1', [id]
+        'SELECT status, warehouse_id, invoice_number, grand_total, source FROM invoices WHERE id=$1 FOR UPDATE', [id]
       );
       if (!invRes.rows[0]) throw new Error('Invoice not found');
       if (invRes.rows[0].status === 'cancelled') throw new Error('Already cancelled');
@@ -665,6 +667,18 @@ export async function cancelInvoiceAction(id: string, _fd?: FormData): Promise<v
       }
 
       await client.query(`UPDATE invoices SET status='cancelled' WHERE id=$1`, [id]);
+
+      // Reverse the ledger for retail invoices (sale + any payments), in the
+      // same transaction so the cancel and the reversal succeed or fail
+      // together. Tailoring invoices are outside accounting — nothing to
+      // reverse. Invoices cancelled before Oct 2026 were never reversed and are
+      // deliberately left alone.
+      if (invRes.rows[0].source !== 'tailoring') {
+        await postReversalFor(
+          id, ['invoice', 'payment'], `Reversal — cancelled invoice ${invoiceNumber}`,
+          todayIST(), session.userId, client
+        );
+      }
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
@@ -801,7 +815,7 @@ async function applyInvoicePayment(
         await postPaymentReceived({
           invoiceId: id,
           invoiceNumber: invRes.rows[0].invoice_number,
-          paymentDate: new Date().toISOString().slice(0, 10),
+          paymentDate: todayIST(),
           amount: deltaApplied,
           paymentMode: mode,
           createdBy: session.userId,
@@ -1146,7 +1160,7 @@ export async function applyStoreCreditAction(
     if (inv.source !== 'tailoring') {
       try {
         await postJournalEntry({
-          entryDate:     new Date().toISOString().slice(0, 10),
+          entryDate:     todayIST(),
           description:   `Store credit applied — ${inv.invoice_number}`,
           referenceType: 'payment',
           referenceId:   id,

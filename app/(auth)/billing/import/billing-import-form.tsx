@@ -3,6 +3,7 @@
 import { useState, useCallback } from 'react';
 import DatePicker from '@/components/date-picker';
 import Link from 'next/link';
+import { todayIST } from '@/lib/ist-date';
 
 interface ExtractedItem {
   name: string;
@@ -47,7 +48,7 @@ export default function BillingImportForm({ warehouses, defaultWarehouseId }: Pr
       setData({
         type:         json.type ?? 'purchase',
         party_name:   json.party_name ?? '',
-        invoice_date: json.invoice_date ?? new Date().toISOString().split('T')[0],
+        invoice_date: json.invoice_date ?? todayIST(),
         items:        (json.items ?? []).map((it) => ({
           name:     it.name     ?? '',
           quantity: it.quantity ?? '1',

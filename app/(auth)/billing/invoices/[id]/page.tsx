@@ -66,9 +66,9 @@ export default async function InvoiceDetailPage({
 
   const ageMs   = Date.now() - new Date(inv.created_at).getTime();
   const canEdit = inv.status !== 'cancelled' && (inv.status === 'draft' || ageMs < 60 * 60 * 1000);
-  // Returns go through the Refunds (credit note) flow. Tailoring invoices carry a
-  // single non-stock service line, so returns don't apply to them.
-  const canReturn = inv.status !== 'cancelled' && inv.status !== 'draft' && inv.source !== 'tailoring';
+  // Returns go through the Refunds (credit note) flow. Allowed for tailoring
+  // invoices too — those refunds never post to accounting (lib/accounting-scope.ts).
+  const canReturn = inv.status !== 'cancelled' && inv.status !== 'draft';
 
   const cancelAction = cancelInvoiceAction.bind(null, params.id);
   const creditAction = applyStoreCreditAction.bind(null, params.id);

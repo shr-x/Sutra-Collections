@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { query } from '@/lib/db';
+import { resolveStockVariant, StockVariantError } from '@/lib/stock-variant';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
@@ -15,9 +16,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     quantity: number;
   };
 
-  const { size_id, color_id, warehouse_id, quantity } = body;
-  if (!size_id || !color_id || !warehouse_id || quantity == null) {
+  const { warehouse_id, quantity } = body;
+  if (!body.size_id || !body.color_id || !warehouse_id || quantity == null) {
     return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
+  }
+  // Confirms the size/colour belong to this item (throws otherwise) so a
+  // stock row is never written against another item's variant.
+  let size_id: string, color_id: string;
+  try {
+    ({ sizeId: size_id, colorId: color_id } = await resolveStockVariant({ query }, params.id, body.size_id, body.color_id));
+  } catch (err) {
+    if (err instanceof StockVariantError) return NextResponse.json({ error: err.message }, { status: 400 });
+    throw err;
   }
 
   // Get previous qty for the movement delta

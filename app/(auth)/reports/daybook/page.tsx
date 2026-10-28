@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import DatePicker from '@/components/date-picker';
+import IncludesTailoringNote from '@/components/includes-tailoring-note';
 
 export const metadata: Metadata = { title: 'Daybook' };
 
@@ -137,6 +138,7 @@ export default async function DaybookPage({
             <Link href="/reports" className="hover:text-gray-600">Reports</Link> / Daybook
           </nav>
           <h1 className="page-title">Daybook</h1>
+          <IncludesTailoringNote className="mt-1" />
         </div>
         <div className="flex flex-wrap gap-2">
           <a href={`/api/reports/daybook?date=${date}`} className="btn-secondary btn-sm">

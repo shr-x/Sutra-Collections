@@ -17,7 +17,7 @@ type AccountCode =
 
 export type ReferenceType =
   | 'invoice' | 'payment' | 'purchase' | 'credit_note'
-  | 'debit_note' | 'expense' | 'manual';
+  | 'debit_note' | 'expense' | 'manual' | 'reversal';
 
 export interface JournalLine {
   accountCode: AccountCode | string;
@@ -297,6 +297,43 @@ export async function postDebitNote(
     referenceId: params.debitNoteId,
     createdBy: params.createdBy,
     lines,
+  }, client);
+}
+
+// ─── Reversal ─────────────────────────────────────────────────────────────────
+
+/**
+ * Posts ONE reversing entry (every debit/credit swapped) for all existing
+ * journal entries that reference `referenceId` with one of `types`. Used when
+ * a retail invoice is cancelled: its sale entry and any payment entries are
+ * reversed, so the ledger nets to zero for that invoice. Original entries are
+ * kept (audit trail). Returns the new entry id, or null if there was nothing
+ * to reverse. Reversal entries use reference_type 'reversal' so they are never
+ * themselves picked up by a later reversal of the same reference.
+ */
+export async function postReversalFor(
+  referenceId: string,
+  types: ReferenceType[],
+  description: string,
+  entryDate: string,
+  createdBy: string,
+  client: PoolClient
+): Promise<string | null> {
+  const res = await client.query<{ account_code: string; debit: string; credit: string }>(
+    `SELECT a.account_code, SUM(jl.debit_amount)::text AS debit, SUM(jl.credit_amount)::text AS credit
+     FROM journal_entries je
+     JOIN journal_lines jl ON jl.journal_entry_id = je.id
+     JOIN accounts a ON a.id = jl.account_id
+     WHERE je.reference_id = $1 AND je.reference_type = ANY($2)
+     GROUP BY a.account_code`,
+    [referenceId, types]
+  );
+  const lines: JournalLine[] = res.rows
+    .map((r) => ({ accountCode: r.account_code, debit: Number(r.credit), credit: Number(r.debit) }))
+    .filter((l) => round2(l.debit) !== 0 || round2(l.credit) !== 0);
+  if (!lines.length) return null;
+  return postJournalEntry({
+    entryDate, description, referenceType: 'reversal', referenceId, createdBy, lines,
   }, client);
 }
 

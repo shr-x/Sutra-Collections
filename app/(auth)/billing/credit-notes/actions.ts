@@ -10,8 +10,9 @@ import { postCreditNote } from '@/lib/accounting';
 import { sendWhatsAppTemplate } from '@/lib/whatsapp';
 import { generateCreditNotePdf } from '@/lib/pdf-generator';
 import { logAudit } from '@/lib/audit';
-import { resolveStockVariant } from '@/lib/stock-variant';
+import { resolveStockVariant, StockVariantError } from '@/lib/stock-variant';
 import type { ActionResult } from '@/types';
+import { todayIST } from '@/lib/ist-date';
 
 const optUuid = (s: z.ZodTypeAny) =>
   z.preprocess((v) => (v == null || v === '' ? null : v), s.nullable().optional());
@@ -78,6 +79,7 @@ export async function createCreditNoteAction(
   let customerPhone: string | null = null;
   let customerName: string | null = null;
   let origInvoiceNumber: string | null = null;
+  let isTailoringRefund = false;
 
   try {
     const client = await pool.connect();
@@ -96,10 +98,11 @@ export async function createCreditNoteAction(
       }
       // Fetch original invoice number
       if (parsed.invoice_id) {
-        const invRes = await client.query<{ invoice_number: string }>(
-          'SELECT invoice_number FROM invoices WHERE id=$1', [parsed.invoice_id]
+        const invRes = await client.query<{ invoice_number: string; source: string }>(
+          'SELECT invoice_number, source FROM invoices WHERE id=$1', [parsed.invoice_id]
         );
         origInvoiceNumber = invRes.rows[0]?.invoice_number ?? null;
+        isTailoringRefund = invRes.rows[0]?.source === 'tailoring';
       }
 
       // Refunds complete immediately (stock returned + money/points given), so
@@ -179,19 +182,24 @@ export async function createCreditNoteAction(
         }
       }
 
-      try {
-        await postCreditNote({
-          creditNoteId: cnId!,
-          creditNoteNumber: num,
-          noteDate: new Date().toISOString().slice(0, 10),
-          grandTotal: totals.grandTotal,
-          taxableValue: totals.grandTotal - totals.totalCgst - totals.totalSgst,
-          totalCgst: totals.totalCgst,
-          totalSgst: totals.totalSgst,
-          resolution: parsed.resolution ?? null,
-          createdBy: session.userId,
-        }, client);
-      } catch (acctErr) { console.error('[createCreditNoteAction] Accounting post failed:', acctErr); }
+      // Refunds against tailoring invoices are outside accounting
+      // (lib/accounting-scope.ts): no journal entry. The customer-facing side
+      // (refund / loyalty points) above still happens as usual.
+      if (!isTailoringRefund) {
+        try {
+          await postCreditNote({
+            creditNoteId: cnId!,
+            creditNoteNumber: num,
+            noteDate: todayIST(),
+            grandTotal: totals.grandTotal,
+            taxableValue: totals.grandTotal - totals.totalCgst - totals.totalSgst,
+            totalCgst: totals.totalCgst,
+            totalSgst: totals.totalSgst,
+            resolution: parsed.resolution ?? null,
+            createdBy: session.userId,
+          }, client);
+        } catch (acctErr) { console.error('[createCreditNoteAction] Accounting post failed:', acctErr); }
+      }
 
       await client.query('COMMIT');
     } catch (err) {
@@ -201,6 +209,7 @@ export async function createCreditNoteAction(
     } finally { client.release(); }
   } catch (err) {
     console.error('[createCreditNoteAction] Failed:', (err as Error)?.message ?? err);
+    if (err instanceof StockVariantError) return { success: false, error: err.message };
     return { success: false, error: `Failed to create credit note: ${(err as Error)?.message ?? 'Unknown error'}` };
   }
 

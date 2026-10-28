@@ -26,6 +26,8 @@ interface PickerItem {
   sale_price: number | null;
   photo_url: string | null;
   stock_qty: number;
+  /** Quantity per "sizeId:colorId" for the selected warehouse (sums to stock_qty). */
+  variant_stock?: Record<string, number>;
   low_stock_threshold: number | null;
   sizes: PickerSize[];
   colors: PickerColor[];
@@ -108,11 +110,20 @@ function StockBadge({ qty, unit, threshold }: { qty: number; unit: string; thres
   return <span className={`${base} bg-green-100 text-green-700`}>✓ {qty} {unit}</span>;
 }
 
+function variantsInStock(item: PickerItem): number {
+  const vs = item.variant_stock ?? {};
+  let n = 0;
+  for (const s of item.sizes) for (const c of item.colors) if ((vs[`${s.id}:${c.id}`] ?? 0) > 0) n++;
+  return n;
+}
+
 function needsPicker(item: PickerItem): boolean {
   const hasMultipleSizes = item.sizes.length > 1 ||
     (item.sizes.length === 1 && item.sizes[0].size_name !== 'Regular');
+  // 'None' (old AI imports) and 'Default' (item creation, quick-create,
+  // migration 020) both mean "no real colour choice".
   const hasMultipleColors = item.colors.length > 1 ||
-    (item.colors.length === 1 && item.colors[0].color_name !== 'None');
+    (item.colors.length === 1 && !['None', 'Default'].includes(item.colors[0].color_name));
   return hasMultipleSizes || hasMultipleColors;
 }
 
@@ -270,8 +281,20 @@ export default function ItemPickerModal({ open, warehouseId, onAdd, onClose }: I
 
   const handleChooseVariant = useCallback((item: PickerItem) => {
     setPickerItem(item);
-    setSelectedSizeId(item.sizes.find((s) => s.is_default)?.id ?? item.sizes[0]?.id ?? '');
-    setSelectedColorId(item.colors.find((c) => c.is_default)?.id ?? item.colors[0]?.id ?? '');
+    // Start on the default variant if it has stock, else the first variant that
+    // does — so the card never says "in stock" while the opened variant shows 0.
+    const defSize = item.sizes.find((s) => s.is_default)?.id ?? item.sizes[0]?.id ?? '';
+    const defColor = item.colors.find((c) => c.is_default)?.id ?? item.colors[0]?.id ?? '';
+    const vs = item.variant_stock ?? {};
+    let pick: [string, string] = [defSize, defColor];
+    if (!((vs[`${defSize}:${defColor}`] ?? 0) > 0)) {
+      outer: for (const s of item.sizes) for (const c of item.colors) {
+        if ((vs[`${s.id}:${c.id}`] ?? 0) > 0) { pick = [s.id, c.id]; break outer; }
+      }
+    }
+    setVariantStock(vs);
+    setSelectedSizeId(pick[0]);
+    setSelectedColorId(pick[1]);
   }, []);
 
   const handleAddToQueue = useCallback(() => {
@@ -612,6 +635,11 @@ export default function ItemPickerModal({ open, warehouseId, onAdd, onClose }: I
                         )}
                         <div className="mt-auto">
                           <StockBadge qty={remaining} unit={item.unit} threshold={item.low_stock_threshold ?? 5} />
+                          {!simple && item.stock_qty > 0 && (
+                            <p className="mt-1 text-[10px] text-gray-500">
+                              {variantsInStock(item)} of {item.sizes.length * item.colors.length} variants in stock
+                            </p>
+                          )}
                         </div>
                       </div>
 

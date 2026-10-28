@@ -6,6 +6,7 @@ import { calcLine, calcInvoiceTotals, formatInr } from '@/lib/gst';
 import DatePicker from '@/components/date-picker';
 import type { ActionResult } from '@/types';
 import { AI_PREFILL_KEY, type AiImportResult, type AiImportItem } from '@/components/purchase-ai-import';
+import { todayIST } from '@/lib/ist-date';
 
 interface ItemSize { id: string; size_name: string; is_default: boolean }
 interface ItemColor { id: string; color_name: string; is_default: boolean }
@@ -55,7 +56,7 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
   const [state, formAction] = useFormState<ActionResult, FormData>(action, { success: false });
   const [pending, startTransition] = useTransition();
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIST();
 
   // ── Supplier with inline-add ───────────────────────────────────────────────
   const [suppliers, setSuppliers] = useState<SupplierOpt[]>(initialSuppliers);
@@ -312,12 +313,14 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
           sale_price: pSalePrice || null, category_id: pCategory || null,
         }),
       });
-      const data = await res.json() as { id?: string; name?: string; error?: string };
+      const data = await res.json() as { id?: string; name?: string; error?: string; sizes?: ItemSize[]; colors?: ItemColor[] };
       if (!res.ok || !data.id) { setProductError(data.error ?? 'Failed to save product'); return; }
 
       const productId = data.id;
-      // New product — no pre-existing sizes/colors
-      const { sizeMap, colorMap, error } = await createVariantsForItem(productId, pVariants, [], []);
+      // New product — only the default Regular size / Default colour created by quick-create
+      const defaultSizes = data.sizes ?? [];
+      const defaultColors = data.colors ?? [];
+      const { sizeMap, colorMap, error } = await createVariantsForItem(productId, pVariants, defaultSizes, defaultColors);
       if (error) { setProductError(error); return; }
 
       // One purchase line per variant row; fall back to a bare line if no rows had data
@@ -350,8 +353,8 @@ export default function PurchaseForm({ action, items, suppliers: initialSupplier
       setLines((prev) => [...prev, ...newLines]);
 
       // Add the new product to localItems so it can be selected in the add-item row
-      const newSizes: ItemSize[] = Array.from(sizeMap.values()).map((s) => ({ id: s.id, size_name: s.name, is_default: false }));
-      const newColors: ItemColor[] = Array.from(colorMap.values()).map((c) => ({ id: c.id, color_name: c.name, is_default: false }));
+      const newSizes: ItemSize[] = [...defaultSizes, ...Array.from(sizeMap.values()).filter((s) => !defaultSizes.some((d) => d.id === s.id)).map((s) => ({ id: s.id, size_name: s.name, is_default: false }))];
+      const newColors: ItemColor[] = [...defaultColors, ...Array.from(colorMap.values()).filter((c) => !defaultColors.some((d) => d.id === c.id)).map((c) => ({ id: c.id, color_name: c.name, is_default: false }))];
       setLocalItems((prev) => [...prev, {
         id: productId, name: data.name ?? pName.trim(),
         unit: pUnit, gst_rate: Number(pGst), hsn_code: pHsn || null,

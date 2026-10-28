@@ -3,6 +3,9 @@ import { requireRole } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { notTailoringJournal } from '@/lib/accounting-scope';
 
+// Invoice export includes tailoring rows; label them (tailoring is outside accounting).
+const sourceLabel = (src: string) => (src === 'tailoring' ? 'Tailoring (not in accounting)' : 'Retail');
+
 function csv(rows: string[][]): string {
   return rows.map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
 }
@@ -89,18 +92,18 @@ export async function GET(
         `SELECT i.invoice_number, i.invoice_date, i.status,
                 COALESCE(c.name,'Walk-in') AS customer,
                 i.payment_mode, i.grand_total, i.amount_paid,
-                i.total_cgst, i.total_sgst, i.invoice_discount_amount
+                i.total_cgst, i.total_sgst, i.invoice_discount_amount, i.source
          FROM invoices i
          LEFT JOIN customers c ON c.id=i.customer_id
          ORDER BY i.invoice_date DESC, i.invoice_number`
       );
-      jsonRows = res.rows.map((r) => ({ invoice_number: r.invoice_number, date: r.invoice_date, status: r.status, customer: r.customer, payment_mode: r.payment_mode ?? '', grand_total: r.grand_total, amount_paid: r.amount_paid, cgst: r.total_cgst, sgst: r.total_sgst, discount: r.invoice_discount_amount }));
+      jsonRows = res.rows.map((r) => ({ invoice_number: r.invoice_number, date: r.invoice_date, status: r.status, customer: r.customer, payment_mode: r.payment_mode ?? '', grand_total: r.grand_total, amount_paid: r.amount_paid, cgst: r.total_cgst, sgst: r.total_sgst, discount: r.invoice_discount_amount, source: sourceLabel(r.source) }));
       data = [
-        ['Invoice No.','Date','Status','Customer','Mode','Grand Total','Paid','CGST','SGST','Discount'],
+        ['Invoice No.','Date','Status','Customer','Mode','Grand Total','Paid','CGST','SGST','Discount','Source'],
         ...res.rows.map((r) => [
           r.invoice_number, r.invoice_date, r.status, r.customer,
           r.payment_mode ?? '', r.grand_total, r.amount_paid,
-          r.total_cgst, r.total_sgst, r.invoice_discount_amount,
+          r.total_cgst, r.total_sgst, r.invoice_discount_amount, sourceLabel(r.source),
         ]),
       ];
       filename = 'invoices';

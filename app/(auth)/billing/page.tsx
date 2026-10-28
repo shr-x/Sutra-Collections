@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { requireRole } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
+import IncludesTailoringNote from '@/components/includes-tailoring-note';
 
 export const metadata: Metadata = { title: 'Billing' };
 
@@ -48,7 +49,10 @@ export default async function BillingPage() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Billing</h1>
+        <div>
+          <h1 className="page-title">Billing</h1>
+          <p className="mt-1 text-xs text-gray-500">This-month totals: <IncludesTailoringNote /></p>
+        </div>
         <Link href="/billing/invoices/new" className="btn-primary">+ New Invoice</Link>
       </div>
 

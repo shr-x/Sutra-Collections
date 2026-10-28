@@ -5,6 +5,9 @@ import { pool } from '@/lib/db';
 import { taxableSql } from '@/lib/gstr';
 import { Document, Page, View, Text, StyleSheet, renderToBuffer } from '@react-pdf/renderer';
 
+// GST scope: ALL tailoring (invoices and refunds against them, past and
+// future, no cutoff) is excluded on purpose — see lib/accounting-scope.ts.
+
 const PURPLE = '#7C3AED';
 const DARK   = '#111827';
 const MUTED  = '#6B7280';

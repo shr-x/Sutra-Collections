@@ -20,7 +20,22 @@ export async function GET(req: NextRequest) {
          (SELECT SUM(st.quantity) FROM stock st WHERE st.item_id = i.id
           AND ($1::uuid IS NULL OR st.warehouse_id = $1::uuid)),
          0
-       )::int AS stock_qty
+       )::int AS stock_qty,
+       -- Per-variant availability, keyed "sizeId:colorId", built from the SAME
+       -- stock rows as stock_qty (so the variants always add up to the card
+       -- total) and with the same legacy-NULL → default mapping as
+       -- /api/items/[id]/stock-by-variant and the invoice pre-flight check.
+       COALESCE((
+         SELECT json_object_agg(v.k, v.q) FROM (
+           SELECT COALESCE(st.size_id,  (SELECT id FROM item_sizes  WHERE item_id = i.id AND is_default = TRUE LIMIT 1))::text
+                  || ':' ||
+                  COALESCE(st.color_id, (SELECT id FROM item_colors WHERE item_id = i.id AND is_default = TRUE LIMIT 1))::text AS k,
+                  SUM(st.quantity)::float AS q
+           FROM stock st
+           WHERE st.item_id = i.id AND ($1::uuid IS NULL OR st.warehouse_id = $1::uuid)
+           GROUP BY 1
+         ) v
+       ), '{}'::json) AS variant_stock
      FROM items i
      LEFT JOIN item_sizes s ON s.item_id = i.id
      LEFT JOIN item_colors c ON c.item_id = i.id

@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
-import { resolveStockVariant } from '@/lib/stock-variant';
+import { resolveStockVariant, StockVariantError } from '@/lib/stock-variant';
 
 const IN_TYPES = ['purchase', 'adjustment_in'] as const;
 const OUT_TYPES = ['sale', 'adjustment_out'] as const;
@@ -150,6 +150,7 @@ export async function createStockMovementAction(
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Stock movement failed:', err);
+    if (err instanceof StockVariantError) return { error: err.message };
     return { error: 'Failed to record movement. Please try again.' };
   } finally {
     client.release();

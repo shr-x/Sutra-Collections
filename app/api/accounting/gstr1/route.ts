@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { taxableSql } from '@/lib/gstr';
+import { retailCreditNote } from '@/lib/accounting-scope';
+
+// GST scope: ALL tailoring (invoices and refunds against them, past and
+// future, no cutoff) is excluded on purpose — see lib/accounting-scope.ts.
 
 // Escapes a value for a CSV cell: quotes it and doubles any embedded quotes.
 function csvCell(v: unknown): string {
@@ -51,7 +55,7 @@ export async function GET(req: NextRequest) {
      FROM credit_notes cn
      LEFT JOIN invoices i ON i.id = cn.invoice_id
      LEFT JOIN customers c ON c.id = cn.customer_id
-     WHERE cn.status IN ('issued','settled')
+     WHERE cn.status IN ('issued','settled') AND ${retailCreditNote('cn')}
        AND (cn.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1 AND $2
      ORDER BY cn.created_at, cn.credit_note_number`,
     [from, to]

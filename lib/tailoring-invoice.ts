@@ -22,6 +22,7 @@ import { pool, query } from '@/lib/db';
 import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { logAudit } from '@/lib/audit';
+import { todayIST } from '@/lib/ist-date';
 
 const SERVICE_ITEM_NAME = 'Tailoring Services';
 
@@ -114,7 +115,7 @@ export async function createTailoringInvoice(
 
     const lr = calcLine({ quantity: 1, rate: grandTotal, gstRate, isScheme: false });
     const invoiceNumber = await nextInvoiceNumber('INV', client);
-    const invoiceDate = new Date().toISOString().slice(0, 10);
+    const invoiceDate = todayIST();
     const status = invoiceStatus(amountPaid, grandTotal);
 
     const insRes = await client.query<{ id: string }>(
@@ -200,7 +201,7 @@ async function createSupplementaryInvoice(
     const gstRate = TAILORING_GST_RATE;
     const lr = calcLine({ quantity: 1, rate: deltaAmount, gstRate, isScheme: false });
     const invoiceNumber = await nextInvoiceNumber('INV', client);
-    const invoiceDate = new Date().toISOString().slice(0, 10);
+    const invoiceDate = todayIST();
     const displayRef = order.group_number ?? order.order_number;
     const notes = `Supplementary charge for alteration on ${rootInvoice.invoice_number}`;
 

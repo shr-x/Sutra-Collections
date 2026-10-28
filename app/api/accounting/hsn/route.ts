@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireRole } from '@/lib/auth';
 import { pool } from '@/lib/db';
 
+// GST scope: ALL tailoring (invoices and refunds against them, past and
+// future, no cutoff) is excluded on purpose — see lib/accounting-scope.ts.
+
 export async function GET(req: NextRequest) {
   await requireRole('accountant', 'admin');
 
