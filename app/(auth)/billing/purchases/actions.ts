@@ -11,6 +11,7 @@ import { postPurchaseInvoice } from '@/lib/accounting';
 import { generateStickersForPurchase } from '@/lib/stickers';
 import { resolveStockVariant, StockVariantError } from '@/lib/stock-variant';
 import type { ActionResult } from '@/types';
+import { logAppError } from '@/lib/app-error-log';
 
 const LineSchema = z.object({
   item_id: z.string().uuid(),
@@ -147,7 +148,10 @@ export async function createPurchaseInvoiceAction(
           amountPaid: cappedAmountPaid,
           createdBy: session.userId,
         }, client);
-      } catch (acctErr) { console.error('Accounting post failed:', acctErr); }
+      } catch (acctErr) {
+        console.error('Accounting post failed:', acctErr);
+        logAppError('purchase.journal', acctErr, { type: 'purchase_invoice', id: purId! });
+      }
 
       try {
         await generateStickersForPurchase(client, purId);

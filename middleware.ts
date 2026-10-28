@@ -35,6 +35,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // SHRX owner console: reachable WITHOUT an app login. It has its own
+  // password gate + signed cookie, checked inside the page and in every
+  // /api/shrx handler (lib/shrx/session.ts). Exact match / sub-paths only, so
+  // look-alike paths (e.g. /shrxfoo) stay behind normal auth.
+  if (pathname === '/shrx' || pathname.startsWith('/shrx/') || pathname.startsWith('/api/shrx/')) {
+    return NextResponse.next();
+  }
+
   const token = request.cookies.get(COOKIE_NAME)?.value;
 
   if (!token) {

@@ -233,6 +233,12 @@ export default async function SettingsPage() {
 
       {/* ── Help & Onboarding ───────────────────────────────────────────────── */}
       <TourSettingsSection />
+
+      {/* ── SHRX Access (owner console, separate password) ─────────────────── */}
+      <div className="flex justify-center pt-2">
+        {/* Plain <a>: /shrx is a standalone page outside the app shell. */}
+        <a href="/shrx" className="btn-secondary text-xs text-gray-500">SHRX Access</a>
+      </div>
     </div>
   );
 }

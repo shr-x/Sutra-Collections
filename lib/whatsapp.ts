@@ -7,6 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import { pool } from '@/lib/db';
+import { customerIdForPhone, inferWaEntity, writeWaLog, type WaLogEntity } from '@/lib/whatsapp-log';
 
 export interface WaSendResult {
   success: boolean;
@@ -257,6 +258,46 @@ const URL_BUTTON_CONFIG: Record<string, { index: string; url: string }> = {};
  *   Transactional sends omit this and are never gated.
  */
 export async function sendWhatsAppTemplate(
+  toPhone: string,
+  templateName: string,
+  parameters: string[],
+  pdfPath?: string | null,
+  headerImageMediaId?: string | null,
+  buttonUrl?: string | null,
+  opts?: {
+    marketingCustomerId?: string | null;
+    /** Override what whatsapp_message_log records (otherwise inferred). */
+    customerId?: string | null;
+    entity?: WaLogEntity | null;
+  }
+): Promise<WaSendResult> {
+  // Every attempt is logged to whatsapp_message_log (SHRX → WhatsApp log):
+  // sent, Meta rejection (failed + error code), consent skip (skipped), or an
+  // exception (failed, then re-thrown so callers behave exactly as before).
+  // Logging itself never throws.
+  const logRow = async (status: 'sent' | 'failed' | 'skipped', r?: WaSendResult, err?: unknown) => {
+    const [customerId, entity] = await Promise.all([
+      opts?.customerId ?? opts?.marketingCustomerId ?? customerIdForPhone(toPhone),
+      opts?.entity ?? inferWaEntity(parameters),
+    ]).catch(() => [null, null] as const);
+    await writeWaLog({
+      customerId: customerId ?? null, phone: toPhone, templateName, status,
+      errorCode: r?.errorCode ?? null,
+      errorMessage: err ? (err instanceof Error ? err.message : String(err)) : (r?.success ? null : r?.error ?? null),
+      entity: entity ?? null, messageId: r?.messageId ?? null,
+    });
+  };
+  try {
+    const result = await sendWhatsAppTemplateCore(toPhone, templateName, parameters, pdfPath, headerImageMediaId, buttonUrl, opts);
+    await logRow(result.success ? 'sent' : result.skipped ? 'skipped' : 'failed', result);
+    return result;
+  } catch (err) {
+    await logRow('failed', undefined, err);
+    throw err;
+  }
+}
+
+async function sendWhatsAppTemplateCore(
   toPhone: string,
   templateName: string,
   parameters: string[],

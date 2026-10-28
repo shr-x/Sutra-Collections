@@ -23,6 +23,7 @@ import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { logAudit } from '@/lib/audit';
 import { todayIST } from '@/lib/ist-date';
+import { logAppError } from '@/lib/app-error-log';
 
 const SERVICE_ITEM_NAME = 'Tailoring Services';
 
@@ -155,6 +156,7 @@ export async function createTailoringInvoice(
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('[createTailoringInvoice]', err);
+    logAppError('tailoring.invoice.create', err, { type: 'tailoring_order', id: orderId });
     return null;
   } finally {
     client.release();
@@ -247,6 +249,7 @@ async function createSupplementaryInvoice(
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('[createSupplementaryInvoice]', err);
+    logAppError('tailoring.invoice.supplementary', err, { type: 'tailoring_order', id: order.id }, { rootInvoice: rootInvoice.invoice_number, deltaAmount });
     return null;
   } finally {
     client.release();
@@ -426,6 +429,7 @@ export async function syncTailoringInvoiceAfterAlteration(
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('[syncTailoringInvoiceAfterAlteration]', err);
+    logAppError('tailoring.invoice.amend', err, { type: 'invoice', id: invoice.id }, { orderId, newTotal });
     return { action: 'locked_flagged', invoiceId: invoice.id, invoiceNumber: invoice.invoice_number };
   } finally {
     client.release();

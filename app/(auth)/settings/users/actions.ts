@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
+import { setUserActive } from '@/lib/users';
 
 const UserSchema = z.object({
   name:              z.string().min(1, 'Name is required').trim(),
@@ -113,6 +114,8 @@ export async function updateUserAction(
 
 export async function toggleUserActiveAction(userId: string, isActive: boolean): Promise<void> {
   await requireRole('admin');
-  await pool.query('UPDATE users SET is_active=$1 WHERE id=$2', [isActive, userId]);
+  // Shared guard: never deactivates the last active admin.
+  const res = await setUserActive(userId, isActive);
+  if (!res.ok) throw new Error(res.error);
   revalidatePath('/settings/users');
 }

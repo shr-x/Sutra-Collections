@@ -13,6 +13,7 @@ import { logAudit } from '@/lib/audit';
 import { resolveStockVariant, StockVariantError } from '@/lib/stock-variant';
 import type { ActionResult } from '@/types';
 import { todayIST } from '@/lib/ist-date';
+import { logAppError } from '@/lib/app-error-log';
 
 const optUuid = (s: z.ZodTypeAny) =>
   z.preprocess((v) => (v == null || v === '' ? null : v), s.nullable().optional());
@@ -198,7 +199,10 @@ export async function createCreditNoteAction(
             resolution: parsed.resolution ?? null,
             createdBy: session.userId,
           }, client);
-        } catch (acctErr) { console.error('[createCreditNoteAction] Accounting post failed:', acctErr); }
+        } catch (acctErr) {
+          console.error('[createCreditNoteAction] Accounting post failed:', acctErr);
+          logAppError('credit_note.journal', acctErr, { type: 'credit_note', id: cnId! });
+        }
       }
 
       await client.query('COMMIT');
