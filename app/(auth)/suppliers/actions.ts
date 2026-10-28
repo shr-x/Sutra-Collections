@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
+import { isSectionPinUnlocked, assertSectionPinUnlocked, PIN_LOCKED_ERROR } from '@/lib/section-pin-server';
 import { logAudit } from '@/lib/audit';
 
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -32,6 +33,7 @@ export async function createSupplierAction(
   formData: FormData
 ): Promise<SupplierState> {
   const session = await requireRole('admin');
+  if (!(await isSectionPinUnlocked())) return { error: PIN_LOCKED_ERROR };
   const parsed = SupplierSchema.safeParse(parse(formData));
   if (!parsed.success) return { error: parsed.error.errors[0].message };
   const d = parsed.data;
@@ -54,6 +56,7 @@ export async function updateSupplierAction(
   formData: FormData
 ): Promise<SupplierState> {
   const session = await requireRole('admin');
+  if (!(await isSectionPinUnlocked())) return { error: PIN_LOCKED_ERROR };
   const parsed = SupplierSchema.safeParse(parse(formData));
   if (!parsed.success) return { error: parsed.error.errors[0].message };
   const d = parsed.data;
@@ -73,6 +76,7 @@ export async function updateSupplierAction(
 
 export async function deleteSupplierAction(formData: FormData) {
   const session = await requireRole('admin');
+  await assertSectionPinUnlocked();
   const id = formData.get('id') as string;
   try {
     const nameRes = await query<{ name: string }>('SELECT name FROM suppliers WHERE id=$1', [id]);
@@ -86,6 +90,7 @@ export async function deleteSupplierAction(formData: FormData) {
 
 export async function softDeleteSupplierAction(formData: FormData) {
   const session = await requireRole('admin');
+  await assertSectionPinUnlocked();
   const id = formData.get('id') as string;
   const nameRes = await query<{ name: string }>('SELECT name FROM suppliers WHERE id=$1', [id]);
   await query(`UPDATE suppliers SET deleted_at = NOW() WHERE id = $1`, [id]);
@@ -95,6 +100,7 @@ export async function softDeleteSupplierAction(formData: FormData) {
 
 export async function restoreSupplierAction(formData: FormData) {
   const session = await requireRole('admin');
+  await assertSectionPinUnlocked();
   const id = formData.get('id') as string;
   const nameRes = await query<{ name: string }>('SELECT name FROM suppliers WHERE id=$1', [id]);
   await query(`UPDATE suppliers SET deleted_at = NULL WHERE id = $1`, [id]);

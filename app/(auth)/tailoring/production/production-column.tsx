@@ -9,6 +9,7 @@ import StageButton from './stage-button';
 import RecordPaymentButton from '../[id]/record-payment-button';
 import RequestAlterationButton from '../[id]/request-alteration-button';
 import DeliveryActions from '../[id]/delivery-actions';
+import LinkedOrdersBadge from '@/components/linked-orders-badge';
 import type { TailoringStatus } from '@/types';
 
 export interface OrderRow {
@@ -53,13 +54,7 @@ function OrderCard({ order: o, columnKey: key }: { order: OrderRow; columnKey: C
             {o.order_number}
           </Link>
           {o.batch_size && (
-            <Link
-              href={`/tailoring/${o.id}`}
-              title={`Part of a batch of ${o.batch_size} orders`}
-              className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200"
-            >
-              🔗{o.batch_size}
-            </Link>
+            <LinkedOrdersBadge orderId={o.id} count={o.batch_size} />
           )}
         </div>
         <span className="text-xs font-semibold text-gray-700 shrink-0">

@@ -7,6 +7,7 @@ import { formatInr } from '@/lib/gst';
 import ConfirmForm from '@/components/confirm-form';
 import { deleteCustomerAction, toggleMarketingOptInAction } from '../actions';
 import type { Customer } from '@/types';
+import DownloadMeasurementsButton from './download-measurements-button';
 
 export const metadata: Metadata = { title: 'Customer' };
 
@@ -217,7 +218,10 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
           {/* Measurements */}
           {measurementGroups.length > 0 && (
             <div>
-              <h2 className="mb-3 text-base font-semibold text-gray-900">Measurements</h2>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-gray-900">Measurements</h2>
+                <DownloadMeasurementsButton customerId={params.id} designCount={measurementGroups.length} />
+              </div>
               <div className="space-y-4">
                 {measurementGroups.map((group) => (
                   <div key={group.designId} className="card p-0 overflow-hidden">

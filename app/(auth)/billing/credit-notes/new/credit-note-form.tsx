@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useEffect, useRef } from 'react';
 import { useFormState } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import { calcLine, calcInvoiceTotals, formatInr } from '@/lib/gst';
 import type { ActionResult } from '@/types';
 import ConfirmDialog from '@/components/confirm-dialog';
@@ -18,6 +19,7 @@ interface SearchInvoice {
   status: string;
   customer_name: string | null;
   customer_phone: string | null;
+  customer_id?: string | null;
 }
 
 interface InvoiceItem {
@@ -41,6 +43,10 @@ interface Props {
   invoiceId?: string;
   invoiceLines: InvoiceItem[];
   preselectedCustomerId?: string;
+  /** Invoice opened via the invoice page's Return button. */
+  initialInvoice?: SearchInvoice | null;
+  /** Where to land after the refund is created (validated server-side). */
+  returnTo?: string;
 }
 
 let _key = 0;
@@ -64,7 +70,9 @@ interface RefundLine {
 export default function RefundForm({
   action, customers, warehouses, defaultWarehouseId,
   invoiceId: initialInvoiceId, invoiceLines, preselectedCustomerId,
+  initialInvoice, returnTo,
 }: Props) {
+  const router = useRouter();
   const [state, formAction] = useFormState<ActionResult, FormData>(action, { success: false });
   const [pending, startTransition] = useTransition();
 
@@ -82,7 +90,7 @@ export default function RefundForm({
 
   // ── Selected invoice ──────────────────────────────────────────────────────
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(initialInvoiceId ?? '');
-  const [selectedInvoice, setSelectedInvoice] = useState<SearchInvoice | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<SearchInvoice | null>(initialInvoice ?? null);
   const [fetchedLines, setFetchedLines] = useState<InvoiceItem[]>(invoiceLines);
   const [linesLoading, setLinesLoading] = useState(false);
 
@@ -185,7 +193,11 @@ export default function RefundForm({
 
   const handleSubmit = () => {
     const fd = new FormData();
-    const customerId = selectedInvoice
+    // Prefer the invoice's own customer_id; fall back to the legacy name match
+    // for invoices picked from search results that don't carry it.
+    const customerId = selectedInvoice?.customer_id
+      ? selectedInvoice.customer_id
+      : selectedInvoice
       ? (customers.find((c) =>
           c.name === selectedInvoice.customer_name
         )?.id ?? preselectedCustomerId ?? null)
@@ -197,6 +209,7 @@ export default function RefundForm({
       warehouse_id: warehouseId,
       reason,
       resolution,
+      return_to: returnTo ?? null,
       items: selectedLines.map((l) => ({
         item_id: l.item_id,
         variant_id: l.variant_id,
@@ -422,7 +435,7 @@ export default function RefundForm({
         <div className="flex justify-between gap-3">
           <button
             type="button"
-            onClick={() => setStep('search')}
+            onClick={() => (returnTo ? router.push(returnTo) : setStep('search'))}
             className="btn-secondary"
           >
             ← Back

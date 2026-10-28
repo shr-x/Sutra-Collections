@@ -36,6 +36,13 @@ const ALL_REPORTS = [
     roles:       ['admin', 'staff', 'accountant'] as Role[],
   },
   {
+    href:        '/reports/find-product',
+    label:       'Find Product',
+    description: 'Every sale and return of one product, by item name or sticker code, with a monthly summary.',
+    icon:        '🔎',
+    roles:       ['admin'] as Role[],
+  },
+  {
     href:        '/reports/staff',
     label:       'Staff Performance',
     description: 'Per-staff invoice count, total sales and collections for a period.',

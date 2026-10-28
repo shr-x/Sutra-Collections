@@ -65,6 +65,7 @@ const REPORTS_CHILDREN_ADMIN = [
   { href: '/reports/sales',        label: 'Sales' },
   { href: '/reports/purchases',    label: 'Purchases' },
   { href: '/reports/best-sellers', label: 'Best Sellers' },
+  { href: '/reports/find-product', label: 'Find Product' },
   { href: '/reports/staff',        label: 'Staff Performance' },
   { href: '/reports/audit',        label: 'Audit Log' },
   { href: '/reports/export',       label: 'Export Data' },

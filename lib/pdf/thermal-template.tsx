@@ -248,6 +248,52 @@ export interface MeasurementThermalData {
   measurements: Array<{ fieldName: string; value: string; unit?: string | null }>;
 }
 
+// One design's measurement block — shared by the single-version receipt and
+// the customer-wide "all designs" receipt so both print identically.
+function MeasurementBlock({ m }: { m: Omit<MeasurementThermalData, 'companyName' | 'logoDataUrl' | 'customerName'> & { customerName?: string } }) {
+  return (
+    <View>
+      <View style={S.row}>
+        <Text>Design</Text>
+        <Text style={S.bold}>{m.designName}</Text>
+      </View>
+      {m.customerName ? (
+        <View style={S.row}>
+          <Text>Customer</Text>
+          <Text>{m.customerName}</Text>
+        </View>
+      ) : null}
+      <View style={S.row}>
+        <Text>Version</Text>
+        <Text style={S.bold}>v{m.versionNumber}</Text>
+      </View>
+      <View style={S.row}>
+        <Text>Date</Text>
+        <Text>{m.createdAt}</Text>
+      </View>
+      {m.takenByName ? (
+        <View style={S.row}>
+          <Text>Taken by</Text>
+          <Text>{m.takenByName}</Text>
+        </View>
+      ) : null}
+
+      <Text style={S.sep}>{SEP}</Text>
+
+      {m.measurements.length === 0 ? (
+        <Text style={S.center}>No measurements recorded.</Text>
+      ) : (
+        m.measurements.map((x, i) => (
+          <View key={i} style={S.row}>
+            <Text>{x.fieldName}</Text>
+            <Text style={S.bold}>{x.value}{x.unit ? ` ${x.unit}` : ''}</Text>
+          </View>
+        ))
+      )}
+    </View>
+  );
+}
+
 function MeasurementThermalDoc({ data }: { data: MeasurementThermalData }) {
   return (
     <Document>
@@ -259,41 +305,7 @@ function MeasurementThermalDoc({ data }: { data: MeasurementThermalData }) {
           <Text style={S.sep}>{SEP}</Text>
 
           <Text style={[S.center, S.bold, { marginBottom: 2 }]}>MEASUREMENT RECEIPT</Text>
-          <View style={S.row}>
-            <Text>Design</Text>
-            <Text style={S.bold}>{data.designName}</Text>
-          </View>
-          <View style={S.row}>
-            <Text>Customer</Text>
-            <Text>{data.customerName}</Text>
-          </View>
-          <View style={S.row}>
-            <Text>Version</Text>
-            <Text style={S.bold}>v{data.versionNumber}</Text>
-          </View>
-          <View style={S.row}>
-            <Text>Date</Text>
-            <Text>{data.createdAt}</Text>
-          </View>
-          {data.takenByName ? (
-            <View style={S.row}>
-              <Text>Taken by</Text>
-              <Text>{data.takenByName}</Text>
-            </View>
-          ) : null}
-
-          <Text style={S.sep}>{SEP}</Text>
-
-          {data.measurements.length === 0 ? (
-            <Text style={S.center}>No measurements recorded.</Text>
-          ) : (
-            data.measurements.map((m, i) => (
-              <View key={i} style={S.row}>
-                <Text>{m.fieldName}</Text>
-                <Text style={S.bold}>{m.value}{m.unit ? ` ${m.unit}` : ''}</Text>
-              </View>
-            ))
-          )}
+          <MeasurementBlock m={data} />
 
           <Text style={S.sep}>{SEP}</Text>
           <Text style={[S.center, { fontSize: 6.5 }]}>Computer generated receipt.</Text>
@@ -301,6 +313,67 @@ function MeasurementThermalDoc({ data }: { data: MeasurementThermalData }) {
       </Page>
     </Document>
   );
+}
+
+// ─── All of a customer's measurements (latest version per design) ────────────
+
+export interface CustomerMeasurementsThermalData {
+  companyName: string;
+  logoDataUrl?: string;
+  customerName: string;
+  customerPhone?: string | null;
+  printedOn: string;
+  designs: Array<Omit<MeasurementThermalData, 'companyName' | 'logoDataUrl' | 'customerName'>>;
+}
+
+function CustomerMeasurementsThermalDoc({ data }: { data: CustomerMeasurementsThermalData }) {
+  return (
+    <Document>
+      <Page size={{ width: W, height: 'auto' as unknown as number }} style={S.page}>
+        <View wrap={false}>
+          {data.logoDataUrl && <Image src={data.logoDataUrl} style={S.logo} />}
+
+          <Text style={[S.center, S.bold, { fontSize: 11 }]}>{data.companyName}</Text>
+          <Text style={S.sep}>{SEP}</Text>
+
+          <Text style={[S.center, S.bold, { marginBottom: 2 }]}>MEASUREMENTS</Text>
+          <View style={S.row}>
+            <Text>Customer</Text>
+            <Text style={S.bold}>{data.customerName}</Text>
+          </View>
+          {data.customerPhone ? (
+            <View style={S.row}>
+              <Text>Phone</Text>
+              <Text>{data.customerPhone}</Text>
+            </View>
+          ) : null}
+          <View style={S.row}>
+            <Text>Printed</Text>
+            <Text>{data.printedOn}</Text>
+          </View>
+          <View style={S.row}>
+            <Text>Designs</Text>
+            <Text>{data.designs.length}</Text>
+          </View>
+
+          {/* One unbroken View → one continuous thermal-roll page. */}
+          {data.designs.map((d, i) => (
+            <View key={i}>
+              <Text style={S.sep}>{SEP}</Text>
+              <MeasurementBlock m={d} />
+            </View>
+          ))}
+
+          <Text style={S.sep}>{SEP}</Text>
+          <Text style={[S.center, { fontSize: 6.5 }]}>Latest version per design. Computer generated receipt.</Text>
+        </View>
+      </Page>
+    </Document>
+  );
+}
+
+export async function renderCustomerMeasurementsThermalPdf(data: CustomerMeasurementsThermalData): Promise<Buffer> {
+  return renderToBuffer(<CustomerMeasurementsThermalDoc data={data} />);
 }
 
 export async function renderMeasurementThermalPdf(data: MeasurementThermalData): Promise<Buffer> {

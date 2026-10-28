@@ -8,6 +8,7 @@ import { deleteOrderAction } from '../actions';
 import OrderDetailsPanel from './order-details-panel';
 import AssignTailorSection from './assign-tailor-section';
 import StatusActions from './status-actions';
+import LinkedOrdersBadge from '@/components/linked-orders-badge';
 import DeliveryActions from './delivery-actions';
 import PaymentSection from './payment-section';
 import AlterationSection from './alteration-section';
@@ -165,9 +166,12 @@ export default async function TailoringOrderDetailPage({ params }: { params: { i
             {STATUS_LABEL[status]}
           </span>
           {order.batch_id && (
-            <span className="badge-amber">
-              🔗 {siblings.length + 1} items
-            </span>
+            <LinkedOrdersBadge
+              orderId={order.id}
+              count={siblings.length + 1}
+              label={`🔗 ${siblings.length + 1} items`}
+              className="badge-amber cursor-pointer hover:opacity-80"
+            />
           )}
         </div>
 

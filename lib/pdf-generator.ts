@@ -9,7 +9,7 @@ import { query } from '@/lib/db';
 import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { renderInvoicePdf } from '@/lib/pdf/invoice-template';
 import type { PdfCompany, PdfInvoiceData } from '@/lib/pdf/invoice-template';
-import { renderThermalPdf, renderMeasurementThermalPdf } from '@/lib/pdf/thermal-template';
+import { renderThermalPdf, renderMeasurementThermalPdf, renderCustomerMeasurementsThermalPdf } from '@/lib/pdf/thermal-template';
 import { renderTailoringPdf } from '@/lib/pdf/tailoring-template';
 
 const fmtDate = (d: string | Date | null): string =>
@@ -888,4 +888,73 @@ export async function generateMeasurementThermalPdf(versionId: string): Promise<
     console.error('[pdf-generator] generateMeasurementThermalPdf failed:', err);
     return null;
   }
+}
+
+/**
+ * One thermal-width PDF with the LATEST measurement version for every design
+ * this customer has. Measurements are versioned and never overwritten, so
+ * "latest" = highest version_number per design. Returns null when the
+ * customer doesn't exist or has no measurements.
+ */
+export async function generateCustomerMeasurementsThermalPdf(
+  customerId: string
+): Promise<{ buffer: Buffer; customerName: string } | null> {
+  const [custRes, verRes] = await Promise.all([
+    query<{ name: string; phone: string | null }>(
+      'SELECT name, phone FROM customers WHERE id=$1', [customerId]
+    ),
+    query<{
+      id: string; version_number: number; created_at: string;
+      taken_by_name: string | null; design_name: string;
+    }>(
+      `SELECT * FROM (
+         SELECT DISTINCT ON (mv.design_id)
+                mv.id, mv.version_number, mv.created_at::text, u.name AS taken_by_name,
+                d.name AS design_name
+         FROM measurement_versions mv
+         JOIN designs d ON d.id = mv.design_id
+         LEFT JOIN users u ON u.id = mv.taken_by
+         WHERE mv.customer_id = $1
+         ORDER BY mv.design_id, mv.version_number DESC
+       ) latest
+       ORDER BY design_name`,
+      [customerId]
+    ),
+  ]);
+
+  const cust = custRes.rows[0];
+  if (!cust || verRes.rows.length === 0) return null;
+
+  const valRes = await query<{ version_id: string; field_name: string; value: string; unit: string | null }>(
+    `SELECT v.version_id, f.field_name, v.value, f.unit
+     FROM measurement_values v
+     JOIN design_measurement_fields f ON f.id = v.field_id
+     WHERE v.version_id = ANY($1::uuid[])
+     ORDER BY f.sort_order, f.field_name`,
+    [verRes.rows.map((r) => r.id)]
+  );
+
+  const co = await getCompany();
+  const logoDataUrl = co.logoAbsPath
+    ? `data:image/${path.extname(co.logoAbsPath).slice(1).replace('jpg', 'jpeg')};base64,${fs.readFileSync(co.logoAbsPath).toString('base64')}`
+    : undefined;
+
+  const buffer = await renderCustomerMeasurementsThermalPdf({
+    companyName: co.name,
+    logoDataUrl,
+    customerName: cust.name,
+    customerPhone: cust.phone,
+    printedOn: fmtDate(new Date().toISOString()),
+    designs: verRes.rows.map((ver) => ({
+      designName: ver.design_name,
+      versionNumber: ver.version_number,
+      createdAt: fmtDate(ver.created_at),
+      takenByName: ver.taken_by_name,
+      measurements: valRes.rows
+        .filter((r) => r.version_id === ver.id)
+        .map((r) => ({ fieldName: r.field_name, value: r.value, unit: r.unit })),
+    })),
+  });
+
+  return { buffer, customerName: cust.name };
 }

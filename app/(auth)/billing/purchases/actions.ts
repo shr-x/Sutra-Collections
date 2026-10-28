@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { pool, query } from '@/lib/db';
 import { requireRole } from '@/lib/auth';
+import { isSectionPinUnlocked, PIN_LOCKED_ERROR } from '@/lib/section-pin-server';
 import { calcLine, calcInvoiceTotals } from '@/lib/gst';
 import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { postPurchaseInvoice } from '@/lib/accounting';
@@ -40,6 +41,7 @@ export async function createPurchaseInvoiceAction(
   formData: FormData
 ): Promise<ActionResult> {
   const session = await requireRole('admin');
+  if (!(await isSectionPinUnlocked())) return { success: false, error: PIN_LOCKED_ERROR };
 
   let parsed: z.infer<typeof PurchaseSchema>;
   try {

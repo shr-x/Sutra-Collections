@@ -33,6 +33,8 @@ const CreditNoteSchema = z.object({
   resolution: z.enum(['refund', 'loyalty_points']).optional(),
   warehouse_id: z.string().uuid(),
   items: z.array(LineSchema).min(1),
+  // Only an invoice detail path is accepted, so this can't become an open redirect.
+  return_to: z.string().regex(/^\/billing\/invoices\/[0-9a-f-]{36}$/i).nullable().optional(),
 });
 
 export async function createCreditNoteAction(
@@ -221,5 +223,5 @@ export async function createCreditNoteAction(
     ).catch((e) => console.error('[createCreditNoteAction] WhatsApp failed:', e));
   }
 
-  redirect(`/billing/credit-notes/${cnId!}`);
+  redirect(parsed.return_to ?? `/billing/credit-notes/${cnId!}`);
 }

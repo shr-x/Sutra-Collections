@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth';
 import { query } from '@/lib/db';
 import { formatInr } from '@/lib/gst';
 import SearchInput from '@/components/search-input';
+import LinkedOrdersBadge from '@/components/linked-orders-badge';
 import type { TailoringStatus } from '@/types';
 
 export const metadata: Metadata = { title: 'Tailoring Orders' };
@@ -197,13 +198,9 @@ export default async function TailoringOrdersPage({
                       {row.order_number}
                     </Link>
                     {row.batch_size && (
-                      <Link
-                        href={`/tailoring/${row.id}`}
-                        title="Part of a batch booking"
-                        className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200"
-                      >
-                        🔗{row.batch_size}
-                      </Link>
+                      <span className="ml-1.5">
+                        <LinkedOrdersBadge orderId={row.id} count={row.batch_size} />
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3">

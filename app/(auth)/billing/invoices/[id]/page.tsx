@@ -66,6 +66,9 @@ export default async function InvoiceDetailPage({
 
   const ageMs   = Date.now() - new Date(inv.created_at).getTime();
   const canEdit = inv.status !== 'cancelled' && (inv.status === 'draft' || ageMs < 60 * 60 * 1000);
+  // Returns go through the Refunds (credit note) flow. Tailoring invoices carry a
+  // single non-stock service line, so returns don't apply to them.
+  const canReturn = inv.status !== 'cancelled' && inv.status !== 'draft' && inv.source !== 'tailoring';
 
   const cancelAction = cancelInvoiceAction.bind(null, params.id);
   const creditAction = applyStoreCreditAction.bind(null, params.id);
@@ -101,6 +104,14 @@ export default async function InvoiceDetailPage({
           </a>
           {canEdit && (
             <Link href={`/billing/invoices/${params.id}/edit`} className="btn-secondary text-sm">Edit</Link>
+          )}
+          {canReturn && (
+            <Link
+              href={`/billing/credit-notes/new?invoice_id=${params.id}&return_to=invoice`}
+              className="btn-secondary text-sm"
+            >
+              Return
+            </Link>
           )}
           {session.role === 'admin' && inv.status !== 'cancelled' && (
             canEdit ? (
