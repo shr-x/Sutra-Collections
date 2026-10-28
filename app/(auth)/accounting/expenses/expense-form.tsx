@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import DatePicker from '@/components/date-picker';
+import { todayIST } from '@/lib/ist-date';
 
 import { useFormState, useFormStatus } from 'react-dom';
 import { createExpenseAction, createExpenseCategoryAction } from './actions';
@@ -11,7 +12,7 @@ const INIT: ActionResult = { success: false, error: '' };
 
 interface Category { id: string; name: string; }
 
-function SubmitBtn() {
+function SubmitBtn({ label }: { label: string }) {
   const { pending } = useFormStatus();
   return (
     <button
@@ -19,17 +20,38 @@ function SubmitBtn() {
       disabled={pending}
       className="rounded-full bg-purple-600 px-8 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-purple-700 disabled:opacity-50 transition-colors"
     >
-      {pending ? 'Saving…' : 'Record Expense'}
+      {pending ? 'Saving…' : label}
     </button>
   );
 }
 
-export default function ExpenseForm({ categories: initialCategories }: { categories: Category[] }) {
-  const [state, action] = useFormState(createExpenseAction, INIT);
-  const today = new Date().toISOString().slice(0, 10);
+export interface ExpenseValues {
+  expense_date: string;
+  category_id: string;
+  description: string;
+  amount: number;
+  payment_mode: 'cash' | 'bank';
+  notes: string | null;
+}
+
+/**
+ * Record a new expense, or edit one when `expense` + `action` are given
+ * (Accounting → Expenses → Edit). The inline "+ Add new category" works in both.
+ */
+export default function ExpenseForm({
+  categories: initialCategories,
+  expense,
+  action: submitAction = createExpenseAction,
+}: {
+  categories: Category[];
+  expense?: ExpenseValues;
+  action?: (prev: ActionResult, fd: FormData) => Promise<ActionResult>;
+}) {
+  const [state, action] = useFormState(submitAction, INIT);
+  const today = todayIST();
 
   const [categories, setCategories] = useState(initialCategories);
-  const [categoryId, setCategoryId] = useState('');
+  const [categoryId, setCategoryId] = useState(expense?.category_id ?? '');
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categoryError, setCategoryError] = useState('');
@@ -76,7 +98,7 @@ export default function ExpenseForm({ categories: initialCategories }: { categor
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1 block text-xs font-semibold text-gray-500">Date</label>
-            <DatePicker name="expense_date" defaultValue={today} required />
+            <DatePicker name="expense_date" defaultValue={expense?.expense_date ?? today} required />
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-gray-500">Category</label>
@@ -135,6 +157,7 @@ export default function ExpenseForm({ categories: initialCategories }: { categor
             name="description"
             type="text"
             required
+            defaultValue={expense?.description}
             placeholder="e.g. August rent payment"
             className="input w-full"
           />
@@ -150,13 +173,14 @@ export default function ExpenseForm({ categories: initialCategories }: { categor
               min="0.01"
               step="0.01"
               required
+              defaultValue={expense?.amount}
               placeholder="0.00"
               className="input w-full"
             />
           </div>
           <div>
             <label className="mb-1 block text-xs font-semibold text-gray-500">Payment Mode</label>
-            <select name="payment_mode" required className="input w-full">
+            <select name="payment_mode" required defaultValue={expense?.payment_mode ?? 'cash'} className="input w-full">
               <option value="cash">Cash</option>
               <option value="bank">Bank Transfer</option>
             </select>
@@ -169,6 +193,7 @@ export default function ExpenseForm({ categories: initialCategories }: { categor
           <textarea
             name="notes"
             rows={2}
+            defaultValue={expense?.notes ?? ''}
             className="input w-full resize-none"
             placeholder="Additional notes…"
           />
@@ -179,7 +204,7 @@ export default function ExpenseForm({ categories: initialCategories }: { categor
         <a href="/accounting/expenses" className="rounded-full border border-gray-300 px-6 py-2.5 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
           Cancel
         </a>
-        <SubmitBtn />
+        <SubmitBtn label={expense ? 'Save Changes' : 'Record Expense'} />
       </div>
     </form>
   );

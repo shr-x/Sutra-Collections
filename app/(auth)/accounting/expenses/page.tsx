@@ -102,11 +102,12 @@ export default async function ExpensesPage({
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Category</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Mode</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600">Amount</th>
+              <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {rows.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-12 text-center">
+              <tr><td colSpan={6} className="px-4 py-12 text-center">
                 <span className="text-4xl">🧾</span>
                 <p className="mt-2 text-sm font-medium text-gray-500">No expenses recorded yet</p>
               </td></tr>
@@ -129,6 +130,9 @@ export default async function ExpensesPage({
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums text-red-700 font-medium">
                   {formatInr(row.amount)}
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <Link href={`/accounting/expenses/${row.id}/edit`} className="text-xs font-medium text-purple-700 hover:underline">Edit</Link>
                 </td>
               </tr>
             ))}
