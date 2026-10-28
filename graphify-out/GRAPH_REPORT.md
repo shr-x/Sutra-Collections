@@ -1,16 +1,16 @@
 # Graph Report - Sutra Collections  (2026-10-29)
 
 ## Corpus Check
-- 353 files · ~290,803 words
+- 379 files · ~303,184 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1600 nodes · 3900 edges · 109 communities (89 shown, 20 thin omitted)
-- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 259 edges (avg confidence: 0.8)
+- 1706 nodes · 4242 edges · 115 communities (96 shown, 19 thin omitted)
+- Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 276 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `ec68e44f`
+- Built from commit: `4ec28809`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -103,14 +103,19 @@
 - [[_COMMUNITY_Community 88|Community 88]]
 - [[_COMMUNITY_Community 89|Community 89]]
 - [[_COMMUNITY_Community 90|Community 90]]
+- [[_COMMUNITY_Community 91|Community 91]]
+- [[_COMMUNITY_Community 92|Community 92]]
 - [[_COMMUNITY_Community 93|Community 93]]
+- [[_COMMUNITY_Community 94|Community 94]]
+- [[_COMMUNITY_Community 95|Community 95]]
 - [[_COMMUNITY_Community 96|Community 96]]
 - [[_COMMUNITY_Community 97|Community 97]]
 - [[_COMMUNITY_Community 98|Community 98]]
 - [[_COMMUNITY_Community 99|Community 99]]
+- [[_COMMUNITY_Community 100|Community 100]]
 - [[_COMMUNITY_Community 101|Community 101]]
 - [[_COMMUNITY_Community 102|Community 102]]
-- [[_COMMUNITY_Community 106|Community 106]]
+- [[_COMMUNITY_Community 103|Community 103]]
 - [[_COMMUNITY_Community 109|Community 109]]
 - [[_COMMUNITY_Community 111|Community 111]]
 - [[_COMMUNITY_Community 117|Community 117]]
@@ -121,27 +126,27 @@
 
 ## God Nodes (most connected - your core abstractions)
 1. `requireRole()` - 382 edges
-2. `query()` - 282 edges
+2. `query()` - 305 edges
 3. `formatInr()` - 83 edges
-4. `getSession()` - 58 edges
-5. `pool` - 58 edges
-6. `logAudit()` - 50 edges
-7. `sendWhatsAppTemplate()` - 37 edges
+4. `pool` - 62 edges
+5. `getSession()` - 58 edges
+6. `logAudit()` - 51 edges
+7. `sendWhatsAppTemplate()` - 39 edges
 8. `ActionResult` - 27 edges
 9. `calcInvoiceTotals()` - 25 edges
-10. `verifySession()` - 21 edges
+10. `requireShrx()` - 24 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Sutra Collections Brand Logo` --conceptually_related_to--> `Sutra Collections ERP System`  [INFERRED]
   uploads/logo.jpg → CLAUDE.md
+- `NewExpensePage()` --calls--> `requireRole()`  [INFERRED]
+  app/(auth)/accounting/expenses/new/page.tsx → lib/auth.ts
 - `JournalEntryDetailPage()` --calls--> `requireRole()`  [INFERRED]
   app/(auth)/accounting/journal/[id]/page.tsx → lib/auth.ts
 - `NewJournalEntryPage()` --calls--> `requireRole()`  [INFERRED]
   app/(auth)/accounting/journal/new/page.tsx → lib/auth.ts
 - `BillingImportPage()` --calls--> `requireRole()`  [INFERRED]
   app/(auth)/billing/import/page.tsx → lib/auth.ts
-- `EditCustomerPage()` --calls--> `requireRole()`  [INFERRED]
-  app/(auth)/customers/[id]/edit/page.tsx → lib/auth.ts
 
 ## Import Cycles
 - None detected.
@@ -151,15 +156,15 @@
 - **ERP Role-Based Access Control (Admin, Accountant, Staff)** — claude_md_role_admin, claude_md_role_accountant, claude_md_role_staff, claude_md_iron_session [EXTRACTED 1.00]
 - **Docker Services with Health-Checked DB Dependency** — docker_compose_db_service, docker_compose_app_service, docker_compose_backup_service [EXTRACTED 1.00]
 
-## Communities (109 total, 20 thin omitted)
+## Communities (115 total, 19 thin omitted)
 
 ### Community 0 - "PDF Rendering & Document Export"
-Cohesion: 0.13
-Nodes (13): DraftBillSummary, listDraftBillsAction(), recallDraftBillAction(), saveDraftBillAction(), CustomerOption, DiscountScheme, InvoiceBuilder(), InvoiceBuilderProps (+5 more)
+Cohesion: 0.10
+Nodes (20): metadata, DraftBillSummary, listDraftBillsAction(), recallDraftBillAction(), saveDraftBillAction(), CustomerOption, DiscountScheme, InvoiceBuilder() (+12 more)
 
 ### Community 1 - "Invoice & Search API Routes"
 Cohesion: 0.09
-Nodes (30): GET(), GET(), GET(), DELETE(), DELETE(), GET(), POST(), DELETE() (+22 more)
+Nodes (31): GET(), POST(), GET(), GET(), DELETE(), DELETE(), GET(), POST() (+23 more)
 
 ### Community 2 - "Package Dependencies & Config"
 Cohesion: 0.05
@@ -167,23 +172,23 @@ Nodes (40): dependencies, bcryptjs, bwip-js, jose, next, node-cron, pg, qrcode (
 
 ### Community 3 - "Billing Import & Debit Note Forms"
 Cohesion: 0.17
-Nodes (24): GET(), GET(), GET(), fetchGroupedTailoringData(), fmtDate(), generateAlterationTailorPdf(), generateBatchTailoringPdf(), generateCreditNotePdf() (+16 more)
+Nodes (26): GET(), GET(), GET(), sendInvoiceWhatsAppAction(), fetchGroupedTailoringData(), fmtDate(), generateAlterationTailorPdf(), generateBatchTailoringPdf() (+18 more)
 
 ### Community 4 - "Warehouse Settings Management"
-Cohesion: 0.14
-Nodes (13): metadata, metadata, EditWarehousePage(), NewWarehousePage(), activateWarehouseAction(), createWarehouseAction(), deleteWarehouseAction(), updateWarehouseAction() (+5 more)
+Cohesion: 0.15
+Nodes (14): metadata, metadata, EditWarehousePage(), NewWarehousePage(), Warehouse, activateWarehouseAction(), createWarehouseAction(), deleteWarehouseAction() (+6 more)
 
 ### Community 5 - "Tailoring Order Flow"
-Cohesion: 0.13
-Nodes (13): RootPage(), ROLE_HOME, COOKIE_OPTIONS, getSecret(), signSession(), loginAction(), LoginSchema, LoginState (+5 more)
+Cohesion: 0.15
+Nodes (11): GET(), S, RootPage(), csv(), GET(), ROLE_HOME, LoginPage(), metadata (+3 more)
 
 ### Community 6 - "Purchase Listing & Search UI"
-Cohesion: 0.10
-Nodes (18): metadata, Props, SearchInput(), BADGE, CreditNotesPage(), metadata, DebitNotesPage(), metadata (+10 more)
+Cohesion: 0.08
+Nodes (24): metadata, Props, SearchInput(), BADGE, CreditNotesPage(), metadata, restoreCustomerAction(), softDeleteCustomerAction() (+16 more)
 
 ### Community 7 - "CRM, Designs & Reminders"
-Cohesion: 0.06
-Nodes (31): metadata, metadata, metadata, metadata, metadata, AttendanceStatus, DELETE(), POST() (+23 more)
+Cohesion: 0.07
+Nodes (28): GET(), POST(), POST(), POST(), GET(), metadata, CustomersPage(), GET() (+20 more)
 
 ### Community 8 - "Project Documentation"
 Cohesion: 0.10
@@ -194,84 +199,84 @@ Cohesion: 0.11
 Nodes (18): metadata, metadata, metadata, ImportColumn, ImportWizard(), Props, SaveResult, Step (+10 more)
 
 ### Community 10 - "Invoice Builder & Tailoring UI"
-Cohesion: 0.12
-Nodes (26): POST(), GET(), register(), cancelInvoiceAction(), GreetingRunResult, runDailyGreetings(), checkLowStockForItems(), LowStockRunResult (+18 more)
+Cohesion: 0.22
+Nodes (17): canSendMarketing(), getLogoMediaId(), guessImageMimeType(), customerIdForPhone(), inferWaEntity(), WaLogEntity, writeWaLog(), normalisePhone() (+9 more)
 
 ### Community 11 - "Customer Detail & Edit Pages"
-Cohesion: 0.36
-Nodes (12): postSalesInvoice(), calcLine(), alreadyInvoicedTotal(), createSupplementaryInvoice(), createTailoringInvoice(), fetchOrder(), fetchOrderPlain(), getOrCreateServiceItemId() (+4 more)
+Cohesion: 0.35
+Nodes (13): postSalesInvoice(), logAppError(), calcLine(), alreadyInvoicedTotal(), createSupplementaryInvoice(), createTailoringInvoice(), fetchOrder(), fetchOrderPlain() (+5 more)
 
 ### Community 12 - "Expense Tracking & Forms"
-Cohesion: 0.12
-Nodes (15): CategoryNameSchema, createExpenseAction(), createExpenseCategoryAction(), ExpenseSchema, Category, INIT, postExpense(), runPayrollAction() (+7 more)
+Cohesion: 0.09
+Nodes (20): metadata, CategoryNameSchema, createExpenseAction(), createExpenseCategoryAction(), ExpenseSchema, Category, INIT, postExpense() (+12 more)
 
 ### Community 13 - "Design Portal Actions"
-Cohesion: 0.10
-Nodes (16): metadata, addFieldAction(), createDesignAction(), deleteDesignAction(), deleteFieldAction(), DesignSchema, DesignState, FieldSchema (+8 more)
+Cohesion: 0.09
+Nodes (18): metadata, metadata, addFieldAction(), createDesignAction(), deleteDesignAction(), deleteFieldAction(), DesignSchema, DesignState (+10 more)
 
 ### Community 14 - "Shared Types & Interfaces"
 Cohesion: 0.08
-Nodes (25): CreditNote, CreditNoteStatus, DebitNote, Design, DesignMeasurementField, DiscountScheme, Invoice, InvoiceItem (+17 more)
+Nodes (24): CreditNote, CreditNoteStatus, DebitNote, Design, DesignMeasurementField, DiscountScheme, Invoice, InvoiceItem (+16 more)
 
 ### Community 15 - "Inventory & Supplier Import API"
-Cohesion: 0.12
-Nodes (20): fmtInr(), GET(), S, fmtInr(), GET(), S, MonthSelector(), Gstr1Page() (+12 more)
+Cohesion: 0.07
+Nodes (33): fmtInr(), GET(), S, fmtInr(), GET(), S, GET(), S (+25 more)
 
 ### Community 16 - "Inventory Item Management"
-Cohesion: 0.12
-Nodes (13): metadata, metadata, metadata, Props, EditItemPage(), ItemDetailPage(), ItemState, GST_PRESETS (+5 more)
+Cohesion: 0.22
+Nodes (7): metadata, ItemState, GST_PRESETS, Props, NewItemPage(), ItemCategory, ItemUnit
 
 ### Community 17 - "Reports & Dashboard Pages"
-Cohesion: 0.27
-Nodes (7): DatePicker(), DatePickerProps, DAY_HEADERS, fmtDisplay(), MONTHS, safeIso(), todayIso()
+Cohesion: 0.07
+Nodes (46): GET(), POST(), GET(), GET(), Body, GET(), Kind, POST() (+38 more)
 
 ### Community 18 - "TypeScript & Next.js Config"
 Cohesion: 0.10
 Nodes (19): compilerOptions, allowJs, baseUrl, esModuleInterop, incremental, isolatedModules, jsx, lib (+11 more)
 
 ### Community 19 - "WhatsApp Reminders UI"
-Cohesion: 0.15
-Nodes (13): calcInvoiceTotals(), InvoiceDiscountInput, InvoiceTotals, LineCalc, LineResult, round2(), CustomerOpt, InvoiceItem (+5 more)
+Cohesion: 0.12
+Nodes (9): AuditLog(), DeleteOrders(), DueInv, inr(), Plan, Tab, TABS, UserRow (+1 more)
 
 ### Community 20 - "Supplier Management Pages"
-Cohesion: 0.06
-Nodes (42): metadata, metadata, Props, EditSupplierPage(), EditPriceButton(), fmt(), Props, createJournalEntryAction() (+34 more)
+Cohesion: 0.13
+Nodes (21): metadata, metadata, metadata, EditSupplierPage(), SupplierDetailPage(), logAudit(), assertSectionPinUnlocked(), isSectionPinUnlocked() (+13 more)
 
 ### Community 21 - "Module Group 21"
 Cohesion: 0.17
 Nodes (19): Extracted, ExtractedItem, norm(), POST(), POST(), POST(), POST(), POST() (+11 more)
 
 ### Community 22 - "Module Group 22"
-Cohesion: 0.14
-Nodes (15): AccountingPage(), metadata, fmtInr(), GET(), S, BalanceSheetPage(), metadata, getAccountBalances() (+7 more)
+Cohesion: 0.06
+Nodes (37): AccountingPage(), metadata, fmtInr(), GET(), S, fmtInr(), GET(), S (+29 more)
 
 ### Community 23 - "Module Group 23"
-Cohesion: 0.12
-Nodes (13): Props, DebitNoteForm(), Line, Props, PurchaseInvoiceOpt, PurchaseItem, SupplierOpt, WarehouseOpt (+5 more)
+Cohesion: 0.09
+Nodes (21): INIT, Props, Setting, calcInvoiceTotals(), round2(), CustomerOpt, InvoiceItem, Props (+13 more)
 
 ### Community 24 - "Module Group 24"
-Cohesion: 0.15
-Nodes (12): metadata, metadata, EditUserPage(), NewUserPage(), createUserAction(), FormState, NewUserSchema, toggleUserActiveAction() (+4 more)
+Cohesion: 0.16
+Nodes (11): metadata, metadata, EditUserPage(), NewUserPage(), createUserAction(), FormState, NewUserSchema, updateUserAction() (+3 more)
 
 ### Community 25 - "Module Group 25"
-Cohesion: 0.19
-Nodes (12): DeliveryActions(), fmt(), Props, COLUMNS, metadata, ColumnKey, GroupSummaryCard(), OrderRow (+4 more)
+Cohesion: 0.22
+Nodes (10): COLUMNS, metadata, ColumnKey, GroupSummaryCard(), OrderCard(), OrderRow, Props, StageButton() (+2 more)
 
 ### Community 26 - "Module Group 26"
-Cohesion: 0.15
-Nodes (13): metadata, metadata, EditReminderPage(), NewReminderPage(), createReminderAction(), deleteReminderAction(), ReminderSchema, toggleReminderAction() (+5 more)
+Cohesion: 0.07
+Nodes (26): metadata, metadata, Props, ConfirmForm(), BulkCollectBar(), DuesRows(), InvoiceRow, DuesPage() (+18 more)
 
 ### Community 27 - "Module Group 27"
 Cohesion: 0.10
 Nodes (21): metadata, metadata, EditSchemePage(), broadcastOffer(), BroadcastResult, fmtDate(), offerSummary(), validityLine() (+13 more)
 
 ### Community 28 - "Module Group 28"
-Cohesion: 0.06
-Nodes (24): POST(), metadata, metadata, metadata, metadata, metadata, metadata, CustomerDuesReportPage() (+16 more)
+Cohesion: 0.50
+Nodes (3): ALL_REPORTS, metadata, ReportsIndexPage()
 
 ### Community 29 - "Module Group 29"
-Cohesion: 0.25
-Nodes (6): AttendanceStatus, DAY_NAMES, DayEntry, Props, StaffUser, STATUS_CONFIG
+Cohesion: 0.18
+Nodes (9): AttendanceStatus, DAY_NAMES, DayEntry, Props, StaffUser, STATUS_CONFIG, AttendancePage(), daysInMonth() (+1 more)
 
 ### Community 30 - "Module Group 30"
 Cohesion: 0.12
@@ -279,55 +284,59 @@ Nodes (16): 1. Bugs — root cause, fix, live verification, 2. Pre-production cl
 
 ### Community 31 - "Module Group 31"
 Cohesion: 0.10
-Nodes (9): CustomerBody(), fmtMoney(), GroupedTailoringPdfInput, S, TailoringLineItem, TailoringPdfInput, company, main() (+1 more)
+Nodes (11): CustomerBody(), fmtMoney(), GroupedTailoringPdfInput, renderGroupedTailoringPdf(), renderTailoringPdf(), S, TailoringLineItem, TailoringPdfInput (+3 more)
 
 ### Community 32 - "Module Group 32"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (7): COLOR_HEX, ItemPickerModalProps, PendingSlot, PickerAddEvent, PickerColor, PickerItem, PickerSize
 
 ### Community 33 - "Module Group 33"
-Cohesion: 0.16
-Nodes (13): ALL_TYPES, createStockMovementAction(), IN_TYPES, MovementSchema, MovementState, OUT_TYPES, ItemWithVariants, MOVEMENT_LABELS (+5 more)
+Cohesion: 0.15
+Nodes (12): ALL_TYPES, createStockMovementAction(), IN_TYPES, MovementSchema, MovementState, OUT_TYPES, ItemWithVariants, MOVEMENT_LABELS (+4 more)
 
 ### Community 34 - "Module Group 34"
-Cohesion: 0.21
-Nodes (13): applyStoreCreditAction(), AccountBalance, AccountCode, getAccountIds(), JournalEntryInput, JournalLine, paymentModeAccount(), postCreditNote() (+5 more)
+Cohesion: 0.12
+Nodes (17): applyStoreCreditAction(), createJournalEntryAction(), JournalSchema, LineSchema, Account, INIT, JournalLine, AccountBalance (+9 more)
 
 ### Community 35 - "Module Group 35"
-Cohesion: 0.17
-Nodes (8): metadata, STATUS_BADGE, Props, WaToast(), InvoiceDetailPage(), INIT, Props, Setting
+Cohesion: 0.22
+Nodes (8): metadata, STATUS_BADGE, Props, WaToast(), cancelInvoiceAction(), retryInvoiceWaAction(), sendReminderAction(), postReversalFor()
 
 ### Community 36 - "Module Group 36"
-Cohesion: 0.29
-Nodes (6): metadata, NewTailorPage(), createTailorAction(), TailorSchema, toggleTailorActiveAction(), updateTailorAction()
+Cohesion: 0.19
+Nodes (10): metadata, STATUS_BADGE, STATUS_LABEL, metadata, PageProps, NewTailorPage(), createTailorAction(), TailorSchema (+2 more)
 
 ### Community 37 - "Module Group 37"
-Cohesion: 0.05
-Nodes (40): GET(), AuthLayout(), OrderSchema, saveSidebarOrderAction(), GlobalSearch(), TYPE_ICON, TYPE_LABEL, Props (+32 more)
+Cohesion: 0.14
+Nodes (12): ACCOUNTING_CHILDREN, BILLING_CHILDREN, BILLING_CHILDREN_STAFF, CUSTOMERS_CHILDREN, NAV_ITEMS, NavItem, REPORTS_CHILDREN_ACCOUNTANT, REPORTS_CHILDREN_ADMIN (+4 more)
 
 ### Community 38 - "Module Group 38"
-Cohesion: 0.22
-Nodes (8): metadata, BillingImportForm(), ExtractedBilling, ExtractedItem, GST_OPTIONS, Props, Step, BillingImportPage()
+Cohesion: 0.18
+Nodes (11): Props, saveLowStockThresholdAction(), saveReminderConfigAction(), saveWhatsAppSettingsAction(), SettingsSaveResult, togglePurchaseOrdersAction(), toggleStaffModuleAction(), ModuleToggle() (+3 more)
+
+### Community 39 - "Module Group 39"
+Cohesion: 0.29
+Nodes (4): metadata, EXAMPLES, RULES, NewJournalEntryPage()
 
 ### Community 40 - "Module Group 40"
-Cohesion: 0.29
-Nodes (7): metadata, generateStickersForPurchase(), makePrefix(), NewPurchasePage(), createPurchaseInvoiceAction(), LineSchema, PurchaseSchema
+Cohesion: 0.17
+Nodes (13): POST(), metadata, currentFY(), DocType, nextInvoiceNumber(), generateStickersForPurchase(), makePrefix(), NewPurchasePage() (+5 more)
 
 ### Community 41 - "Module Group 41"
-Cohesion: 0.21
-Nodes (7): fmtInr(), GET(), S, migrate(), runSqlFile(), pool, AccountSection()
+Cohesion: 0.15
+Nodes (8): migrate(), runSqlFile(), pool, toggleUserActiveAction(), metadata, ROLE_BADGE, UserRow, UsersPage()
 
 ### Community 42 - "Module Group 42"
-Cohesion: 0.13
-Nodes (14): metadata, metadata, createCreditNoteAction(), CreditNoteSchema, LineSchema, createDebitNoteAction(), DebitNoteSchema, LineSchema (+6 more)
+Cohesion: 0.17
+Nodes (12): metadata, createDebitNoteAction(), DebitNoteSchema, LineSchema, postDebitNote(), Queryable, ResolvedVariant, resolveOne() (+4 more)
 
 ### Community 43 - "Module Group 43"
 Cohesion: 0.20
-Nodes (16): CreateCustomerInput, DuplicatePhoneError, batchFirstOrder(), CreateOrderInput, isBatchFullyAt(), markDeliveredOnCreditAction(), markDeliveredPaidAction(), NEXT_ALLOWED (+8 more)
+Nodes (16): EditPriceButton(), fmt(), Props, adjustPickupPriceAction(), batchFirstOrder(), CreateOrderInput, isBatchFullyAt(), markDeliveredOnCreditAction() (+8 more)
 
 ### Community 44 - "Module Group 44"
-Cohesion: 0.13
-Nodes (27): Props, BulkCollectBar(), InvoiceRow, InvoiceRow, metadata, applyInvoicePayment(), bulkCollectDuesAction(), clearCustomerDuesAction() (+19 more)
+Cohesion: 0.15
+Nodes (21): metadata, metadata, EditInvoicePage(), createInvoiceAction(), DraftBillSchema, DraftLineSchema, InvoiceSchema, LineItemSchema (+13 more)
 
 ### Community 45 - "Module Group 45"
 Cohesion: 0.21
@@ -346,64 +355,72 @@ Cohesion: 0.06
 Nodes (31): 10. Monitoring & Maintenance, 1. Create the Google Cloud VM, 2. Open Firewall Ports in GCP Console, 3. SSH into the VM, 4. Run the Deployment Script, 5. Configure the .env File, 6. Set Up a Domain Name (Optional but Recommended), 7. Enable SSL / HTTPS with Let's Encrypt (+23 more)
 
 ### Community 49 - "Module Group 49"
-Cohesion: 0.17
-Nodes (11): LinkedOrder, LinkedOrdersBadge(), STATUS_BADGE, STATUS_LABEL, metadata, PAYMENT_BADGE, PAYMENT_LABEL, PaymentStatus (+3 more)
+Cohesion: 0.25
+Nodes (7): metadata, PAYMENT_BADGE, PAYMENT_LABEL, PaymentStatus, STATUS_BADGE, STATUS_LABEL, TailoringOrdersPage()
 
 ### Community 50 - "Module Group 50"
 Cohesion: 0.14
 Nodes (17): GET(), StickerRow, clamp(), computeCustomCfg(), fmtPrice(), isRealVariant(), LabelSize, renderStickerSheet() (+9 more)
 
 ### Community 51 - "Module Group 51"
-Cohesion: 0.14
-Nodes (12): AiImportItem, AiImportResult, ItemColor, ItemOpt, ItemSize, Line, ProductModalMode, SIZE_PRESETS (+4 more)
+Cohesion: 0.13
+Nodes (13): AiImportItem, AiImportResult, ItemColor, ItemOpt, ItemSize, Line, ProductModalMode, PurchaseForm() (+5 more)
 
 ### Community 52 - "Module Group 52"
 Cohesion: 0.21
 Nodes (7): GET(), CustomerMeasurementsThermalData, fmt(), MeasurementThermalData, renderThermalPdf(), S, ThermalDoc()
 
 ### Community 53 - "Module Group 53"
-Cohesion: 0.50
-Nodes (3): ACTION_BADGE, AuditLogPage(), metadata
+Cohesion: 0.19
+Nodes (10): markTourCompletedAction(), TourContext, TourContextValue, TourProvider(), useTour(), TourSettingsSection(), TOUR_STEPS, TourStep (+2 more)
 
 ### Community 54 - "Module Group 54"
-Cohesion: 0.16
-Nodes (12): GET(), S, JournalEntry, JournalPage(), metadata, Account, LedgerLine, LedgerPage() (+4 more)
+Cohesion: 0.21
+Nodes (9): GET(), AuthLayout(), OrderSchema, saveSidebarOrderAction(), requireAuth(), SearchResult, metadata, UnlockPage() (+1 more)
 
 ### Community 55 - "Module Group 55"
-Cohesion: 0.07
-Nodes (31): metadata, metadata, createCustomerAction(), createWalkInCustomerAction(), CustomerSchema, CustomerState, parseCustomerForm(), quickCreateCustomerAction() (+23 more)
+Cohesion: 0.18
+Nodes (12): metadata, createCustomerAction(), createWalkInCustomerAction(), CustomerSchema, parseCustomerForm(), quickCreateCustomerAction(), updateCustomerAction(), EditCustomerPage() (+4 more)
 
 ### Community 56 - "Module Group 56"
 Cohesion: 0.25
 Nodes (9): CollapsedByColumn, emptyByColumn(), loadCollapsedGroups(), PRODUCTION_COLUMN_KEYS, ProductionColumnKey, setGroupCollapsed(), CollapseSchema, setProductionGroupCollapsedAction() (+1 more)
 
 ### Community 57 - "Community 57"
-Cohesion: 0.22
-Nodes (8): metadata, STATUS_BADGE, STATUS_LABEL, ALL_STATUSES, TailoringOrderDetailPage(), NEXT, StatusActions(), deleteOrderAction()
+Cohesion: 0.16
+Nodes (11): metadata, STATUS_BADGE, STATUS_LABEL, LinkedOrder, LinkedOrdersBadge(), STATUS_BADGE, STATUS_LABEL, ALL_STATUSES (+3 more)
 
 ### Community 58 - "Community 58"
 Cohesion: 0.20
 Nodes (6): Props, Tailor, Props, Tailor, assignTailorAction(), changeTailorAction()
 
 ### Community 59 - "Community 59"
-Cohesion: 0.11
-Nodes (19): metadata, DashboardPage(), metadata, KIND_BADGE, PaymentRow, Props, TodaysPaymentsButton(), DaybookPage() (+11 more)
+Cohesion: 0.05
+Nodes (44): metadata, metadata, metadata, metadata, STATUS_BADGE, metadata, metadata, BestSellersPage() (+36 more)
 
 ### Community 61 - "Module Group 61"
-Cohesion: 0.29
-Nodes (8): fmt(), PaymentRow, PaymentSection(), Props, fmt(), Props, RecordPaymentButton(), TailoringPaymentMode
+Cohesion: 0.24
+Nodes (10): fmt(), PaymentRow, PaymentSection(), Props, fmt(), Props, RecordPaymentButton(), recordTailoringPaymentAction() (+2 more)
 
 ### Community 63 - "Module Group 63"
-Cohesion: 0.16
-Nodes (19): GET(), GET(), GET(), GET(), GET(), fmtDate(), verifySession(), fmt() (+11 more)
+Cohesion: 0.14
+Nodes (18): GET(), GET(), GET(), GET(), GET(), fmtDate(), COOKIE_OPTIONS, getSecret() (+10 more)
+
+### Community 64 - "Community 64"
+Cohesion: 0.26
+Nodes (8): POST(), GET(), GreetingRunResult, runDailyGreetings(), triggerBirthdayGreetingIfToday(), checkLowStockForItems(), LowStockRunResult, runLowStockAlerts()
+
+### Community 65 - "Module Group 65"
+Cohesion: 0.27
+Nodes (7): metadata, createCreditNoteAction(), CreditNoteSchema, LineSchema, postCreditNote(), sendHelloWorld(), NewRefundPage()
 
 ### Community 77 - "Community 77"
-Cohesion: 0.29
-Nodes (6): metadata, deleteCustomerAction(), toggleMarketingOptInAction(), DownloadMeasurementsButton(), CustomerDetailPage(), InvoiceRow
+Cohesion: 0.23
+Nodes (8): metadata, ConfirmDialog(), ConfirmDialogProps, Props, deleteCustomerAction(), toggleMarketingOptInAction(), DownloadMeasurementsButton(), InvoiceRow
 
 ### Community 78 - "Community 78"
-Cohesion: 0.33
-Nodes (5): metadata, STATUS_BADGE, STATUS_LABEL, PageProps, TailorProfilePage()
+Cohesion: 0.27
+Nodes (7): metadata, CustomerState, CustomerForm(), Props, toIsoDate(), NewCustomerPage(), Customer
 
 ### Community 79 - "Community 79"
 Cohesion: 0.67
@@ -418,24 +435,24 @@ Cohesion: 0.67
 Nodes (3): fmtInr(), GET(), S
 
 ### Community 83 - "Community 83"
-Cohesion: 0.22
-Nodes (7): ConfirmDialog(), ConfirmDialogProps, Color, Size, SizeColorManagerProps, StockCell, Warehouse
+Cohesion: 0.29
+Nodes (5): Color, Size, SizeColorManagerProps, StockCell, Warehouse
 
 ### Community 84 - "Community 84"
-Cohesion: 0.67
-Nodes (3): AttendancePage(), daysInMonth(), metadata
+Cohesion: 0.29
+Nodes (6): GlobalSearch(), TYPE_ICON, TYPE_LABEL, Props, Props, Role
 
 ### Community 85 - "Community 85"
 Cohesion: 0.17
 Nodes (11): Build Phases (follow this order), Code Style, graphify, GST Setup, Key Business Rules (always enforce), Never Do, Payments (manual, no gateway), Roles (3 roles only) (+3 more)
 
 ### Community 86 - "Community 86"
-Cohesion: 0.50
-Nodes (3): DataExportPage(), EXPORTS, metadata
+Cohesion: 0.24
+Nodes (8): fmt(), InvoiceDoc(), PdfCompany, PdfCustomer, PdfLineItem, PdfMeasurementGroup, S, validGstin()
 
 ### Community 87 - "Community 87"
-Cohesion: 0.67
-Nodes (3): daysInMonth(), metadata, PayrollPage()
+Cohesion: 0.31
+Nodes (6): register(), DueRow, ReminderRunResult, runDailyReminders(), interpolateTemplate(), GET()
 
 ### Community 88 - "Community 88"
 Cohesion: 0.27
@@ -445,13 +462,29 @@ Nodes (8): handleIncoming(), markProcessed(), POST(), processMessage(), WaMessag
 Cohesion: 0.15
 Nodes (9): metadata, MODE_LABEL, MODE_SOURCE, SalesMode, SalesReportPage(), DayRow, Props, SalesChart() (+1 more)
 
+### Community 91 - "Community 91"
+Cohesion: 0.29
+Nodes (4): metadata, Props, ItemDetailPage(), Item
+
+### Community 92 - "Community 92"
+Cohesion: 0.38
+Nodes (4): clamp(), computePopoverStyle(), Rect, TourOverlayInner()
+
 ### Community 93 - "Community 93"
 Cohesion: 0.23
-Nodes (11): createItemAction(), deleteItemAction(), ItemSchema, parseItem(), resolveItemType(), toggleItemActiveAction(), updateItemAction(), ItemsPage() (+3 more)
+Nodes (10): metadata, EditItemPage(), createItemAction(), ItemSchema, parseItem(), resolveItemType(), toggleItemActiveAction(), updateItemAction() (+2 more)
+
+### Community 94 - "Community 94"
+Cohesion: 0.40
+Nodes (4): AttendanceStatus, DELETE(), POST(), VALID_STATUS
+
+### Community 95 - "Community 95"
+Cohesion: 0.67
+Nodes (3): DeliveryActions(), fmt(), Props
 
 ### Community 96 - "Community 96"
-Cohesion: 0.16
-Nodes (11): metadata, STATUS_BADGE, ConfirmForm(), Props, QuotationDetailPage(), convertQuotationToInvoiceAction(), updateQuotationStatusAction(), metadata (+3 more)
+Cohesion: 0.50
+Nodes (3): metadata, TailorRow, TailorsPage()
 
 ### Community 97 - "Community 97"
 Cohesion: 0.20
@@ -473,37 +506,33 @@ Nodes (8): Field, fmt(), fmtDate(), OrderDetailsPanel(), OrderDetailsPanelProps,
 Cohesion: 0.40
 Nodes (3): ButtonProps, Size, Variant
 
-### Community 106 - "Community 106"
-Cohesion: 0.24
-Nodes (9): POST(), currentFY(), DocType, nextInvoiceNumber(), createQuotationAction(), LineSchema, QuoteSchema, BillingItem (+1 more)
-
 ### Community 109 - "Community 109"
 Cohesion: 0.67
 Nodes (3): fmtInr(), GET(), S
 
 ### Community 111 - "Community 111"
-Cohesion: 0.08
-Nodes (17): POST(), POST(), GET(), S, GET(), metadata, metadata, metadata (+9 more)
+Cohesion: 0.12
+Nodes (11): metadata, FabricOption, Props, CustomerOption, DesignOption, Field, MeasurementVersion, Props (+3 more)
 
 ## Knowledge Gaps
-- **554 isolated node(s):** `metadata`, `ExpenseSchema`, `CategoryNameSchema`, `INIT`, `Category` (+549 more)
+- **570 isolated node(s):** `metadata`, `ExpenseSchema`, `CategoryNameSchema`, `INIT`, `Category` (+565 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **20 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **19 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `requireRole()` connect `CRM, Designs & Reminders` to `PDF Rendering & Document Export`, `Billing Import & Debit Note Forms`, `Warehouse Settings Management`, `Purchase Listing & Search UI`, `AI Import Wizards`, `Invoice Builder & Tailoring UI`, `Customer Detail & Edit Pages`, `Expense Tracking & Forms`, `Design Portal Actions`, `Inventory & Supplier Import API`, `Inventory Item Management`, `Supplier Management Pages`, `Module Group 21`, `Module Group 22`, `Module Group 24`, `Module Group 25`, `Module Group 26`, `Module Group 27`, `Module Group 28`, `Module Group 33`, `Module Group 34`, `Module Group 35`, `Module Group 36`, `Module Group 37`, `Module Group 38`, `Module Group 40`, `Module Group 41`, `Module Group 42`, `Module Group 43`, `Module Group 44`, `Module Group 46`, `Module Group 47`, `Module Group 49`, `Module Group 50`, `Module Group 53`, `Module Group 54`, `Module Group 55`, `Module Group 56`, `Community 57`, `Community 58`, `Community 59`, `Community 64`, `Module Group 65`, `Community 77`, `Community 78`, `Community 79`, `Community 80`, `Community 81`, `Community 82`, `Community 84`, `Community 86`, `Community 87`, `Community 89`, `Community 90`, `Community 93`, `Community 96`, `Community 98`, `Community 99`, `Community 101`, `Community 106`, `Community 109`, `Community 111`?**
-  _High betweenness centrality (0.219) - this node is a cross-community bridge._
-- **Why does `query()` connect `Invoice & Search API Routes` to `Billing Import & Debit Note Forms`, `Warehouse Settings Management`, `Tailoring Order Flow`, `Purchase Listing & Search UI`, `CRM, Designs & Reminders`, `AI Import Wizards`, `Customer Detail & Edit Pages`, `Design Portal Actions`, `Inventory Item Management`, `Supplier Management Pages`, `Module Group 21`, `Module Group 25`, `Module Group 27`, `Module Group 28`, `Module Group 33`, `Module Group 35`, `Module Group 36`, `Module Group 37`, `Module Group 38`, `Module Group 40`, `Module Group 42`, `Module Group 43`, `Module Group 44`, `Module Group 46`, `Module Group 47`, `Module Group 49`, `Module Group 50`, `Module Group 52`, `Module Group 53`, `Module Group 54`, `Module Group 55`, `Module Group 56`, `Community 57`, `Community 58`, `Community 59`, `Module Group 63`, `Community 64`, `Module Group 65`, `Community 77`, `Community 78`, `Community 80`, `Community 81`, `Community 82`, `Community 88`, `Community 89`, `Community 90`, `Community 93`, `Community 96`, `Community 98`, `Community 101`, `Community 106`, `Community 109`, `Community 111`?**
-  _High betweenness centrality (0.149) - this node is a cross-community bridge._
-- **Why does `formatInr()` connect `Community 59` to `PDF Rendering & Document Export`, `Purchase Listing & Search UI`, `CRM, Designs & Reminders`, `Invoice Builder & Tailoring UI`, `Expense Tracking & Forms`, `Inventory & Supplier Import API`, `WhatsApp Reminders UI`, `Module Group 22`, `Module Group 23`, `Module Group 25`, `Module Group 28`, `Module Group 35`, `Module Group 44`, `Module Group 46`, `Module Group 49`, `Module Group 51`, `Module Group 54`, `Module Group 55`, `Community 57`, `Community 77`, `Community 78`, `Community 89`, `Community 96`, `Community 111`?**
-  _High betweenness centrality (0.031) - this node is a cross-community bridge._
-- **Are the 87 inferred relationships involving `requireRole()` (e.g. with `GET()` and `GET()`) actually correct?**
-  _`requireRole()` has 87 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 54 inferred relationships involving `query()` (e.g. with `GET()` and `GET()`) actually correct?**
-  _`query()` has 54 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `requireRole()` connect `CRM, Designs & Reminders` to `PDF Rendering & Document Export`, `Billing Import & Debit Note Forms`, `Warehouse Settings Management`, `Tailoring Order Flow`, `Purchase Listing & Search UI`, `AI Import Wizards`, `Customer Detail & Edit Pages`, `Expense Tracking & Forms`, `Design Portal Actions`, `Inventory & Supplier Import API`, `Inventory Item Management`, `Supplier Management Pages`, `Module Group 21`, `Module Group 22`, `Module Group 24`, `Module Group 25`, `Module Group 26`, `Module Group 27`, `Module Group 28`, `Module Group 29`, `Module Group 33`, `Module Group 34`, `Module Group 35`, `Module Group 36`, `Module Group 38`, `Module Group 39`, `Module Group 40`, `Module Group 41`, `Module Group 42`, `Module Group 43`, `Module Group 44`, `Module Group 46`, `Module Group 47`, `Module Group 49`, `Module Group 50`, `Module Group 53`, `Module Group 54`, `Module Group 55`, `Module Group 56`, `Community 57`, `Community 58`, `Community 59`, `Module Group 61`, `Community 64`, `Module Group 65`, `Community 77`, `Community 78`, `Community 79`, `Community 80`, `Community 81`, `Community 82`, `Community 87`, `Community 89`, `Community 90`, `Community 91`, `Community 93`, `Community 94`, `Community 96`, `Community 98`, `Community 99`, `Community 100`, `Community 101`, `Community 103`, `Community 109`, `Community 111`?**
+  _High betweenness centrality (0.223) - this node is a cross-community bridge._
+- **Why does `query()` connect `Invoice & Search API Routes` to `PDF Rendering & Document Export`, `Billing Import & Debit Note Forms`, `Warehouse Settings Management`, `Tailoring Order Flow`, `Purchase Listing & Search UI`, `CRM, Designs & Reminders`, `AI Import Wizards`, `Invoice Builder & Tailoring UI`, `Customer Detail & Edit Pages`, `Design Portal Actions`, `Inventory & Supplier Import API`, `Inventory Item Management`, `Reports & Dashboard Pages`, `Supplier Management Pages`, `Module Group 21`, `Module Group 22`, `Module Group 25`, `Module Group 27`, `Module Group 28`, `Module Group 33`, `Module Group 35`, `Module Group 36`, `Module Group 38`, `Module Group 40`, `Module Group 42`, `Module Group 43`, `Module Group 44`, `Module Group 46`, `Module Group 47`, `Module Group 49`, `Module Group 50`, `Module Group 52`, `Module Group 53`, `Module Group 54`, `Module Group 55`, `Module Group 56`, `Community 57`, `Community 58`, `Community 59`, `Module Group 63`, `Module Group 65`, `Community 77`, `Community 80`, `Community 81`, `Community 82`, `Community 84`, `Community 88`, `Community 89`, `Community 90`, `Community 91`, `Community 93`, `Community 96`, `Community 98`, `Community 101`, `Community 103`, `Community 104`, `Community 109`, `Community 111`?**
+  _High betweenness centrality (0.159) - this node is a cross-community bridge._
+- **Why does `formatInr()` connect `Community 59` to `PDF Rendering & Document Export`, `Community 89`, `Module Group 35`, `Module Group 36`, `Purchase Listing & Search UI`, `Expense Tracking & Forms`, `Community 77`, `Module Group 46`, `Inventory & Supplier Import API`, `Module Group 49`, `Module Group 51`, `Module Group 23`, `Module Group 22`, `Community 87`, `Community 57`, `Module Group 26`, `Module Group 25`?**
+  _High betweenness centrality (0.028) - this node is a cross-community bridge._
+- **Are the 88 inferred relationships involving `requireRole()` (e.g. with `GET()` and `GET()`) actually correct?**
+  _`requireRole()` has 88 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 56 inferred relationships involving `query()` (e.g. with `POST()` and `GET()`) actually correct?**
+  _`query()` has 56 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 10 inferred relationships involving `formatInr()` (e.g. with `CreditNoteDetailPage()` and `CustomerDetailPage()`) actually correct?**
   _`formatInr()` has 10 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 6 inferred relationships involving `getSession()` (e.g. with `GET()` and `GET()`) actually correct?**
-  _`getSession()` has 6 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 7 inferred relationships involving `getSession()` (e.g. with `POST()` and `GET()`) actually correct?**
+  _`getSession()` has 7 INFERRED edges - model-reasoned connections that need verification._
