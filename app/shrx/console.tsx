@@ -28,6 +28,7 @@ const TABS = [
   ['users', 'Users'],
   ['delete', 'Delete orders'],
   ['dues', 'Clear dues'],
+  ['updates', 'Updates'],
   ['audit', 'SHRX audit log'],
 ] as const;
 type Tab = (typeof TABS)[number][0];
@@ -60,6 +61,7 @@ export default function ShrxConsole() {
       {tab === 'users' && <Users />}
       {tab === 'delete' && <DeleteOrders />}
       {tab === 'dues' && <ClearDues />}
+      {tab === 'updates' && <Updates />}
       {tab === 'audit' && <AuditLog />}
     </div>
   );
@@ -507,6 +509,177 @@ function AuditLog() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+// ─── Updates ──────────────────────────────────────────────────────────────────
+// Queues requests for the updater container (it alone has Docker access) and
+// shows what it reports. The app itself never runs shell/docker commands.
+
+interface UpdStatus {
+  last_seen: string; seconds_since_seen: number;
+  running_commit: string | null; running_subject: string | null; running_date: string | null;
+  origin_commit: string | null; origin_subject: string | null; origin_date: string | null;
+  behind: number | null; new_commits: string | null;
+  previous_commit: string | null; previous_available: boolean;
+  last_fetch_at: string | null; last_fetch_error: string | null; disk_free_gb: string | null;
+}
+interface UpdRun {
+  id: string; action: string; status: string; log?: string; requested_at: string; requested_by?: string;
+  started_at: string | null; finished_at: string | null; error: string | null; backup_file: string | null;
+  needs_manual_restart: boolean; duration_seconds?: number | null; from_commit?: string | null; to_commit?: string | null;
+}
+const RUN_BADGE: Record<string, string> = {
+  pending: 'bg-gray-100 text-gray-700', running: 'bg-blue-100 text-blue-800', succeeded: 'bg-green-100 text-green-800',
+  failed: 'bg-red-100 text-red-800', rolled_back: 'bg-amber-100 text-amber-800', refused: 'bg-red-50 text-red-700',
+  expired: 'bg-gray-100 text-gray-500',
+};
+const short = (c?: string | null) => (c ? c.slice(0, 8) : '—');
+const dur = (s?: number | null) => (s == null ? '—' : s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`);
+
+function Updates() {
+  const [data, setData] = useState<{ offline: boolean; status: UpdStatus | null; appBuild: string | null; latest: UpdRun | null; history: UpdRun[] } | null>(null);
+  const [err, setErr] = useState('');
+  const [confirm, setConfirm] = useState<null | 'update' | 'rollback'>(null);
+
+  const load = useCallback(async () => {
+    try { setData(await api('/api/shrx/updates')); setErr(''); } catch (e) { setErr((e as Error).message); }
+  }, []);
+  const busy = !!data?.latest && ['pending', 'running'].includes(data.latest.status) && data.latest.action !== 'check';
+  useEffect(() => {
+    load();
+    const t = setInterval(load, busy ? 2000 : 10000);
+    return () => clearInterval(t);
+  }, [load, busy]);
+
+  async function queue(action: 'check' | 'update' | 'rollback') {
+    setErr(''); setConfirm(null);
+    try { await api('/api/shrx/updates', { method: 'POST', body: JSON.stringify({ action }) }); await load(); }
+    catch (e) { setErr((e as Error).message); }
+  }
+
+  const st = data?.status;
+  const offline = data?.offline ?? true;
+  const newCommits = (st?.new_commits ?? '').split('\n').filter(Boolean).map((l) => l.split('\t'));
+
+  return (
+    <div className="space-y-4">
+      {offline && (
+        <p className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <strong>Updater offline.</strong> The updater container isn&apos;t running or hasn&apos;t reported in for over 2 minutes
+          {st ? ` (last seen ${dt(st.last_seen)})` : ''}. Updates can&apos;t run until it&apos;s started on the shop PC (see UPDATER.md).
+        </p>
+      )}
+      <ErrorNote msg={err} />
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="card text-sm">
+          <p className="text-xs font-semibold uppercase text-gray-500">Running now</p>
+          <p className="mt-1 font-mono">{short(st?.running_commit)} <span className="font-sans">{st?.running_subject}</span></p>
+          <p className="text-xs text-gray-500">{st?.running_date ? dt(st.running_date) : ''}{data?.appBuild ? ` · app build ${data.appBuild}` : ''}</p>
+        </div>
+        <div className="card text-sm">
+          <p className="text-xs font-semibold uppercase text-gray-500">Latest on GitHub (main)</p>
+          <p className="mt-1 font-mono">{short(st?.origin_commit)} <span className="font-sans">{st?.origin_subject}</span></p>
+          <p className="text-xs text-gray-500">
+            {st?.behind == null ? 'Not checked yet' : st.behind === 0 ? 'Up to date' : `${st.behind} commit(s) behind`}
+            {st?.last_fetch_at ? ` · checked ${dt(st.last_fetch_at)}` : ''}
+            {st?.disk_free_gb ? ` · ${st.disk_free_gb} GB free` : ''}
+          </p>
+          {st?.last_fetch_error && <p className="mt-1 text-xs text-red-700">{st.last_fetch_error}</p>}
+        </div>
+      </div>
+
+      {newCommits.length > 0 && (
+        <div className="card text-sm">
+          <p className="mb-2 text-xs font-semibold uppercase text-gray-500">What&apos;s new</p>
+          <ul className="space-y-1">
+            {newCommits.map(([h, d, subj]) => (
+              <li key={h}><span className="font-mono text-xs text-gray-500">{h}</span> {subj} <span className="text-xs text-gray-400">{d ? dt(d) : ''}</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="btn-secondary btn-sm" disabled={offline || busy} onClick={() => queue('check')}>Check for updates</button>
+        <button type="button" className="btn-primary btn-sm disabled:opacity-40" disabled={offline || busy} onClick={() => setConfirm('update')}>Update now</button>
+        <button type="button" className="btn-ghost btn-sm text-red-700 disabled:opacity-40"
+          disabled={offline || busy || !st?.previous_available} onClick={() => setConfirm('rollback')}
+          title={st?.previous_available ? `Previous version: ${short(st.previous_commit)}` : 'No previous version saved yet'}>
+          Roll back to previous version
+        </button>
+        {busy && <span className="self-center text-sm text-blue-700">An update is in progress…</span>}
+      </div>
+
+      {data?.latest && (
+        <div className="card text-sm">
+          <div className="mb-2 flex items-center gap-2">
+            <p className="text-xs font-semibold uppercase text-gray-500">{['pending', 'running'].includes(data.latest.status) ? 'Current run' : 'Last run'}</p>
+            <span className={`rounded px-2 py-0.5 text-xs font-semibold ${RUN_BADGE[data.latest.status] ?? ''}`}>{data.latest.action} · {data.latest.status.replace('_', ' ')}</span>
+            {data.latest.backup_file && <span className="text-xs text-gray-500">backup: {data.latest.backup_file}</span>}
+          </div>
+          {data.latest.error && <p className="mb-2 text-sm text-red-700">{data.latest.error}</p>}
+          {data.latest.needs_manual_restart && <p className="mb-2 text-sm text-amber-800">Updater files changed — restart the updater manually on the shop PC (UPDATER.md).</p>}
+          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded bg-gray-900 p-3 text-[11px] leading-relaxed text-gray-100">{data.latest.log || 'Waiting for the updater to pick this up…'}</pre>
+        </div>
+      )}
+
+      <div className="card overflow-x-auto p-0">
+        <table className="min-w-full text-sm">
+          <thead className="border-b bg-gray-50 text-left text-xs uppercase text-gray-500">
+            <tr><th className="px-3 py-2">Requested</th><th className="px-3 py-2">Action</th><th className="px-3 py-2">Result</th><th className="px-3 py-2">Version</th><th className="px-3 py-2">By</th><th className="px-3 py-2">Duration</th><th className="px-3 py-2">Backup</th></tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {(data?.history ?? []).length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-400">No updates yet.</td></tr>}
+            {(data?.history ?? []).map((h) => (
+              <tr key={h.id}>
+                <td className="whitespace-nowrap px-3 py-2 text-xs">{dt(h.requested_at)}</td>
+                <td className="px-3 py-2 capitalize">{h.action}</td>
+                <td className="px-3 py-2"><span className={`rounded px-2 py-0.5 text-xs font-semibold ${RUN_BADGE[h.status] ?? ''}`}>{h.status.replace('_', ' ')}</span>{h.error && <div className="mt-1 max-w-xs text-xs text-red-700">{h.error}</div>}</td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-xs">{short(h.from_commit)} → {short(h.to_commit)}</td>
+                <td className="px-3 py-2 text-xs">{h.requested_by}</td>
+                <td className="px-3 py-2 text-xs">{dur(h.duration_seconds)}</td>
+                <td className="px-3 py-2 text-xs">{h.backup_file ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {confirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="card w-full max-w-md space-y-3 text-sm">
+            {confirm === 'update' ? (
+              <>
+                <h3 className="font-semibold">Update to the latest version?</h3>
+                <ul className="list-disc space-y-1 pl-5 text-gray-700">
+                  <li>Backs up the database first (refuses if the backup fails).</li>
+                  <li>Downloads {st?.behind ? `${st.behind} new commit(s)` : 'the latest code'} from GitHub and builds it (a few minutes — the shop keeps working).</li>
+                  <li><strong>The app restarts: it is unavailable for about a minute.</strong> Tell staff not to save bills during that minute.</li>
+                  <li>If the new version doesn&apos;t start, it automatically goes back to the current one.</li>
+                </ul>
+              </>
+            ) : (
+              <>
+                <h3 className="font-semibold">Roll back to the previous version ({short(st?.previous_commit)})?</h3>
+                <ul className="list-disc space-y-1 pl-5 text-gray-700">
+                  <li>Backs up the database first.</li>
+                  <li>Switches the app back to the previous version. <strong>The app is unavailable for about a minute.</strong></li>
+                  <li>The database is not changed (new columns/tables stay; the older code ignores them).</li>
+                </ul>
+              </>
+            )}
+            <div className="flex justify-end gap-2">
+              <button type="button" className="btn-secondary btn-sm" onClick={() => setConfirm(null)}>Cancel</button>
+              <button type="button" className={confirm === 'update' ? 'btn-primary btn-sm' : 'rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white'} onClick={() => queue(confirm)}>
+                {confirm === 'update' ? 'Update now' : 'Roll back'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

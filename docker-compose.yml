@@ -41,15 +41,16 @@ services:
       - ./backups:/app/backups
       - ./uploads:/app/public/uploads
 
+  # Production updater lives in docker-compose.prod.yml. Kept here only behind
+  # the "deploy" profile so a plain `docker compose up` on a dev machine no
+  # longer starts it (it used to crash-loop: "mounts denied: /repo…").
   updater:
+    profiles: ["deploy"]
     build:
       context: ./updater
       dockerfile: Dockerfile
-    restart: always
-    volumes:
-      - .:/repo
-      - /var/run/docker.sock:/var/run/docker.sock
-    working_dir: /repo
+    restart: "no"
+    command: ["sh", "-c", "echo 'Use docker-compose.prod.yml for the updater (see UPDATER.md)'; exit 0"]
 
   backup:
     build:

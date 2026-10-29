@@ -84,15 +84,32 @@ services:
     networks:
       - sutra_net
 
+  # Updates the app ONLY when requested from the SHRX console (Updates tab).
+  # Behind the "deploy" profile: it does NOT start with a plain
+  # `docker compose up` (dev machines); the client PC starts it explicitly:
+  #   docker compose -f docker-compose.prod.yml --profile deploy up -d updater
+  # The project folder is mounted at DAEMON_PROJECT_DIR — the path the Docker
+  # daemon itself uses for it — so the bind mounts below (./backups,
+  # ./nginx/...) resolve correctly when the updater recreates the app.
+  # See UPDATER.md. Only this container gets the Docker socket; the app never does.
   updater:
+    profiles: ["deploy"]
     build:
       context: ./updater
       dockerfile: Dockerfile
     restart: always
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DAEMON_PROJECT_DIR: ${DAEMON_PROJECT_DIR:-}
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT:-}
+      UPDATER_MIN_FREE_GB: ${UPDATER_MIN_FREE_GB:-5}
+      UPDATER_ORIGIN_URL: ${UPDATER_ORIGIN_URL:-}
     volumes:
-      - .:/repo
+      - ${DAEMON_PROJECT_DIR:-./.updater-not-configured}:${DAEMON_PROJECT_DIR:-/updater-not-configured}
       - /var/run/docker.sock:/var/run/docker.sock
-    working_dir: /repo
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - sutra_net
 
