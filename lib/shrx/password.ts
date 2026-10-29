@@ -9,7 +9,7 @@ import { scryptSync, randomBytes, timingSafeEqual } from 'crypto';
 // placeholder below. Not read from env, DB or any settings UI, by design.
 // While the placeholder is in place every login is refused.
 
-export const SHRX_PASSWORD_HASH = 'PLACEHOLDER_REPLACE_WITH_OUTPUT_OF_scripts/hash-shrx-password.ts';
+export const SHRX_PASSWORD_HASH = 'scrypt$16384$8$1$YeB07qfOF98wiDpY0BAtsQ==$xzjkCKXxYIbM4fxz31A8HwwGDW2raiLQJynlKKPTcASgztmUuHvr772NEZ9HhD9U23O2FjaMr4ZpASjbGhWafg==';
 
 // Format: scrypt$N$r$p$<salt base64>$<key base64>
 const N = 16384, R = 8, P = 1, KEYLEN = 64;
