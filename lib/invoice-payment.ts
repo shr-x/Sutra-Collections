@@ -9,6 +9,7 @@ import { generateThermalInvoicePdf } from '@/lib/pdf-generator';
 import { logAppError } from '@/lib/app-error-log';
 import { todayIST } from '@/lib/ist-date';
 import { sendFullyPaidNotification } from '@/app/(auth)/tailoring/actions';
+import { recomputeCreditForInvoices } from '@/lib/tailoring-credit';
 
 // Shared invoice-payment pipeline, moved out of app/(auth)/billing/invoices/actions.ts
 // (a 'use server' module, where any export becomes a client-callable action) so
@@ -140,6 +141,8 @@ export async function applyInvoicePayment(
       }
     }
     tailoringSync = await syncInvoicePaymentToTailoringOrder(id, deltaApplied, client);
+    // Keep the stored order credit equal to the real balance (lib/tailoring-credit.ts).
+    await recomputeCreditForInvoices([id], client);
     await client.query('COMMIT');
   } catch (err) {
     await client.query('ROLLBACK');

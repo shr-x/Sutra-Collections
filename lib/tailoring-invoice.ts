@@ -24,6 +24,7 @@ import { nextInvoiceNumber } from '@/lib/invoice-number';
 import { logAudit } from '@/lib/audit';
 import { todayIST } from '@/lib/ist-date';
 import { logAppError } from '@/lib/app-error-log';
+import { recomputeCreditForOrders } from '@/lib/tailoring-credit';
 
 const SERVICE_ITEM_NAME = 'Tailoring Services';
 
@@ -152,6 +153,7 @@ export async function createTailoringInvoice(
     await client.query(`UPDATE tailoring_orders SET invoice_id=$1 WHERE id=$2`, [invoiceId, orderId]);
 
     await client.query('COMMIT');
+    await recomputeCreditForOrders([orderId]);
     return { invoiceId, invoiceNumber };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -245,6 +247,7 @@ async function createSupplementaryInvoice(
       },
     }).catch(() => {});
 
+    await recomputeCreditForOrders([order.id]);
     return { invoiceId, invoiceNumber };
   } catch (err) {
     await client.query('ROLLBACK');
@@ -425,6 +428,7 @@ export async function syncTailoringInvoiceAfterAlteration(
       newValue: { flag: 'tailoring_alteration_amended_invoice', order: displayRef, old_total: oldTotal, new_total: newTotal },
     }).catch(() => {});
 
+    await recomputeCreditForOrders([orderId]);
     return { action: 'amended_in_place', invoiceId: invoice.id, invoiceNumber: invoice.invoice_number };
   } catch (err) {
     await client.query('ROLLBACK');

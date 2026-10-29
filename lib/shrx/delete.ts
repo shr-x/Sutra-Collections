@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { pool } from '@/lib/db';
 import { resolveStockVariant } from '@/lib/stock-variant';
+import { recomputeCreditForOrders } from '@/lib/tailoring-credit';
 
 /**
  * SHRX hard delete of a retail/tailoring invoice or a tailoring order, undoing
@@ -249,6 +250,12 @@ export async function executeDelete(kind: DeleteKind, number: string, confirm: s
 
     const ids = plan.invoices.map((i) => i.id);
     const invs = await invoicesByIds(client, ids, true);
+    // Orders that stay but lose their invoice — their stored credit is recomputed at the end.
+    const detachedOrders = ids.length
+      ? (await client.query<{ id: string }>(
+          'SELECT id FROM tailoring_orders WHERE invoice_id = ANY($1::uuid[]) AND id <> $2', [ids, plan.id]
+        )).rows.map((r) => r.id)
+      : [];
 
     // 1. Stock back for retail invoices that took it.
     for (const inv of invs.filter(tookStock)) {
@@ -303,6 +310,9 @@ export async function executeDelete(kind: DeleteKind, number: string, confirm: s
     if (kind === 'tailoring_order') {
       await client.query('DELETE FROM tailoring_orders WHERE id = $1', [plan.id]);
     }
+
+    // Detached orders' stored credit = their real balance again.
+    await recomputeCreditForOrders(detachedOrders, client);
 
     await client.query('COMMIT');
     return plan;

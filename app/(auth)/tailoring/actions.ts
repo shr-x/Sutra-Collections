@@ -18,6 +18,7 @@ import { createTailoringInvoice, syncTailoringInvoiceAfterAlteration, TAILORING_
 import { logAudit } from '@/lib/audit';
 import type { PoolClient } from 'pg';
 import type { ActionResult, TailoringStatus, TailoringPaymentMode } from '@/types';
+import { recomputeCreditForOrders } from '@/lib/tailoring-credit';
 
 // Applies a tailoring payment to the order's linked GST invoice(s) — the root
 // real invoice (tailoring_orders.invoice_id) plus any supplementary invoices
@@ -720,6 +721,9 @@ export async function markDeliveredOnCreditAction(orderId: string): Promise<Acti
     );
   }
 
+  // Keep the stored order credit equal to the real balance (lib/tailoring-credit.ts).
+  await recomputeCreditForOrders([orderId]);
+
   logAudit({
     userId: session.userId, action: 'stage_change', entityType: 'tailoring_order', entityId: orderId,
     entityLabel: order.order_number, newValue: { status: 'delivered', delivered_on_credit: true, credit_amount: balance },
@@ -1055,6 +1059,8 @@ export async function recordTailoringPaymentAction(data: {
     if (res.rows[0].invoice_id) {
       await syncPaymentToInvoices(client, res.rows[0].invoice_id, data.amount);
     }
+    // Keep the stored order credit equal to the real balance (lib/tailoring-credit.ts).
+    await recomputeCreditForOrders([data.orderId], client);
 
     await client.query('COMMIT');
   } catch (err) {

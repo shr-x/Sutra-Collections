@@ -7,6 +7,7 @@ import { formatInr } from '@/lib/gst';
 import ConfirmForm from '@/components/confirm-form';
 import { deleteCustomerAction, toggleMarketingOptInAction } from '../actions';
 import type { Customer } from '@/types';
+import { customerDueFigures } from '@/lib/tailoring-credit';
 import DownloadMeasurementsButton from './download-measurements-button';
 
 export const metadata: Metadata = { title: 'Customer' };
@@ -23,7 +24,7 @@ interface InvoiceRow {
 export default async function CustomerDetailPage({ params }: { params: { id: string } }) {
   const session = await requireRole('admin');
 
-  const [custRes, invoicesRes, outstandingRes, measurementsRes, insightsRes, loyaltyRes, tailoringDuesRes] = await Promise.all([
+  const [custRes, invoicesRes, dueFigures, measurementsRes, insightsRes, loyaltyRes] = await Promise.all([
     query<Customer & { store_credit_balance: number; loyalty_points_balance: number; date_of_birth: string | null }>(
       `SELECT *, store_credit_balance, loyalty_points_balance, date_of_birth FROM customers WHERE id=$1`, [params.id]
     ),
@@ -33,18 +34,12 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
        ORDER BY invoice_date DESC LIMIT 5`,
       [params.id]
     ),
-    // Pure invoice-balance across ALL issued invoices (POS and tailoring alike),
-    // consistent with the Outstanding Dues report/page and each tailoring
-    // order's own balance. Tailoring invoices are included because their
-    // amount_paid/status is now kept in lockstep with tailoring payments (see
-    // syncPaymentToInvoices in tailoring/actions.ts). The "Tailoring Credit Due"
-    // card below is a SUBSET of this figure (the delivered-on-credit portion),
-    // not an additional amount.
-    query<{ outstanding: string }>(
-      `SELECT COALESCE(SUM(grand_total - amount_paid), 0) AS outstanding
-       FROM invoices WHERE customer_id=$1 AND status IN ('issued','partially_paid')`,
-      [params.id]
-    ),
+    // Outstanding and On Credit are BOTH derived from the customer's unpaid
+    // invoices (lib/tailoring-credit.ts) — never from a stored running
+    // figure — so On Credit is always a part of Outstanding and can't drift
+    // (it used to read tailoring_orders.credit_amount, which went stale when
+    // an invoice was cancelled/deleted and showed credit with nothing owed).
+    customerDueFigures(params.id),
     query(
       `SELECT mv.id, mv.version_number, mv.created_at, mv.design_id,
               d.name AS design_name, d.category AS design_category,
@@ -81,11 +76,6 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
        ORDER BY lt.created_at DESC LIMIT 20`,
       [params.id]
     ),
-    query<{ total: string }>(
-      `SELECT COALESCE(SUM(credit_amount), 0)::text AS total
-       FROM tailoring_orders WHERE customer_id=$1 AND credit_amount > 0`,
-      [params.id]
-    ),
   ]);
 
   if (!custRes.rows[0]) notFound();
@@ -97,9 +87,9 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     grand_total: Number(r.grand_total),
     amount_paid: Number(r.amount_paid),
   }));
-  const outstanding = Number(outstandingRes.rows[0]?.outstanding ?? 0);
+  const outstanding = dueFigures.outstanding;
   const storeCredit = Number(c.store_credit_balance ?? 0);
-  const tailoringDues = Number(tailoringDuesRes.rows[0]?.total ?? 0);
+  const tailoringDues = dueFigures.onCredit;
 
   type MeasRow = {
     id: string; version_number: number; created_at: string;

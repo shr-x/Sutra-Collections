@@ -19,6 +19,7 @@ import { todayIST } from '@/lib/ist-date';
 import { effectiveSizeSql, effectiveColorSql } from '@/lib/stock-sql';
 import { applyInvoicePayment } from '@/lib/invoice-payment';
 import { logAppError } from '@/lib/app-error-log';
+import { recomputeCreditForInvoices } from '@/lib/tailoring-credit';
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -669,6 +670,9 @@ export async function cancelInvoiceAction(id: string, _fd?: FormData): Promise<v
       }
 
       await client.query(`UPDATE invoices SET status='cancelled' WHERE id=$1`, [id]);
+      // A cancelled tailoring invoice no longer counts as owed.
+      // Keep the stored order credit equal to the real balance (lib/tailoring-credit.ts).
+      await recomputeCreditForInvoices([id], client);
 
       // Reverse the ledger for retail invoices (sale + any payments), in the
       // same transaction so the cancel and the reversal succeed or fail
