@@ -116,9 +116,12 @@ export async function requireShrx(req: Request): Promise<{ ip: string } | NextRe
     return NextResponse.json({ error: 'SHRX session expired. Log in again.' }, { status: 401 });
   }
   if (req.method !== 'GET') {
+    // Compare host NAMES only: behind nginx the Host header drops a
+    // non-default port (`localhost` vs Origin `localhost:8088`).
     const origin = req.headers.get('origin');
     const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
-    if (origin && host && new URL(origin).host !== host) {
+    const hostname = (h: string) => h.replace(/:\d+$/, '').toLowerCase();
+    if (origin && host && hostname(new URL(origin).host) !== hostname(host)) {
       return NextResponse.json({ error: 'Bad origin' }, { status: 403 });
     }
   }
