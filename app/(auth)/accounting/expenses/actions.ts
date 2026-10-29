@@ -19,7 +19,7 @@ const ExpenseSchema = z.object({
 
 // ─── Create a custom expense category inline (from the Record Expense form) ──
 // Gets its own dedicated GL account (account_type='expense', next available
-// numeric code) so it reports distinctly in the P&L/trial balance, matching
+// numeric code) so it reports distinctly in the P&L and ledger, matching
 // how the seeded categories (Salaries/Rent/Utilities/Miscellaneous) are each
 // wired to their own account rather than lumped into one generic bucket.
 const CategoryNameSchema = z.string().trim().min(1).max(100);

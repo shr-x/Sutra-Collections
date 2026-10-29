@@ -42,7 +42,6 @@ export default async function AccountingPage() {
   const quickLinks = [
     { href: '/accounting/journal',       label: 'Journal',       icon: '📋', desc: 'All entries & postings' },
     { href: '/accounting/ledger',        label: 'Ledger',        icon: '📖', desc: 'Account-wise transactions' },
-    { href: '/accounting/trial-balance', label: 'Trial Balance', icon: '⚖️', desc: 'Debits vs credits' },
     { href: '/accounting/profit-loss',   label: 'P&L Statement', icon: '📈', desc: 'Income & expenses' },
     { href: '/accounting/balance-sheet', label: 'Balance Sheet', icon: '🏛️', desc: 'Assets, liabilities, equity' },
     { href: '/accounting/expenses',      label: 'Expenses',      icon: '💸', desc: 'Record & track spend' },

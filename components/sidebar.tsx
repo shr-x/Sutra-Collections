@@ -34,7 +34,6 @@ const TAILORING_CHILDREN_STAFF = [
 const ACCOUNTING_CHILDREN = [
   { href: '/accounting/journal',       label: 'Journal' },
   { href: '/accounting/ledger',        label: 'Ledger' },
-  { href: '/accounting/trial-balance', label: 'Trial Balance' },
   { href: '/accounting/profit-loss',   label: 'P&L Statement' },
   { href: '/accounting/balance-sheet', label: 'Balance Sheet' },
   { href: '/accounting/expenses',      label: 'Expenses' },
