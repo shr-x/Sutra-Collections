@@ -132,7 +132,7 @@ preflight() {
     return 1
   fi
   local origin; origin=$(git_ remote get-url origin 2>/dev/null)
-  if [ "$origin" != "$ORIGIN_URL" ]; then REFUSE="Repository origin is '$origin', expected '$ORIGIN_URL'."; return 1; fi
+  if [ "${origin%.git}" != "${ORIGIN_URL%.git}" ]; then REFUSE="Repository origin is '$origin', expected '$ORIGIN_URL'."; return 1; fi
   local branch; branch=$(git_ rev-parse --abbrev-ref HEAD 2>/dev/null)
   if [ "$branch" != "$BRANCH" ]; then REFUSE="Checked-out branch is '$branch', expected '$BRANCH'."; return 1; fi
   local dirty; dirty=$(git_ status --porcelain --untracked-files=no 2>&1)
@@ -232,7 +232,7 @@ do_update() {
   log "Fetching origin/$BRANCH…"
   git_ fetch --quiet origin "$BRANCH" || { finish failed "git fetch failed"; return; }
   to=$(git_ rev-parse "origin/$BRANCH"); set_req to_commit "$to"
-  if [ "$from" = "$to" ]; then finish succeeded "Already up to date — nothing to do."; return; fi
+  if [ "$from" = "$to" ]; then log "Already up to date — nothing to do."; finish succeeded; return; fi
   if ! git_ merge-base --is-ancestor "$from" "$to"; then
     finish refused "origin/$BRANCH is not a fast-forward of the running commit (history was rewritten or local commits exist). Nothing changed."; return
   fi

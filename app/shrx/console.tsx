@@ -577,7 +577,7 @@ function Updates() {
         <div className="card text-sm">
           <p className="text-xs font-semibold uppercase text-gray-500">Running now</p>
           <p className="mt-1 font-mono">{short(st?.running_commit)} <span className="font-sans">{st?.running_subject}</span></p>
-          <p className="text-xs text-gray-500">{st?.running_date ? dt(st.running_date) : ''}{data?.appBuild ? ` · app build ${data.appBuild}` : ''}</p>
+          <p className="text-xs text-gray-500">{st?.running_date ? dt(st.running_date) : ''}{data?.appBuild && data.appBuild !== 'unknown' ? ` · app build ${data.appBuild}` : ''}</p>
         </div>
         <div className="card text-sm">
           <p className="text-xs font-semibold uppercase text-gray-500">Latest on GitHub (main)</p>
